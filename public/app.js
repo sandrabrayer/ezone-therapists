@@ -572,7 +572,7 @@
   function wireEvents() {
     on('#pinSubmit', 'click', function () {
       var v = ($('#pinInput').value || '').trim();
-      if (v === '2107') {
+      if (v === '5555') {
         try { sessionStorage.setItem('ez_role', 'editor'); } catch (_) {}
         state.role = 'editor';
         enterApp();
