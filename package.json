@@ -1,0 +1,16 @@
+{
+  "name": "ezone-therapists",
+  "version": "1.0.0",
+  "description": "E-ZONE Therapists — therapists log the patients they treat (outpatient + inpatient) and view outpatient treatment plans. Node.js + Express, Google Sheets via Apps Script.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
