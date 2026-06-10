@@ -26,6 +26,16 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 > (`OUTPATIENT_SHEETS_URL` here) and the `DEBT_STATUS_SECRET` value, so the debt
 > gate works end-to-end. Per spec these are env vars, never hardcoded.
 
+### Also on the therapists **Apps Script** (Script Properties)
+
+The backend enforces the debt gate authoritatively by re-reading live debt on
+save (see [`server-side-gate-enforcement.md`](server-side-gate-enforcement.md)),
+which is its **own** call to outpatient — independent of the Node proxy env
+above. Set on the therapists Apps Script: `OUTPATIENT_SHEETS_URL` and
+`DEBT_STATUS_SECRET`. Until set (and outpatient PR #14 deployed), outpatient
+`clear`/`approved` saves are rejected fail-closed; `flagged` and inpatient saves
+still work.
+
 ## Graceful degradation (never-fail-open)
 
 - **Debt gate (#1) down/unset:** `DebtGate.evaluate` returns `flag /

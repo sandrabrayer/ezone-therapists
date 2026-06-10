@@ -114,15 +114,128 @@ function _getData() {
   };
 }
 
+/* ===== Server-authoritative gate enforcement =====
+ * Inline mirror of public/treatment-guard.js + public/debt-gate.js +
+ * public/phone.js. Apps Script can't import those modules; any change to the
+ * policy or the matching rule MUST update both sides. Unit-tested via
+ * test/treatment-guard.test.js (the pure module).
+ */
+
+// Canonical approvers — key is the stored approverId (Hebrew label accepted
+// defensively). Mirror of TreatmentGuard.APPROVERS.
+var ALLOWED_APPROVERS = { ron: 'רון', sandra: 'סנדרה' };
+function _resolveApproverId(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (ALLOWED_APPROVERS[s.toLowerCase()]) return s.toLowerCase();
+  for (var id in ALLOWED_APPROVERS) { if (ALLOWED_APPROVERS[id] === s) return id; }
+  return '';
+}
+function _isAllowedApprover(v) { return !!_resolveApproverId(v); }
+
+// Mirror of TreatmentGuard.decideSave — see that file for the full contract.
+function _decideSave(input) {
+  input = input || {};
+  var kind = input.kind || 'outpatient';
+  var gateStatus = String(input.gateStatus || '').toLowerCase();
+  var v = String(input.verification || 'unconfigured').toLowerCase();
+  if (kind !== 'outpatient') return { ok: true };
+  if (gateStatus === 'flagged') return { ok: true };
+  if (gateStatus === 'approved') {
+    if (!_isAllowedApprover(input.approverId)) return { ok: false, error: 'invalid_approver' };
+    if (v === 'block') return { ok: true };
+    if (v === 'allow') return { ok: true };
+    if (v === 'unconfigured') return { ok: false, error: 'debt_verification_unconfigured' };
+    if (v === 'unavailable') return { ok: false, error: 'debt_verification_unavailable' };
+    return { ok: false, error: 'debt_verification_failed' };
+  }
+  if (gateStatus === 'clear' || gateStatus === '') {
+    if (v === 'allow') return { ok: true };
+    if (v === 'unconfigured') return { ok: false, error: 'debt_verification_unconfigured' };
+    if (v === 'unavailable') return { ok: false, error: 'debt_verification_unavailable' };
+    return { ok: false, error: 'debt_verification_failed' };
+  }
+  return { ok: false, error: 'invalid_gate_status' };
+}
+
+// Mirror of public/phone.js normalizeForMatch.
+function _normalizePhoneForMatch(raw) {
+  if (raw == null) return '';
+  var digits = String(raw).replace(/[^\d]/g, '');
+  if (!digits) return '';
+  if (digits.indexOf('972') === 0) digits = '0' + digits.slice(3);
+  return digits;
+}
+
+// Mirror of public/debt-gate.js evaluate(), returning only the authoritative
+// decision string: 'allow' | 'block' | 'flag'.
+function _authoritativeGate(phone, roster) {
+  var key = _normalizePhoneForMatch(phone);
+  if (!key || !roster || !roster.length) return 'flag';
+  var hits = [];
+  for (var i = 0; i < roster.length; i++) {
+    var c = roster[i];
+    if (c && _normalizePhoneForMatch(c.phone) === key) hits.push(c);
+  }
+  if (hits.length !== 1) return 'flag';            // no match or ambiguous
+  var status = String(hits[0].debtStatus || '').toLowerCase();
+  if (status === 'debt') return 'block';
+  if (status === 'clear') return 'allow';
+  return 'flag';                                    // unknown / unexpected
+}
+
+// Re-read live outpatient debt and recompute the authoritative gate for this
+// treatment's patient. Configured by Script Properties OUTPATIENT_SHEETS_URL
+// and DEBT_STATUS_SECRET (the therapists script's own copy — separate from the
+// Node server env). Returns 'unconfigured' (no URL), 'unavailable' (fetch/parse
+// failure — fail closed), or the authoritative gate ('allow'|'block'|'flag').
+function _verifyOutpatientDebt(t) {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('DEBT_STATUS_SECRET');
+  if (!url) return 'unconfigured';
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') + 'action=getDebtStatus' +
+      (secret ? '&secret=' + encodeURIComponent(secret) : '');
+    var resp = UrlFetchApp.fetch(full, { muteHttpExceptions: true, followRedirects: true });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return 'unavailable';
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false || !Array.isArray(data.clients)) return 'unavailable';
+    return _authoritativeGate(t.patientPhone, data.clients);
+  } catch (e) {
+    return 'unavailable';
+  }
+}
+
 function _saveTreatment(payload) {
   var t = payload && payload.treatment;
   if (!t || typeof t !== 'object') return { ok: false, error: 'missing_treatment' };
   if (!t.id) return { ok: false, error: 'missing_id' };
-  // A flagged log must never masquerade as a clean one, and a debtor log must
-  // carry an approval. Guard server-side so a malformed client can't bypass.
-  if (t.gateStatus === 'approved' && !(t.approverId && t.approvedAt)) {
-    return { ok: false, error: 'approval_required' };
-  }
+
+  // SERVER-AUTHORITATIVE gate enforcement.
+  //
+  // This Web App is deployed "Anyone with the link", so a forged POST can reach
+  // it directly, bypassing the Node proxy and the browser gate. We therefore
+  // treat the incoming `gateStatus` / `approverId` as untrusted CLAIMS:
+  //   - an 'approved' claim is accepted only from the Ron/Sandra allowlist, and
+  //   - a 'clear'/'approved' claim is verified by RE-READING live outpatient
+  //     debt (getDebtStatus) and recomputing the authoritative gate here.
+  // It fails CLOSED: if verification is unconfigured or unavailable, the claim
+  // is rejected, never saved. Mirrors public/treatment-guard.js (decideSave) +
+  // public/debt-gate.js + public/phone.js. The flagged path and inpatient logs
+  // skip the network call. See docs/server-side-gate-enforcement.md.
+  var verification = 'unconfigured';
+  var needsVerify = (t.kind === 'outpatient') &&
+    (t.gateStatus === 'clear' || t.gateStatus === 'approved' || !t.gateStatus);
+  if (needsVerify) verification = _verifyOutpatientDebt(t);
+  var guard = _decideSave({
+    kind: t.kind,
+    gateStatus: t.gateStatus,
+    approverId: t.approverId,
+    verification: verification
+  });
+  if (!guard.ok) return { ok: false, error: guard.error };
 
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
