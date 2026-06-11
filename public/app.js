@@ -130,7 +130,21 @@
     if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
-  function apiSaveSession(rows) { return apiPost({ action: 'saveSession', rows: rows }); }
+  // saveSession verifies each patient row server-side and may PARTIALLY reject
+  // (e.g. a patient whose debt changed since the browser check). We must see the
+  // per-row results even when overall ok=false, so this tolerates ok:false as
+  // long as a results array came back; only a true transport failure throws.
+  async function apiSaveSession(rows) {
+    var r = await fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveSession', rows: rows })
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!Array.isArray(data.results)) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
   function apiMarkAttendance(id, attendance) { return apiPost({ action: 'markAttendance', id: id, attendance: attendance }); }
   function apiSavePatient(patient) { return apiPost({ action: 'savePatient', patient: patient }); }
   // Live read — never cached.
@@ -337,7 +351,7 @@
     parts.push('<div><span class="p-label">מטפל/ת אחראי/ת</span><span class="p-val">' +
       (p.assignedTherapist ? escapeHtml(p.assignedTherapist) : '<em>לא שויך</em>') + '</span></div>');
     if (p.serviceType) parts.push('<div><span class="p-label">סוג</span><span class="p-val">' + escapeHtml(p.serviceType) + '</span></div>');
-    if (p.fromInpatient && p.admittedLocation) parts.push('<div><span class="p-label">אושפז ב</span><span class="p-val">' + escapeHtml(p.admittedLocation) + '</span></div>');
+    if (p.fromInpatient && p.admittedLocation) parts.push('<div><span class="p-label">אושפז ב</span><span class="p-val">' + escapeHtml(locationLabel(p.admittedLocation)) + '</span></div>');
     parts.push('<div>' + debtChip(p.debtStatus, p.amountOwed) + '</div>');
     var al = patientUpcomingAlert(p.phone);
     if (al) parts.push('<div class="wide alert-row">⚠️ נכנס/ה לחוב לאחר תזמון (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>');
@@ -670,17 +684,35 @@
     var rows = Scheduling.buildSessionRows(session, patients, {
       sessionId: 's_' + uid(), idFn: function () { return uid(); }, now: today()
     });
+    var nameById = {};
+    rows.forEach(function (r) { nameById[r.id] = r.patientName; });
     sub.disabled = true;
     apiSaveSession(rows)
       .then(function (res) {
         var failed = (res.results || []).filter(function (r) { return !r.ok; });
-        if (failed.length) toast('חלק מהרישומים נדחו: ' + failed.map(function (f) { return f.error; }).join(', '), true);
-        else toast('הטיפול תוזמן');
+        if (failed.length) {
+          var who = failed.map(function (f) { return (nameById[f.id] || '') + ' (' + saveErrorText(f.error) + ')'; });
+          toast('חלק מהמטופלים לא תוזמנו: ' + who.join('; '), true);
+        } else {
+          toast('הטיפול תוזמן');
+        }
         return loadAll();
       })
       .then(function () { closeScheduleModal(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); sub.disabled = false; });
   }
+
+  // Friendly Hebrew for the server-authoritative rejection codes (mirrors
+  // treatment-guard.js). These fire when the live re-read disagrees with the
+  // browser's gate — usually a patient who fell into debt since the check.
+  var SAVE_ERROR_TEXT = {
+    debt_verification_failed: 'נמצא חוב בבדיקה החוזרת — נדרש אישור',
+    debt_verification_unavailable: 'בדיקת החוב אינה זמינה — לא ניתן לאשר',
+    debt_verification_unconfigured: 'בדיקת החוב אינה מוגדרת בשרת',
+    invalid_approver: 'מאשר/ת לא מורשה',
+    invalid_gate_status: 'סטטוס שער לא תקין'
+  };
+  function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
 
   // --- attendance --------------------------------------------------------
   function markAttendance(id, value) {
