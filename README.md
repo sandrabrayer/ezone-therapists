@@ -1,20 +1,50 @@
 # E-ZONE Therapists
 
-Hebrew/RTL dark-theme app where **every therapist logs the patients they
-treat**. Two purposes: (1) therapists are paid from these logs, (2) the office
-verifies patients receive treatment. All therapists have access.
+Hebrew/RTL dark-theme app where **therapists self-schedule follow-up treatments
+for active outpatients** — recording treatment type, location, and date — and
+later mark whether each treatment happened. The cross-app outpatient **debt
+gate** blocks new scheduling for a debtor and alerts on already-scheduled
+treatments when a patient falls into debt. All therapists have access.
 
 Same stack as the E-ZONE siblings (`ezone-outpatient`, `ezone-managers`,
 `ezone-staffing`, `E-Zone-Dashboard`): Node.js + Express serving a vanilla
 HTML/JS frontend, Google Sheets via an Apps Script Web App (`doGet`/`doPost`),
-deployed on Railway.
+deployed on Railway. The accent is **cyan/sky** (distinct from the indigo
+dashboard app); iteration-2 redesign notes are in
+[`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md).
 
 ## Tabs
 
-1. **טיפולי חוץ** — log outpatient treatment sessions. Gated by the cross-app
-   outpatient **debt gate** (see below).
-2. **מטופלים באשפוז** — log treatment for admitted/residential patients.
-3. **מטופלי חוץ — תוכנית טיפול** — view each outpatient's treatment plan.
+1. **מטופלים פעילים** — active-outpatients dashboard. Each patient shows the
+   assigned therapist (set by Vered at intake), debt status, a "came from
+   inpatient" badge, and any post-scheduling debt alert. Editors edit the
+   patient record and schedule treatments from here.
+2. **לוח טיפולים** — scheduled treatments, grouped by session, with per-patient
+   attendance marking (occurred / didn't occur). Scheduling is gated by the
+   **debt gate** (see below), per patient.
+3. **תוכנית טיפול** — view each outpatient's treatment plan (read-only).
+
+The old **מטופלים באשפוז** (inpatient) tab is removed — inpatient treatment is
+handled in another app. Whether a patient *came from* inpatient is now a flag on
+the patient record (with admitted location + outpatient start date).
+
+## Scheduling, lists & groups
+
+- **Therapist + treatment-type lists are Sheet-driven and active-flagged.** An
+  admin adds/retires/reactivates entries in the `Therapists` / `TreatmentTypes`
+  sheets with no code change. Retiring an entry only removes it from the dropdown
+  going forward; past records keep their original therapist/type string.
+- **Locations** are a fixed list (id stored, Hebrew shown): רמות השבים (`ramot`),
+  רעננה (`raanana`), אשר (`asher`), קיסריה ערפוני (`arfoni`), קיסריה ריהאב
+  (`rehab`). Location is the therapist's scheduling choice, independent of the
+  patient's roster house.
+- **Group treatments (קבוצה)** allow several patients in one session (one
+  therapist, one time/location). The debt check and attendance both run **per
+  patient** — a debtor is blocked/approved individually while the session
+  proceeds for everyone else.
+- **Post-scheduling debt alert** — debt is re-checked live on every load/refresh
+  for upcoming, unmarked treatments, so a patient who falls into debt *after*
+  booking is surfaced on the dashboard and the affected schedule row.
 
 ## Phone — one enforced format
 
@@ -49,16 +79,18 @@ approver, note, timestamp) — see [`public/approval.js`](public/approval.js).
 
 ## Architecture / data sources
 
-This app has its **own** Google Sheet (treatment logs + approvals). It also
-reads three sibling projections through server-side proxy routes — the browser
-only ever calls relative `/api/...` URLs and never sees a secret:
+This app has its **own** Google Sheet — `Schedule` (one row per patient per
+session), `Approvals`, `Patients` (per-patient extras keyed by phone), and the
+editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
+projections through server-side proxy routes — the browser only ever calls
+relative `/api/...` URLs and never sees a secret:
 
 | route | upstream | env vars | purpose |
 | ----- | -------- | -------- | ------- |
-| `GET /api/sheets` | this app's sheet | `SHEETS_URL` | treatment logs + approvals |
-| `GET /api/debt-status` | outpatient | `OUTPATIENT_SHEETS_URL`, `DEBT_STATUS_SECRET` | debt gate |
-| `GET /api/treatment-plans` | outpatient | `OUTPATIENT_SHEETS_URL`, `TREATMENT_PLANS_SECRET` | treatment-plan tab |
-| `GET /api/admitted` | dashboard | `DASHBOARD_SHEETS_URL`, `OCCUPANCY_SECRET` | inpatient roster |
+| `GET /api/sheets` | this app's sheet | `SHEETS_URL` | schedule, approvals, patients, lists |
+| `GET /api/debt-status` | outpatient | `OUTPATIENT_SHEETS_URL`, `DEBT_STATUS_SECRET` | debt gate + active roster |
+| `GET /api/treatment-plans` | outpatient | `OUTPATIENT_SHEETS_URL`, `TREATMENT_PLANS_SECRET` | active roster + treatment-plan tab |
+| `GET /api/admitted` | dashboard | `DASHBOARD_SHEETS_URL`, `OCCUPANCY_SECRET` | kept/wired; no UI consumer after the inpatient tab was removed |
 
 The debt gate is **never cached** — a debt decision must be live.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Iteration 2 — scheduling redesign
+
+Redesigned from treatment-logging into a scheduling app (self-scheduled
+follow-up treatments, treatment type + location + date, per-patient attendance,
+group sessions, post-scheduling debt alerts, Sheet-driven active-flagged
+therapist/type lists, cyan accent). Security architecture unchanged. Full notes:
+[`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md).
+
 ## Scaffold — backend, core modules, tests (step 1)
 
 Initial scaffold of the `ezone-therapists` app, following sibling conventions
