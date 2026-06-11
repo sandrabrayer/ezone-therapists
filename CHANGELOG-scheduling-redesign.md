@@ -66,6 +66,29 @@ rows already `approved`/`flagged`.
   add/retire behavior, group multi-patient per-patient debt handling, attendance
   state, and the post-scheduling alert. All prior tests still pass.
 
+## Access roles (follow-up)
+
+Added a **separate assigner capability** so Vered's intake role is distinct from
+the therapist/editor role — capabilities are kept apart, not nested:
+
+- **מטפל/ת** (editor, PIN `5555`) — schedule treatments + mark attendance.
+- **משבצת** (assigner / Vered, PIN `6060`) — assign patients to therapists at
+  intake and edit patient records (came-from-inpatient details). Does **not**
+  schedule.
+- **צופה** (viewer) — read-only.
+
+Gating is capability-based (`can-schedule` / `can-assign` body classes; the
+`.schedule-only` / `.assign-only` controls); the assigner has no therapist
+identity prompt. PINs are client-side UX gating (`EDITOR_PIN` / `ASSIGNER_PIN`
+in `public/app.js`) — the real enforcement remains the server-authoritative gate.
+
+## Origin houses vs scheduling locations (follow-up)
+
+The came-from-inpatient "where admitted" field now uses its **own** origin-house
+list (`רעננה אשר`, `רמות השבים`, `קיסריה עפרוני`, `קיסריה ריהאב`, `חיצוני`),
+separate from the scheduling LOCATIONS — an admission house need not match any
+scheduling location and vice versa.
+
 ## Findings flagged during the read-only investigation
 
 - Treatment types changed (`פרטני` → `פרטני כללי`; `מעקב פסיכיאטרי` dropped).

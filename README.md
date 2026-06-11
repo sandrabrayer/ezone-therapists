@@ -113,8 +113,20 @@ patches + tests, in [`docs/`](docs/):
 
 ## Access
 
-- PIN screen on load. Editor PIN grants full logging access; "המשך כצופה בלבד"
-  is read-only. Choice stored in `sessionStorage` for the session only.
+PIN screen on load; the choice is stored in `sessionStorage` for the session
+only. Three capability levels, kept **separate**:
+
+| Role | PIN | Can do |
+| ---- | --- | ------ |
+| **מטפל/ת** (therapist / editor) | `5555` | schedule treatments, mark attendance |
+| **משבצת** (assigner — Vered) | `6060` | assign patients to therapists at intake + edit patient records (came-from-inpatient details) |
+| **צופה** (viewer) | "המשך כצופה בלבד" | read-only |
+
+The assigner is **not** an editor: Vered assigns patients to therapists but does
+not schedule, and therapists schedule for their assigned patients but cannot
+reassign. Both PINs are client-side UX gating (the real enforcement is the
+server-authoritative debt gate); change them in `public/app.js`
+(`EDITOR_PIN` / `ASSIGNER_PIN`).
 
 ## Local development
 

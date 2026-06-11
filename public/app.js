@@ -39,6 +39,38 @@
     return s;
   }
 
+  // ORIGIN HOUSES are a SEPARATE list from the scheduling LOCATIONS above: it
+  // records where a came-from-inpatient patient was admitted. The admission
+  // house need not match any scheduling location (and vice versa), so the two
+  // lists are intentionally distinct.
+  var ORIGIN_HOUSES = [
+    { id: 'raanana',  he: 'רעננה אשר' },
+    { id: 'ramot',    he: 'רמות השבים' },
+    { id: 'efroni',   he: 'קיסריה עפרוני' },
+    { id: 'rehab',    he: 'קיסריה ריהאב' },
+    { id: 'external', he: 'חיצוני' }
+  ];
+  function houseLabel(v) {
+    var s = String(v == null ? '' : v).trim();
+    for (var i = 0; i < ORIGIN_HOUSES.length; i++) if (ORIGIN_HOUSES[i].id === s) return ORIGIN_HOUSES[i].he;
+    return s;
+  }
+
+  // --- roles & capabilities ----------------------------------------------
+  // Three access levels, gated by PIN. Capabilities are kept SEPARATE so the
+  // assigner (Vered) is not just an editor: she assigns patients to therapists
+  // at intake but does not schedule, and therapists schedule but cannot reassign.
+  var EDITOR_PIN = '5555';     // therapists — schedule + mark attendance
+  var ASSIGNER_PIN = '6060';   // Vered — assign patients to therapists (intake)
+  var ROLE_CAPS = {
+    viewer:   { schedule: false, assign: false, label: 'צופה' },
+    editor:   { schedule: true,  assign: false, label: 'מטפל/ת' },
+    assigner: { schedule: false, assign: true,  label: 'משבצת' }
+  };
+  function caps() { return ROLE_CAPS[state.role] || ROLE_CAPS.viewer; }
+  function canSchedule() { return !!caps().schedule; }
+  function canAssign() { return !!caps().assign; }
+
   // Hebrew copy for each gate flag reason (stable ids come from debt-gate.js).
   var FLAG_TEXT = {
     no_payment_record: 'אין רישום תשלומים עבור מטופל זה — לא ניתן לקבוע חוב. דרוש בירור ידני.',
@@ -351,13 +383,13 @@
     parts.push('<div><span class="p-label">מטפל/ת אחראי/ת</span><span class="p-val">' +
       (p.assignedTherapist ? escapeHtml(p.assignedTherapist) : '<em>לא שויך</em>') + '</span></div>');
     if (p.serviceType) parts.push('<div><span class="p-label">סוג</span><span class="p-val">' + escapeHtml(p.serviceType) + '</span></div>');
-    if (p.fromInpatient && p.admittedLocation) parts.push('<div><span class="p-label">אושפז ב</span><span class="p-val">' + escapeHtml(locationLabel(p.admittedLocation)) + '</span></div>');
+    if (p.fromInpatient && p.admittedLocation) parts.push('<div><span class="p-label">אושפז ב</span><span class="p-val">' + escapeHtml(houseLabel(p.admittedLocation)) + '</span></div>');
     parts.push('<div>' + debtChip(p.debtStatus, p.amountOwed) + '</div>');
     var al = patientUpcomingAlert(p.phone);
     if (al) parts.push('<div class="wide alert-row">⚠️ נכנס/ה לחוב לאחר תזמון (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>');
-    parts.push('<div class="row-actions edit-only">' +
-      '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">שיוך / עריכה</button>' +
-      '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+    parts.push('<div class="row-actions">' +
+      '<button class="btn btn-ghost btn-sm assign-only" data-edit-patient="' + escapeHtml(p.phone) + '">שיוך / עריכה</button>' +
+      '<button class="btn btn-primary btn-sm schedule-only" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
       '</div>');
     return '<div class="billing-row">' + parts.join('') + '</div>';
   }
@@ -398,7 +430,7 @@
 
   function patientLine(r) {
     var al = alertFor(r.id);
-    var attBtns = '<span class="att-btns edit-only">' +
+    var attBtns = '<span class="att-btns schedule-only">' +
       '<button class="btn btn-ghost btn-sm" data-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
       '<button class="btn btn-ghost btn-sm" data-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
       '</span>';
@@ -490,6 +522,12 @@
       return '<option value="' + escapeHtml(l.id) + '"' + sel + '>' + escapeHtml(l.he) + '</option>';
     })).join('');
   }
+  function houseOptions(selected) {
+    return ['<option value="">—</option>'].concat(ORIGIN_HOUSES.map(function (h) {
+      var sel = (h.id === selected) ? ' selected' : '';
+      return '<option value="' + escapeHtml(h.id) + '"' + sel + '>' + escapeHtml(h.he) + '</option>';
+    })).join('');
+  }
 
   function syncDropdowns() {
     var tNames = activeTherapistNames();
@@ -502,7 +540,7 @@
       tNames.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>'; }).join('');
     var sty = $('#scheduleType'); if (sty) sty.innerHTML = optionList(activeTypeNames());
     var sl = $('#scheduleLocation'); if (sl) sl.innerHTML = locationOptions();
-    var al = $('#admittedLocation'); if (al) al.innerHTML = locationOptions();
+    var al = $('#admittedLocation'); if (al) al.innerHTML = houseOptions();
 
     var roster = activePatients();
     var names = roster.map(function (p) { return p.name; }).filter(Boolean);
@@ -550,6 +588,7 @@
   }
 
   function openScheduleModal(prefillPatient) {
+    if (!ensureSchedule()) return;
     if (!ensureTherapist()) return;
     var form = $('#scheduleForm');
     form.reset();
@@ -730,7 +769,7 @@
 
   // --- patient record modal ---------------------------------------------
   function openPatientModal(phone) {
-    if (!ensureEditor()) return;
+    if (!ensureAssigner()) return;
     var form = $('#patientForm');
     form.reset();
     syncDropdowns();
@@ -763,7 +802,7 @@
       fromInpatient: fromInp,
       admittedLocation: fromInp ? (fd.get('admittedLocation') || '').trim() : '',
       outpatientStartDate: fromInp ? (fd.get('outpatientStartDate') || '') : '',
-      updatedBy: state.therapist || ''
+      updatedBy: state.therapist || caps().label
     };
     sub.disabled = true;
     apiSavePatient(patient)
@@ -784,17 +823,24 @@
     if (state.therapist) return true;
     toast('יש לבחור מטפל/ת', true); openTherapistModal(); return false;
   }
-  function ensureEditor() {
-    if (state.role === 'editor') return true;
-    toast('פעולה זו זמינה לעורכים בלבד', true); return false;
+  function ensureSchedule() {
+    if (canSchedule()) return true;
+    toast('קביעת טיפול זמינה למטפלים בלבד', true); return false;
+  }
+  function ensureAssigner() {
+    if (canAssign()) return true;
+    toast('שיוך מטופל/ת זמין ל«משבצת» (ורד) בלבד', true); return false;
   }
 
   // --- auth / role -------------------------------------------------------
   function applyRole() {
-    document.body.classList.toggle('viewer', state.role !== 'editor');
+    var c = caps();
+    document.body.classList.toggle('viewer', state.role === 'viewer');
+    document.body.classList.toggle('can-schedule', !!c.schedule);
+    document.body.classList.toggle('can-assign', !!c.assign);
     var badge = $('#roleBadge');
-    badge.textContent = state.role === 'editor' ? 'עורך' : 'צופה';
-    badge.classList.toggle('editor', state.role === 'editor');
+    badge.textContent = c.label;
+    badge.classList.toggle('editor', state.role !== 'viewer');
   }
   function applyTherapist() { $('#therapistChip').textContent = state.therapist || '—'; }
   function showPin() {
@@ -809,7 +855,9 @@
     applyRole();
     applyTherapist();
     setView('patients');
-    if (state.role === 'editor' && !state.therapist) openTherapistModal();
+    // Only therapists (schedulers) need to identify themselves. The assigner
+    // (Vered) assigns patients to therapists and has no therapist identity.
+    if (canSchedule() && !state.therapist) openTherapistModal();
   }
 
   function setView(view) {
@@ -827,9 +875,10 @@
   function wireEvents() {
     on('#pinSubmit', 'click', function () {
       var v = ($('#pinInput').value || '').trim();
-      if (v === '5555') {
-        try { sessionStorage.setItem('ez_role', 'editor'); } catch (_) {}
-        state.role = 'editor';
+      var role = (v === EDITOR_PIN) ? 'editor' : (v === ASSIGNER_PIN) ? 'assigner' : '';
+      if (role) {
+        try { sessionStorage.setItem('ez_role', role); } catch (_) {}
+        state.role = role;
         enterApp();
       } else {
         var err = $('#pinError'); if (err) err.hidden = false;
@@ -859,7 +908,7 @@
 
     on('#addScheduleBtn', 'click', function () { openScheduleModal(); });
     on('#schedulePatientBtn', 'click', function () { openScheduleModal(); });
-    on('#therapistChip', 'click', function () { if (state.role === 'editor') openTherapistModal(); });
+    on('#therapistChip', 'click', function () { if (canSchedule()) openTherapistModal(); });
 
     // Delegated actions on the patients dashboard + schedule list.
     on('#patientsList', 'click', function (e) {
@@ -873,7 +922,7 @@
     });
     on('#scheduleList', 'click', function (e) {
       var b = e.target.closest('[data-att]');
-      if (b) { if (!ensureEditor()) return; markAttendance(b.getAttribute('data-id'), b.getAttribute('data-att')); }
+      if (b) { if (!ensureSchedule()) return; markAttendance(b.getAttribute('data-id'), b.getAttribute('data-att')); }
     });
 
     // Schedule modal: group toggle, add/remove patients.

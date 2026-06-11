@@ -290,7 +290,12 @@ button, input, select, textarea {
 }
 .toast.error { border-color: #6b2a2a; color: #ff9b9b; }
 
+/* Capability-gated controls. Schedule actions need the therapist (editor)
+   capability; assignment actions need the assigner (Vered) capability. Anything
+   still tagged .edit-only is hidden from plain viewers. */
 body.viewer .edit-only { display: none !important; }
+body:not(.can-schedule) .schedule-only { display: none !important; }
+body:not(.can-assign) .assign-only { display: none !important; }
 
 /* ===== Billing ===== */
 .billing-date-label {
