@@ -690,3 +690,21 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .patient-row .patient-phone { flex: 1; min-width: 130px; }
 .charge-status-partial { background: #3a310f; color: var(--amber); border-color: #5a4818; }
 .charge-status-unpaid  { background: #3a0f10; color: #ef8484; border-color: #5a1818; }
+
+/* ===== Iteration 4 — workflow filter, assign list, my-treatments ===== */
+.filter-sel { max-width: 200px; flex: 0 1 auto; }
+
+/* compact assign list on the שיבוץ tab */
+.assign-row {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.assign-name { font-weight: 600; min-width: 140px; }
+.assign-ther { color: var(--muted); min-width: 110px; }
+.assign-type { color: var(--text-soft); min-width: 120px; }
+.assign-actions { display: inline-flex; gap: 8px; margin-inline-start: auto; }
+
+/* tab 3 — my treatments */
+.mine-picker { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.mine-picker select { min-width: 200px; }
+.mine-row .att-btns { display: inline-flex; gap: 6px; }

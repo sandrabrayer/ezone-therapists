@@ -25,6 +25,7 @@
       <nav class="tabs">
         <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
         <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
+        <button class="tab" data-view="mine">המטפל שלי</button>
       </nav>
       <div class="topbar-right">
         <span id="therapistChip" class="role-badge" title="מטפל/ת — לחצו לבחירה">—</span>
@@ -58,6 +59,7 @@
       <section id="view-workflow" class="view">
         <div class="toolbar">
           <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <select id="workflowTherapistFilter" class="search filter-sel"><option value="">כל המטפלים</option></select>
           <button id="newPatientBtn2" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
           <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
         </div>
@@ -67,8 +69,36 @@
           <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiScheduleAlerts" class="kpi-value">0</div></div>
         </div>
         <div class="panel">
+          <div class="panel-title">מטופלים לשיבוץ ולקביעת טיפול</div>
+          <div id="assignList" class="billing-list"></div>
+        </div>
+        <div class="panel">
           <div class="panel-title">טיפולים מתוזמנים — קביעה וסימון ביצוע</div>
           <div id="scheduleList" class="billing-list"></div>
+        </div>
+      </section>
+
+      <!-- My treatments: friendly per-therapist view + did-it-happen marking -->
+      <section id="view-mine" class="view">
+        <div class="toolbar">
+          <label class="mine-picker">אני:
+            <select id="myTherapist"><option value="">— בחר/י את שמך —</option></select>
+          </label>
+          <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+        </div>
+        <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
+        <div id="mineEmpty" class="billing-empty" hidden>בחר/י את שמך כדי לראות את הטיפולים שלך.</div>
+        <div class="panel" id="mineDuePanel" hidden>
+          <div class="panel-title">ממתינים לסימון (עבר זמנם)</div>
+          <div id="mineDue" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineWeekPanel" hidden>
+          <div class="panel-title">השבוע</div>
+          <div id="mineWeek" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineUpcomingPanel" hidden>
+          <div class="panel-title">הבאים</div>
+          <div id="mineUpcoming" class="billing-list"></div>
         </div>
       </section>
     </main>
@@ -195,6 +225,7 @@
   <script src="approval.js?v=__BUILD__"></script>
   <script src="scheduling.js?v=__BUILD__"></script>
   <script src="debt-alert.js?v=__BUILD__"></script>
+  <script src="writeback.js?v=__BUILD__"></script>
   <script src="app.js?v=__BUILD__" defer></script>
 </body>
 </html>
