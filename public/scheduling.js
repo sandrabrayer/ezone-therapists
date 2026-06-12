@@ -47,6 +47,17 @@
   // renames); this name is the fallback when no flag is present.
   var GROUP_TYPE_NAME = 'קבוצה';
 
+  // DISPLAY-ONLY relabels for treatment/service-type strings that arrive from a
+  // sibling source under an outdated term. The stored value is left untouched;
+  // we only change what the therapist sees. 'מרכז יום' is the legacy outpatient
+  // serviceType — show it as 'ליווי יומי בקהילה'. (The outpatient SOURCE data
+  // should eventually be updated to the new term too; until then we relabel here.)
+  var SERVICE_RELABELS = { 'מרכז יום': 'ליווי יומי בקהילה' };
+  function displayServiceType(v) {
+    var s = String(v == null ? '' : v).trim();
+    return SERVICE_RELABELS[s] || s;
+  }
+
   function isActive(entry) {
     if (!entry || typeof entry !== 'object') return false;
     // Absent/empty `active` defaults to ACTIVE; only an explicit falsey flag
@@ -201,6 +212,8 @@
   return {
     ATTENDANCE: ATTENDANCE,
     GROUP_TYPE_NAME: GROUP_TYPE_NAME,
+    SERVICE_RELABELS: SERVICE_RELABELS,
+    displayServiceType: displayServiceType,
     isActive: isActive,
     activeNames: activeNames,
     isGroupType: isGroupType,

@@ -42,6 +42,14 @@ test('activeNames: de-dupes and preserves order; tolerates plain strings', () =>
   assert.deepEqual(Scheduling.activeNames(null), []);
 });
 
+test('displayServiceType: relabels מרכז יום -> ליווי יומי בקהילה (display only)', () => {
+  assert.equal(Scheduling.displayServiceType('מרכז יום'), 'ליווי יומי בקהילה');
+  // Unmapped values pass through untouched; the stored value is never mutated.
+  assert.equal(Scheduling.displayServiceType('פרטני כללי'), 'פרטני כללי');
+  assert.equal(Scheduling.displayServiceType(''), '');
+  assert.equal(Scheduling.displayServiceType(null), '');
+});
+
 test('retiring a therapist/type does NOT alter records that already reference it', () => {
   // A past row was saved with therapist 'עידו' and type 'פרטני EMDR'.
   const oldRow = { therapist: 'עידו', treatmentType: 'פרטני EMDR', patientName: 'דנה' };
