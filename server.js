@@ -73,8 +73,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const lastLoad = {
   at: null,
   status: null,
-  treatments: 0,
+  schedule: 0,
   approvals: 0,
+  patients: 0,
   error: null
 };
 
@@ -143,8 +144,9 @@ app.get('/api/sheets', async (req, res) => {
     if (action === 'getData') {
       lastLoad.at = new Date().toISOString();
       lastLoad.status = r.status;
-      lastLoad.treatments = Array.isArray(data.treatments) ? data.treatments.length : 0;
+      lastLoad.schedule = Array.isArray(data.schedule) ? data.schedule.length : 0;
       lastLoad.approvals = Array.isArray(data.approvals) ? data.approvals.length : 0;
+      lastLoad.patients = Array.isArray(data.patients) ? data.patients.length : 0;
       lastLoad.error = data.ok === false ? (data.error || 'unknown') : null;
 
       // Only cache successful responses
@@ -179,7 +181,7 @@ app.post('/api/sheets', async (req, res) => {
   try {
     // Pass through whatever action the client asked for.
     const body = Object.assign({}, req.body || {});
-    if (!body.action) body.action = 'saveTreatment';
+    if (!body.action) body.action = 'saveSession';
     const r = await fetch(SHEETS_URL, {
       method: 'POST',
       redirect: 'follow',
@@ -254,7 +256,7 @@ app.get('/api/debug/cache', (req, res) => {
     ttlMs: CACHE_TTL_MS,
     fresh: isCacheFresh(),
     staleButUsable: !isCacheFresh() && isCacheStaleButUsable(),
-    treatments: getDataCache.data && Array.isArray(getDataCache.data.treatments) ? getDataCache.data.treatments.length : 0,
+    schedule: getDataCache.data && Array.isArray(getDataCache.data.schedule) ? getDataCache.data.schedule.length : 0,
     approvals: getDataCache.data && Array.isArray(getDataCache.data.approvals) ? getDataCache.data.approvals.length : 0
   });
 });

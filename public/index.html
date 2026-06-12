@@ -23,12 +23,11 @@
     <header class="topbar">
       <div class="logo">E-ZONE <span>Therapists</span></div>
       <nav class="tabs">
-        <button class="tab active" data-view="outpatient">טיפולי חוץ</button>
-        <button class="tab" data-view="inpatient">מטופלים באשפוז</button>
-        <button class="tab" data-view="plans">מטופלי חוץ — תוכנית טיפול</button>
+        <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
+        <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
       </nav>
       <div class="topbar-right">
-        <span id="therapistChip" class="role-badge" title="מטפל/ת">—</span>
+        <span id="therapistChip" class="role-badge" title="מטפל/ת — לחצו לבחירה">—</span>
         <span id="roleBadge" class="role-badge">צופה</span>
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
         <button id="logoutBtn" class="btn btn-ghost">יציאה</button>
@@ -36,151 +35,153 @@
     </header>
 
     <main class="main">
-      <!-- Outpatient treatments -->
-      <section id="view-outpatient" class="view active">
+      <!-- Dashboard: active patients + their treatment plan -->
+      <section id="view-dashboard" class="view active">
         <div class="toolbar">
-          <input id="outpatientSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-          <button id="addOutpatientBtn" class="btn btn-primary edit-only">+ רישום טיפול חוץ</button>
+          <input id="dashboardSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <button id="newPatientBtn" class="btn btn-primary edit-only">+ רישום מטופל חדש</button>
         </div>
+        <div id="alertBanner" class="wide card-banner card-banner-stop" hidden></div>
         <div class="kpis">
-          <div class="kpi"><div class="kpi-label">טיפולי חוץ שנרשמו</div><div id="kpiOutCount" class="kpi-value">0</div></div>
-          <div class="kpi"><div class="kpi-label">ממתינים לבירור</div><div id="kpiOutFlagged" class="kpi-value">0</div></div>
-          <div class="kpi"><div class="kpi-label">אושרו למרות חוב</div><div id="kpiOutApproved" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">מטופלים פעילים</div><div id="kpiPatients" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">שויכו למטפל/ת</div><div id="kpiAssigned" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiAlerts" class="kpi-value">0</div></div>
         </div>
+        <div id="dashboardNotice" class="billing-empty" hidden></div>
         <div class="panel">
-          <div class="panel-title">רישומי טיפול חוץ</div>
-          <div id="outpatientList" class="billing-list"></div>
+          <div class="panel-title">מטופלים ותוכנית טיפול</div>
+          <div id="patientsList" class="billing-list"></div>
         </div>
       </section>
 
-      <!-- Inpatient treatments -->
-      <section id="view-inpatient" class="view">
+      <!-- Workflow: assign + schedule + did-it-happen -->
+      <section id="view-workflow" class="view">
         <div class="toolbar">
-          <input id="inpatientSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-          <button id="addInpatientBtn" class="btn btn-primary edit-only">+ רישום טיפול אשפוז</button>
+          <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <button id="newPatientBtn2" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
+          <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
         </div>
         <div class="kpis">
-          <div class="kpi"><div class="kpi-label">טיפולי אשפוז שנרשמו</div><div id="kpiInCount" class="kpi-value">0</div></div>
-          <div class="kpi"><div class="kpi-label">מטופלים מאושפזים ברשימה</div><div id="kpiInRoster" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">טיפולים שתוזמנו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">קרובים (טרם סומנו)</div><div id="kpiUpcoming" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiScheduleAlerts" class="kpi-value">0</div></div>
         </div>
         <div class="panel">
-          <div class="panel-title">רישומי טיפול אשפוז</div>
-          <div id="inpatientList" class="billing-list"></div>
+          <div class="panel-title">טיפולים מתוזמנים — קביעה וסימון ביצוע</div>
+          <div id="scheduleList" class="billing-list"></div>
         </div>
-      </section>
-
-      <!-- Outpatient treatment plans (read-only) -->
-      <section id="view-plans" class="view">
-        <div class="toolbar">
-          <input id="plansSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-        </div>
-        <div id="plansNotice" class="billing-empty" hidden></div>
-        <div class="clients-list" id="plansList"></div>
       </section>
     </main>
 
     <!-- Toast -->
     <div id="toast" class="toast" hidden></div>
 
-    <!-- Outpatient treatment log modal (with inline debt gate + approval) -->
-    <div id="outpatientModal" class="modal" hidden>
-      <div class="modal-card">
-        <div class="modal-title">רישום טיפול חוץ</div>
-        <form id="outpatientForm" class="form-grid">
-          <label class="wide">שם מטופל
-            <input name="patientName" list="outpatientNames" autocomplete="off" required />
-          </label>
-          <datalist id="outpatientNames"></datalist>
-          <label>טלפון מטופל (10 ספרות, לדוגמה 0501234567)
-            <input name="patientPhone" inputmode="numeric" maxlength="10" placeholder="0501234567" required />
-          </label>
-          <label>סוג טיפול
-            <select name="serviceType" required>
+    <!-- Schedule a treatment (with inline per-patient debt gate + approval) -->
+    <div id="scheduleModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title">קביעת טיפול</div>
+        <form id="scheduleForm" class="form-grid">
+          <label>מטפל/ת
+            <select name="therapist" id="scheduleTherapist" required>
               <option value="">—</option>
-              <option>פרטני</option>
-              <option>פרטני CBT</option>
-              <option>פרטני EMDR</option>
-              <option>קבוצה</option>
-              <option>טיפול משפחתי</option>
-              <option>מעקב פסיכיאטרי</option>
             </select>
           </label>
-          <label>תאריך טיפול<input name="treatmentDate" type="date" required /></label>
-          <label class="wide">הערות<textarea name="note" rows="2"></textarea></label>
+          <label>סוג טיפול
+            <select name="treatmentType" id="scheduleType" required>
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>מיקום
+            <select name="location" id="scheduleLocation" required>
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>תאריך<input name="scheduledDate" type="date" required /></label>
 
-          <!-- Gate result banner -->
-          <div id="gateBanner" class="wide" hidden></div>
+          <!-- Patients (single, or several for a group session) -->
+          <div class="wide">
+            <div class="form-section-title">
+              <span id="patientsSectionTitle">מטופל/ת</span>
+              <button type="button" id="addPatientRowBtn" class="btn btn-ghost btn-sm" hidden>+ הוסף מטופל/ת לקבוצה</button>
+            </div>
+            <div id="patientRows"></div>
+          </div>
 
-          <!-- Inline approval (revealed when the patient owes) -->
-          <div id="approvalSection" class="wide" hidden>
-            <div class="form-section-title">נדרש אישור להמשך טיפול (חוב פתוח)</div>
-            <label>מאשר/ת
-              <select name="approver">
+          <!-- Per-patient gate results (revealed after "בדוק ושמור") -->
+          <div id="gateResults" class="wide" hidden></div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+            <button type="submit" class="btn btn-primary" id="scheduleSubmit">בדוק ושמור</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- New / edit patient (Vered's intake record + main treatment plan) -->
+    <div id="patientModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title" id="patientModalTitle">רישום מטופל חדש</div>
+        <form id="patientForm" class="form-grid">
+          <div class="form-section-title wide">זהות</div>
+          <label class="wide">שם מטופל/ת
+            <input name="name" list="rosterNames" autocomplete="off" required />
+          </label>
+          <datalist id="rosterNames"></datalist>
+          <label>טלפון (10 ספרות, לדוגמה 0501234567)
+            <input name="phone" inputmode="numeric" maxlength="10" placeholder="0501234567" required />
+          </label>
+
+          <div class="form-section-title wide">שיוך ותוכנית טיפול</div>
+          <label>מטפל/ת אחראי/ת (שיוך)
+            <select name="assignedTherapist" id="patientTherapist">
+              <option value="">— לא שויך —</option>
+            </select>
+          </label>
+          <label>סוג טיפול עיקרי
+            <select name="mainTreatmentType" id="patientType">
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>תדירות בשבוע
+            <input name="frequencyPerWeek" type="number" min="0" max="14" step="1" placeholder="לדוגמה 1" />
+          </label>
+
+          <div class="form-section-title wide">מקור הגעה</div>
+          <label class="wide">מאיפה הגיע/ה
+            <input name="origin" list="originSuggestions" autocomplete="off" placeholder="מאיפה הופנה/הגיע המטופל/ת" />
+          </label>
+          <datalist id="originSuggestions"></datalist>
+          <label class="wide checkbox-row">
+            <input type="checkbox" name="stillAdmitted" id="stillAdmitted" />
+            עדיין מאושפז/ת
+          </label>
+          <div id="admittedDetails" class="wide form-grid" hidden>
+            <label>באיזה בית
+              <select name="admittedHouse" id="admittedHouse">
                 <option value="">—</option>
-                <option value="ron">רון</option>
-                <option value="sandra">סנדרה</option>
               </select>
             </label>
-            <label class="wide">הערת אישור<textarea name="approvalNote" rows="2" placeholder="סיבת האישור"></textarea></label>
           </div>
 
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-close>ביטול</button>
-            <button type="submit" class="btn btn-primary" id="outpatientSubmit">בדוק ושמור</button>
+            <button type="submit" class="btn btn-primary" id="patientSubmit">שמור</button>
           </div>
         </form>
       </div>
     </div>
 
-    <!-- Inpatient treatment log modal (no debt gate) -->
-    <div id="inpatientModal" class="modal" hidden>
-      <div class="modal-card">
-        <div class="modal-title">רישום טיפול אשפוז</div>
-        <form id="inpatientForm" class="form-grid">
-          <label class="wide">שם מטופל
-            <input name="patientName" list="inpatientNames" autocomplete="off" required />
-          </label>
-          <datalist id="inpatientNames"></datalist>
-          <label>טלפון מטופל (10 ספרות, לדוגמה 0501234567)
-            <input name="patientPhone" inputmode="numeric" maxlength="10" placeholder="0501234567" required />
-          </label>
-          <label>בית / סניף
-            <select name="house">
-              <option value="">—</option>
-              <option value="raanana">רעננה אשר</option>
-              <option value="ramot">רמות השבים</option>
-              <option value="efroni">קיסריה עפרוני</option>
-              <option value="rehab">קיסריה ריהאב</option>
-              <option value="external">חיצוני</option>
-            </select>
-          </label>
-          <label>סוג טיפול
-            <select name="serviceType" required>
-              <option value="">—</option>
-              <option>פרטני</option>
-              <option>פרטני CBT</option>
-              <option>פרטני EMDR</option>
-              <option>קבוצה</option>
-              <option>טיפול משפחתי</option>
-              <option>מעקב פסיכיאטרי</option>
-            </select>
-          </label>
-          <label>תאריך טיפול<input name="treatmentDate" type="date" required /></label>
-          <label class="wide">הערות<textarea name="note" rows="2"></textarea></label>
-          <div class="form-actions">
-            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
-            <button type="submit" class="btn btn-primary" id="inpatientSubmit">שמור</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Therapist identity modal (who is logging) -->
+    <!-- Therapist identity (who is logged in) -->
     <div id="therapistModal" class="modal" hidden>
       <div class="modal-card">
         <div class="modal-title">מי המטפל/ת?</div>
         <form id="therapistForm" class="form-grid">
-          <label class="wide">שם המטפל/ת<input name="therapist" required placeholder="שם מלא" /></label>
+          <label class="wide">בחר/י את שמך
+            <select name="therapist" id="therapistSelect" required>
+              <option value="">—</option>
+            </select>
+          </label>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="therapistSubmit">המשך</button>
           </div>
@@ -192,6 +193,8 @@
   <script src="phone.js?v=__BUILD__"></script>
   <script src="debt-gate.js?v=__BUILD__"></script>
   <script src="approval.js?v=__BUILD__"></script>
+  <script src="scheduling.js?v=__BUILD__"></script>
+  <script src="debt-alert.js?v=__BUILD__"></script>
   <script src="app.js?v=__BUILD__" defer></script>
 </body>
 </html>

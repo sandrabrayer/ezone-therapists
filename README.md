@@ -1,20 +1,64 @@
 # E-ZONE Therapists
 
-Hebrew/RTL dark-theme app where **every therapist logs the patients they
-treat**. Two purposes: (1) therapists are paid from these logs, (2) the office
-verifies patients receive treatment. All therapists have access.
+Hebrew/RTL dark-theme app where **therapists self-schedule follow-up treatments
+for active outpatients** — recording treatment type, location, and date — and
+later mark whether each treatment happened. The cross-app outpatient **debt
+gate** blocks new scheduling for a debtor and alerts on already-scheduled
+treatments when a patient falls into debt. All therapists have access.
 
 Same stack as the E-ZONE siblings (`ezone-outpatient`, `ezone-managers`,
 `ezone-staffing`, `E-Zone-Dashboard`): Node.js + Express serving a vanilla
 HTML/JS frontend, Google Sheets via an Apps Script Web App (`doGet`/`doPost`),
-deployed on Railway.
+deployed on Railway. The accent is **cyan/sky** (distinct from the indigo
+dashboard app) on a comfortable slate-blue base. Redesign notes:
+[`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md) (iteration
+2) and [`CHANGELOG-iteration3-restructure.md`](CHANGELOG-iteration3-restructure.md).
 
 ## Tabs
 
-1. **טיפולי חוץ** — log outpatient treatment sessions. Gated by the cross-app
-   outpatient **debt gate** (see below).
-2. **מטופלים באשפוז** — log treatment for admitted/residential patients.
-3. **מטופלי חוץ — תוכנית טיפול** — view each outpatient's treatment plan.
+1. **דשבורד מטופלים** — active patients with their treatment plan. Each card
+   shows the assigned therapist, the main treatment type + weekly frequency
+   (preferring the locally-set plan, falling back to the outpatient roster), debt
+   status, a "still admitted" badge, origin, and any post-scheduling debt alert.
+   Editors register/edit a patient and schedule from here.
+2. **שיבוץ מטפלים** — the workflow: assign a therapist + set the main treatment
+   plan (editable later), schedule a treatment (when + where + type), and mark
+   the per-treatment did-it-happen status. Scheduling is gated by the **debt
+   gate** (see below), per patient; debt alerts surface here too.
+
+The old **מטופלים באשפוז** (inpatient) tab is gone — inpatient treatment is
+handled in another app. Where a patient *came from* is now an **origin** field on
+the patient record, with an optional "still admitted" + which house. The separate
+treatment-plan tab is merged into the dashboard.
+
+### Intake — «רישום מטופל חדש»
+
+Vered registers a new patient in one form: identity (name + canonical phone),
+origin (where they came from / still admitted + which house), main treatment type,
+weekly frequency, and the assigned therapist. The same form edits the record
+later — the main plan is **editable** after it is set.
+
+## Scheduling, lists & groups
+
+- **Therapist + treatment-type lists are Sheet-driven and active-flagged.** An
+  admin adds/retires/reactivates entries in the `Therapists` / `TreatmentTypes`
+  sheets with no code change. Retiring an entry only removes it from the dropdown
+  going forward; past records keep their original therapist/type string.
+- **Locations** are a fixed list (id stored, Hebrew shown): רמות השבים (`ramot`),
+  רעננה (`raanana`), אשר (`asher`), קיסריה ערפוני (`arfoni`), קיסריה ריהאב
+  (`rehab`). Location is the therapist's scheduling choice, independent of the
+  patient's roster house.
+- **Group treatments (קבוצה)** allow several patients in one session (one
+  therapist, one time/location). The debt check and attendance both run **per
+  patient** — a debtor is blocked/approved individually while the session
+  proceeds for everyone else.
+- **Post-scheduling debt alert** — debt is re-checked live on every load/refresh
+  for upcoming, unmarked treatments, so a patient who falls into debt *after*
+  booking is surfaced on the dashboard and the affected schedule row.
+- **Display relabel** — the legacy outpatient service term **מרכז יום** is shown
+  as **ליווי יומי בקהילה** (`Scheduling.displayServiceType`); the stored value is
+  untouched. The outpatient SOURCE data should eventually adopt the new term too
+  (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
 
 ## Phone — one enforced format
 
@@ -49,16 +93,18 @@ approver, note, timestamp) — see [`public/approval.js`](public/approval.js).
 
 ## Architecture / data sources
 
-This app has its **own** Google Sheet (treatment logs + approvals). It also
-reads three sibling projections through server-side proxy routes — the browser
-only ever calls relative `/api/...` URLs and never sees a secret:
+This app has its **own** Google Sheet — `Schedule` (one row per patient per
+session), `Approvals`, `Patients` (per-patient extras keyed by phone), and the
+editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
+projections through server-side proxy routes — the browser only ever calls
+relative `/api/...` URLs and never sees a secret:
 
 | route | upstream | env vars | purpose |
 | ----- | -------- | -------- | ------- |
-| `GET /api/sheets` | this app's sheet | `SHEETS_URL` | treatment logs + approvals |
-| `GET /api/debt-status` | outpatient | `OUTPATIENT_SHEETS_URL`, `DEBT_STATUS_SECRET` | debt gate |
-| `GET /api/treatment-plans` | outpatient | `OUTPATIENT_SHEETS_URL`, `TREATMENT_PLANS_SECRET` | treatment-plan tab |
-| `GET /api/admitted` | dashboard | `DASHBOARD_SHEETS_URL`, `OCCUPANCY_SECRET` | inpatient roster |
+| `GET /api/sheets` | this app's sheet | `SHEETS_URL` | schedule, approvals, patients, lists |
+| `GET /api/debt-status` | outpatient | `OUTPATIENT_SHEETS_URL`, `DEBT_STATUS_SECRET` | debt gate + active roster |
+| `GET /api/treatment-plans` | outpatient | `OUTPATIENT_SHEETS_URL`, `TREATMENT_PLANS_SECRET` | active roster + treatment-plan tab |
+| `GET /api/admitted` | dashboard | `DASHBOARD_SHEETS_URL`, `OCCUPANCY_SECRET` | kept/wired; no UI consumer after the inpatient tab was removed |
 
 The debt gate is **never cached** — a debt decision must be live.
 
@@ -81,8 +127,19 @@ patches + tests, in [`docs/`](docs/):
 
 ## Access
 
-- PIN screen on load. Editor PIN grants full logging access; "המשך כצופה בלבד"
-  is read-only. Choice stored in `sessionStorage` for the session only.
+PIN screen on load; the choice is stored in `sessionStorage` for the session
+only. **One editor code + viewer** — no per-role gating:
+
+| Role | PIN | Can do |
+| ---- | --- | ------ |
+| **עורך** (editor) | `5555` | register/assign patients, set & edit the plan, schedule, mark attendance |
+| **צופה** (viewer) | "המשך כצופה בלבד" | read-only |
+
+The work order — Vered assigns first, the therapist schedules after — is
+**procedure, not software-enforced**: therapists are paid per treatment, so they
+self-enforce getting properly assigned/approved. Any editor can therefore both
+assign and schedule. The PIN is client-side UX gating (the real enforcement is
+the server-authoritative debt gate); change it in `public/app.js` (`EDITOR_PIN`).
 
 ## Local development
 

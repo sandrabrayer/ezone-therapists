@@ -36,15 +36,25 @@ above. Set on the therapists Apps Script: `OUTPATIENT_SHEETS_URL` and
 `clear`/`approved` saves are rejected fail-closed; `flagged` and inpatient saves
 still work.
 
+## Source-data follow-up (outpatient side)
+
+The outpatient roster still reports the service term **מרכז יום**. This app
+relabels it to **ליווי יומי בקהילה** on display only
+(`Scheduling.displayServiceType`) without mutating the stored value. The
+outpatient SOURCE data (the `getTreatmentPlans` / roster `serviceType`) should
+eventually be updated to the new term; once it is, the relabel here becomes a
+no-op and can be retired.
+
 ## Graceful degradation (never-fail-open)
 
 - **Debt gate (#1) down/unset:** `DebtGate.evaluate` returns `flag /
   lookup_failed` — the log is NOT silently allowed; the therapist must re-check
   or send it for manual resolution.
-- **Treatment plans (#2) down/unset:** the plans tab shows a clear "not
-  available yet" notice instead of an empty list.
-- **Admitted roster (#3) down/unset:** the inpatient tab loses autocomplete but
-  free-text entry (with canonical phone validation) still works.
+- **Treatment plans (#2) down/unset:** the dashboard shows a clear "not
+  available yet" notice instead of an empty patient list (plan data is merged
+  into the dashboard as of iteration 3).
+- **Admitted roster (#3) down/unset:** no UI impact — the inpatient tab was
+  removed; the route/secret/env remain wired but unsurfaced.
 
 ## Verification after each sibling deploy
 

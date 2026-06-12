@@ -1,15 +1,17 @@
 :root {
-  --bg:        #0b0a1f;  --bg-elev: #141233;  --panel: #1d1a44;  --panel-2: #272153;
-  --border:    #4a3f8f;  --text: #ffffff;     --text-soft: #efecff;  --muted: #c5bfe6;
-  --accent:    #8b7cf6;  --accent-2: #a78bfa; --accent-deep: #5b4bc4;
+  --bg:        #16263d;  --bg-elev: #1d3252;  --panel: #243a5c;  --panel-2: #2d456a;
+  --border:    #3c557d;  --text: #ffffff;     --text-soft: #eef5fc;  --muted: #b9c8de;
+  --accent:    #38bdf8;  --accent-2: #7dd3fc; --accent-deep: #0284c7;
   --red:       #ff7676;  --amber: #f2c355;
-  --shadow:    0 10px 26px rgba(0,0,0,0.5);
+  --shadow:    0 10px 26px rgba(0,0,0,0.4);
 
-  /* The component CSS below is carried over from ezone-outpatient verbatim and
-     references --green / --green-2 / --green-deep. Per the spec we keep that
-     component CSS unchanged and only remap the accent token: the legacy names
-     are aliased to the indigo accent so everything renders violet. The
-     .chip-paid/partial/unpaid semantic colors are left untouched further down. */
+  /* CYAN/SKY accent keeps this app visually distinct from the indigo dashboard
+     app. ITERATION 3 lightened the navy base from near-black to a comfortable
+     slate-blue (the iteration-2 navy was too dark to use comfortably); the dark
+     RTL theme and component structure are otherwise unchanged. The component CSS
+     below references --green / --green-2 / --green-deep (carried over verbatim);
+     those legacy names are aliased to the cyan accent so everything renders
+     sky-blue. The .chip-paid/partial/unpaid semantic colors are left untouched. */
   --green:      var(--accent);
   --green-2:    var(--accent-2);
   --green-deep: var(--accent-deep);
@@ -20,7 +22,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #1a1640 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #1f4063 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -47,7 +49,7 @@ button, input, select, textarea {
 .btn:hover { background: var(--panel-2); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #160d2e; font-weight: 600; }
+.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #04212e; font-weight: 600; }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { background: transparent; }
 .btn-danger { background: transparent; border-color: #6b2a2a; color: #ff9b9b; }
@@ -56,7 +58,7 @@ button, input, select, textarea {
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #1a1640, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #1f4063, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -223,7 +225,7 @@ button, input, select, textarea {
 .status-badge {
   font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
 }
-.status-active { background: #2a2065; color: var(--green-2); border-color: var(--green-deep); }
+.status-active { background: #0c2c3f; color: var(--green-2); border-color: var(--green-deep); }
 .status-pause { background: #3a310f; color: var(--amber); border-color: #5a4818; }
 .status-done { background: #3a0f10; color: #ef8484; border-color: #5a1818; }
 
@@ -250,7 +252,7 @@ button, input, select, textarea {
   font-size: 14px;
 }
 .form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus {
-  outline: none; border-color: var(--green); box-shadow: 0 0 0 2px rgba(139, 124, 246, 0.30);
+  outline: none; border-color: var(--green); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.30);
 }
 .checkgroup {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
@@ -288,6 +290,8 @@ button, input, select, textarea {
 }
 .toast.error { border-color: #6b2a2a; color: #ff9b9b; }
 
+/* One editor capability: any editor can assign AND schedule. Edit controls are
+   hidden from plain viewers. */
 body.viewer .edit-only { display: none !important; }
 
 /* ===== Billing ===== */
@@ -643,6 +647,46 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   border: 1px solid var(--border);
   flex-shrink: 0;
 }
-.charge-status-paid    { background: #2a2065; color: var(--green-2); border-color: var(--green-deep); }
+.charge-status-paid    { background: #0c2c3f; color: var(--green-2); border-color: var(--green-deep); }
+
+/* ===== Iteration 2 — scheduling UI ===== */
+.btn-sm { padding: 4px 10px; font-size: 0.82rem; }
+.muted { color: var(--muted); font-size: 0.85em; }
+.modal-card-wide { max-width: 620px; }
+
+/* patient dashboard + schedule row actions */
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; width: 100%; }
+.alert-row {
+  width: 100%; margin-top: 6px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(255, 118, 118, 0.12); border: 1px solid #6b2a2a; color: #ffcccc;
+  font-weight: 600; font-size: 0.88rem;
+}
+
+/* session cards in the schedule tab */
+.sess-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; margin-bottom: 4px; }
+.sess-date { font-weight: 700; color: var(--text); }
+.sess-therapist { color: var(--muted); margin-inline-start: auto; }
+.sess-patients { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.sess-patient {
+  padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.sess-pname { font-weight: 600; }
+.att-btns { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+
+/* per-patient gate results inside the schedule modal */
+.gate-patient {
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03); margin-bottom: 8px;
+}
+.gate-pname { font-weight: 600; margin-bottom: 6px; }
+.gate-approval { display: flex; gap: 8px; flex-wrap: wrap; }
+.gate-approval select, .gate-approval input { flex: 1; min-width: 140px; }
+.gate-flag { color: #ffd9a8; font-size: 0.88rem; }
+
+/* patient rows in the schedule modal */
+.patient-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.patient-row .patient-name { flex: 2; }
+.patient-row .patient-phone { flex: 1; min-width: 130px; }
 .charge-status-partial { background: #3a310f; color: var(--amber); border-color: #5a4818; }
 .charge-status-unpaid  { background: #3a0f10; color: #ef8484; border-color: #5a1818; }
