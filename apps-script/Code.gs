@@ -11,12 +11,14 @@
  *   - Schedule        one row PER PATIENT PER SESSION (group sessions share a
  *                     sessionId; each row keeps its own gate + attendance).
  *   - Approvals       append-only audit of every debtor approval (Ron/Sandra).
- *   - Patients        per-patient intake record keyed by phone: assigned
- *                     therapist (set by Vered at intake), the MAIN treatment
- *                     plan (type + weekly frequency, editable later) and origin
- *                     (where the patient came from + optional still-admitted
- *                     house). The active-outpatient roster itself comes from the
- *                     outpatient sibling; this sheet only layers local extras on top.
+ *   - Patients        per-patient intake record keyed by phone: identity +
+ *                     origin (where the patient came from + optional still-
+ *                     admitted house). The active-outpatient roster itself comes
+ *                     from the outpatient sibling; this sheet only layers local
+ *                     extras on top.
+ *   - Assignments     one row per (patient, therapist, plan). A patient may have
+ *                     MULTIPLE parallel treatments/therapists; therapist + plan
+ *                     (type + weekly frequency) stay editable.
  *   - Therapists      editable list {name, active} — feeds the dropdown.
  *   - TreatmentTypes  editable list {name, active, isGroup} — feeds the dropdown.
  *
@@ -59,14 +61,22 @@ var APPROVALS_HEADERS = [
   'note', 'amountOwed', 'approvedAt'
 ];
 
-/* Per-patient record extras, keyed by canonical phone. This is Vered's intake
- * record: identity + assignment + the MAIN treatment plan (type + weekly
- * frequency, editable later) + origin (where the patient came from, with an
- * optional "still admitted" + which house). */
+/* Per-patient intake record keyed by canonical phone: identity + origin (where
+ * the patient came from, with an optional "still admitted" + which house). The
+ * therapist assignment(s) and treatment plan(s) live in the Assignments sheet —
+ * a patient can have MULTIPLE parallel treatments/therapists, all editable. */
 var PATIENTS_HEADERS = [
-  'phone', 'name', 'assignedTherapist',
-  'mainTreatmentType', 'frequencyPerWeek',
+  'phone', 'name',
   'origin', 'stillAdmitted', 'admittedHouse',
+  'active', 'updatedBy', 'updated'
+];
+
+/* One row per (patient, therapist, treatment plan). A patient may have several
+ * active rows — multiple parallel treatments with multiple therapists. `id` is
+ * the client-generated upsert key; `patientPhone` links to Patients/roster.
+ * Retiring a plan sets active=false (the row stays for history). */
+var ASSIGNMENTS_HEADERS = [
+  'id', 'patientPhone', 'therapist', 'treatmentType', 'frequencyPerWeek',
   'active', 'updatedBy', 'updated'
 ];
 
@@ -201,6 +211,7 @@ function _getData() {
   var schSh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
   var aSh = _ensureSheet('Approvals', APPROVALS_HEADERS);
   var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
+  var asSh = _ensureSheet('Assignments', ASSIGNMENTS_HEADERS);
   var thSh = _ensureSeededList('Therapists', THERAPISTS_HEADERS,
     THERAPISTS_SEED.map(function (n) { return { name: n, active: 'true' }; }));
   var ttSh = _ensureSeededList('TreatmentTypes', TREATMENT_TYPES_HEADERS, TREATMENT_TYPES_SEED);
@@ -209,6 +220,7 @@ function _getData() {
     schedule: _readAll(schSh, SCHEDULE_HEADERS),
     approvals: _readAll(aSh, APPROVALS_HEADERS),
     patients: _readAll(pSh, PATIENTS_HEADERS),
+    assignments: _readAll(asSh, ASSIGNMENTS_HEADERS),
     therapists: _readAll(thSh, THERAPISTS_HEADERS),
     treatmentTypes: _readAll(ttSh, TREATMENT_TYPES_HEADERS)
   };
@@ -556,9 +568,9 @@ function _syncPending() {
   }
 }
 
-// Upsert a patient-record extras row, keyed by canonical phone. Holds the
-// intake record: assignment + main treatment plan (type + weekly frequency,
-// editable later) + origin / still-admitted house. Not debt-gated.
+// Upsert a patient intake record, keyed by canonical phone: identity + origin.
+// The therapist assignment(s) + treatment plan(s) live in Assignments, so this
+// no longer carries a single assignedTherapist/plan. Not debt-gated.
 function _savePatient(payload) {
   var p = payload && payload.patient;
   if (!p || typeof p !== 'object') return { ok: false, error: 'missing_patient' };
@@ -571,9 +583,6 @@ function _savePatient(payload) {
     var rec = {
       phone: phone,
       name: p.name || '',
-      assignedTherapist: p.assignedTherapist || '',
-      mainTreatmentType: p.mainTreatmentType || '',
-      frequencyPerWeek: (p.frequencyPerWeek === 0 || p.frequencyPerWeek) ? String(p.frequencyPerWeek) : '',
       origin: p.origin || '',
       stillAdmitted: p.stillAdmitted ? 'true' : '',
       admittedHouse: p.stillAdmitted ? (p.admittedHouse || '') : '',
@@ -583,6 +592,58 @@ function _savePatient(payload) {
     };
     var res = _upsertByKey(sh, PATIENTS_HEADERS, 'phone', rec);
     return { ok: true, patient: rec, created: !!res.created, updated: !!res.updated };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+// Upsert one assignment (patient ↔ therapist ↔ plan), keyed by id. A patient can
+// have several active assignments — multiple parallel treatments/therapists.
+// Both the therapist and the plan (type + weekly frequency) stay editable.
+function _saveAssignment(payload) {
+  var a = payload && payload.assignment;
+  if (!a || typeof a !== 'object') return { ok: false, error: 'missing_assignment' };
+  if (!a.id) return { ok: false, error: 'missing_id' };
+  var phone = String(a.patientPhone == null ? '' : a.patientPhone).trim();
+  if (!phone) return { ok: false, error: 'missing_phone' };
+  var lock = LockService.getScriptLock();
+  lock.tryLock(10000);
+  try {
+    var sh = _ensureSheet('Assignments', ASSIGNMENTS_HEADERS);
+    var rec = {
+      id: String(a.id),
+      patientPhone: phone,
+      therapist: a.therapist || '',
+      treatmentType: a.treatmentType || '',
+      frequencyPerWeek: (a.frequencyPerWeek === 0 || a.frequencyPerWeek) ? String(a.frequencyPerWeek) : '',
+      active: (a.active === false || a.active === 'false') ? 'false' : 'true',
+      updatedBy: a.updatedBy || '',
+      updated: a.updated || new Date().toISOString()
+    };
+    var res = _upsertByKey(sh, ASSIGNMENTS_HEADERS, 'id', rec);
+    return { ok: true, assignment: rec, created: !!res.created, updated: !!res.updated };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+function _removeAssignment(id) {
+  if (!id) return { ok: false, error: 'missing_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = _ensureSheet('Assignments', ASSIGNMENTS_HEADERS);
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'not_found' };
+    var idIdx = ASSIGNMENTS_HEADERS.indexOf('id');
+    var ids = sh.getRange(2, idIdx + 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === String(id)) {
+        sh.deleteRow(i + 2);
+        return { ok: true, removed: true, id: id };
+      }
+    }
+    return { ok: false, error: 'not_found' };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -639,6 +700,11 @@ function doPost(e) {
     if (action === 'markAttendance') return _json(_markAttendance(payload));
     if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
+    if (action === 'saveAssignment') return _json(_saveAssignment(payload));
+    if (action === 'removeAssignment') {
+      var aid = payload.id || (payload.assignment && payload.assignment.id) || '';
+      return _json(_removeAssignment(aid));
+    }
     if (action === 'removeSchedule') {
       var id = payload.id || (payload.row && payload.row.id) || '';
       return _json(_removeSchedule(id));
