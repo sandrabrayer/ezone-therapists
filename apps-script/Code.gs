@@ -27,9 +27,13 @@
  * Setup:
  *  1. Create a Google Sheet named "E-ZONE Therapists".
  *  2. Extensions → Apps Script → paste this as Code.gs.
- *  3. (Server-authoritative debt re-check) Project Settings → Script Properties:
- *       OUTPATIENT_SHEETS_URL = the ezone-outpatient /exec URL
- *       DEBT_STATUS_SECRET    = the shared getDebtStatus secret
+ *  3. Project Settings → Script Properties:
+ *       OUTPATIENT_SHEETS_URL  = the ezone-outpatient /exec URL
+ *       DEBT_STATUS_SECRET     = the shared getDebtStatus secret (debt re-check)
+ *       TREATMENT_GIVEN_SECRET = the shared recordTreatmentGiven secret — the
+ *                                did-it-happen WRITE-BACK to outpatient. Until set
+ *                                (and the outpatient endpoint deployed), marks are
+ *                                saved locally and left syncStatus='pending'.
  *  4. Deploy → New deployment → Web app (Execute as: Me; Access: Anyone w/ link).
  *  5. Copy the /exec URL and set it as SHEETS_URL in the Node server env.
  */
@@ -44,7 +48,8 @@ var SCHEDULE_HEADERS = [
   'attendance', 'attendanceMarkedAt',
   'gateStatus', 'gateReason', 'amountOwed',
   'approverId', 'approverName', 'approvalNote', 'approvedAt',
-  'created'
+  'created',
+  'syncStatus', 'syncedAt'
 ];
 
 /* Append-only audit trail of every debtor approval. */
@@ -85,6 +90,7 @@ var TREATMENT_TYPES_SEED = [
   { name: 'פרטני EMDR', active: 'true', isGroup: 'false' },
   { name: 'טיפול משפחתי', active: 'true', isGroup: 'false' },
   { name: 'קבוצה',      active: 'true', isGroup: 'true' },
+  { name: 'ליווי יומי בקהילה', active: 'true', isGroup: 'false' },
   { name: 'פסיכודינמי', active: 'true', isGroup: 'false' },
   { name: 'פסיכותרפי ממוקד טראומה', active: 'true', isGroup: 'false' },
   { name: 'עיסוי טיפולי', active: 'true', isGroup: 'false' },
@@ -389,17 +395,162 @@ function _markAttendance(payload) {
     var lastRow = sh.getLastRow();
     if (lastRow < 2) return { ok: false, error: 'not_found' };
     var idIdx = SCHEDULE_HEADERS.indexOf('id');
+    var sidIdx = SCHEDULE_HEADERS.indexOf('sessionId');
     var attIdx = SCHEDULE_HEADERS.indexOf('attendance');
     var atIdx = SCHEDULE_HEADERS.indexOf('attendanceMarkedAt');
-    var ids = sh.getRange(2, idIdx + 1, lastRow - 1, 1).getValues();
-    for (var i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]) === String(id)) {
-        sh.getRange(i + 2, attIdx + 1, 1, 1).setValues([[attendance]]);
-        sh.getRange(i + 2, atIdx + 1, 1, 1).setValues([[payload.markedAt || new Date().toISOString()]]);
-        return { ok: true, id: id, attendance: attendance };
-      }
+    var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
+    var found = -1;
+    for (var i = 0; i < grid.length; i++) {
+      if (String(grid[i][idIdx]) === String(id)) { found = i; break; }
     }
-    return { ok: false, error: 'not_found' };
+    if (found < 0) return { ok: false, error: 'not_found' };
+
+    // LOCAL SAVE IS THE SOURCE OF TRUTH — always persist the mark first.
+    sh.getRange(found + 2, attIdx + 1, 1, 1).setValues([[attendance]]);
+    sh.getRange(found + 2, atIdx + 1, 1, 1).setValues([[payload.markedAt || new Date().toISOString()]]);
+
+    // Then sync the whole session to outpatient (best-effort). Any failure
+    // leaves the row(s) 'pending' for a later retry — never dropped.
+    var sessionId = String(grid[found][sidIdx] || id);
+    var status = _syncSession(sh, sessionId);
+    return { ok: true, id: id, attendance: attendance, syncStatus: status };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+/* ===== Outpatient write-back (TreatmentsGiven) =====
+ * When attendance changes, sync the ENTIRE session to outpatient so the
+ * idempotent records reflect the current truth. Mirrors public/writeback.js
+ * (buildSessionWriteback); any change MUST update both. Therapist pay: one
+ * record per non-group patient, but ONE record at the group rate for a קבוצה
+ * session (keyed by sessionId), with per-patient attendance still captured. */
+
+function _isGroupTypeName(typeName) {
+  var name = String(typeName == null ? '' : typeName).trim();
+  if (!name) return false;
+  var ttSh = _ensureSeededList('TreatmentTypes', TREATMENT_TYPES_HEADERS, TREATMENT_TYPES_SEED);
+  var rows = _readAll(ttSh, TREATMENT_TYPES_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].name == null ? '' : rows[i].name).trim() === name) {
+      var f = rows[i].isGroup;
+      if (f !== undefined && f !== null && f !== '') {
+        var s = String(f).trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'yes' || s === 'כן';
+      }
+      return name === 'קבוצה';
+    }
+  }
+  return name === 'קבוצה';
+}
+
+// Mirror of public/writeback.js buildSessionWriteback.
+function _buildSessionWriteback(rows, isGroup) {
+  rows = (rows || []).filter(function (r) { return r; });
+  if (!rows.length) return null;
+  var head = rows[0];
+  var sessionId = head.sessionId || head.id;
+  var anyGiven = rows.some(function (r) { return String(r.attendance || '') === 'occurred'; });
+  var records = rows.map(function (r) {
+    return {
+      treatmentId: r.id, sessionId: sessionId, therapist: head.therapist,
+      patientName: r.patientName, patientPhone: r.patientPhone, date: r.scheduledDate,
+      treatmentType: head.treatmentType, location: head.location,
+      attendance: String(r.attendance || ''), given: String(r.attendance || '') === 'occurred',
+      isGroup: isGroup, isPayment: !isGroup, rate: isGroup ? 'group_member' : 'individual'
+    };
+  });
+  if (isGroup) {
+    records.push({
+      treatmentId: sessionId, sessionId: sessionId, therapist: head.therapist,
+      patientName: '', patientPhone: '', date: head.scheduledDate,
+      treatmentType: head.treatmentType, location: head.location,
+      attendance: anyGiven ? 'occurred' : '', given: anyGiven,
+      isGroup: true, isPayment: true, rate: 'group'
+    });
+  }
+  return { sessionId: sessionId, isGroup: isGroup, records: records };
+}
+
+// POST the records to the outpatient recordTreatmentGiven endpoint with the
+// shared secret. Idempotent on the outpatient side (upsert by treatmentId).
+// Returns 'synced' or 'pending' (never throws). Fails to 'pending' when the
+// endpoint is unconfigured or unreachable so the local mark is never lost.
+function _postTreatmentsGiven(records) {
+  if (!records || !records.length) return 'synced';
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('TREATMENT_GIVEN_SECRET');
+  if (!url || !secret) return 'pending';
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=recordTreatmentGiven&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({ records: records }),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return 'pending';
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false) return 'pending';
+    return 'synced';
+  } catch (e) {
+    return 'pending';
+  }
+}
+
+// Build + send the write-back for one session and stamp syncStatus/syncedAt on
+// every row of that session. Returns the status. `sh` is the open Schedule sheet.
+function _syncSession(sh, sessionId) {
+  var rows = _readAll(sh, SCHEDULE_HEADERS).filter(function (r) {
+    return String(r.sessionId || r.id) === String(sessionId);
+  });
+  if (!rows.length) return 'synced';
+  var isGroup = _isGroupTypeName(rows[0].treatmentType);
+  var wb = _buildSessionWriteback(rows, isGroup);
+  var status = _postTreatmentsGiven(wb ? wb.records : []);
+  _stampSessionSync(sh, sessionId, status);
+  return status;
+}
+
+// Set syncStatus + syncedAt on every Schedule row of the session.
+function _stampSessionSync(sh, sessionId, status) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  var sidIdx = SCHEDULE_HEADERS.indexOf('sessionId');
+  var idIdx = SCHEDULE_HEADERS.indexOf('id');
+  var ssIdx = SCHEDULE_HEADERS.indexOf('syncStatus');
+  var saIdx = SCHEDULE_HEADERS.indexOf('syncedAt');
+  var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
+  var now = new Date().toISOString();
+  for (var i = 0; i < grid.length; i++) {
+    var sid = String(grid[i][sidIdx] || grid[i][idIdx]);
+    if (sid === String(sessionId)) {
+      sh.getRange(i + 2, ssIdx + 1, 1, 1).setValues([[status]]);
+      if (status === 'synced') sh.getRange(i + 2, saIdx + 1, 1, 1).setValues([[now]]);
+    }
+  }
+}
+
+// Retry every session that still has a 'pending' row. Idempotent.
+function _syncPending() {
+  var lock = LockService.getScriptLock();
+  lock.tryLock(10000);
+  try {
+    var sh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    var rows = _readAll(sh, SCHEDULE_HEADERS);
+    var seen = {};
+    var sessions = [];
+    rows.forEach(function (r) {
+      if (String(r.syncStatus || '') === 'pending') {
+        var sid = String(r.sessionId || r.id);
+        if (!seen[sid]) { seen[sid] = true; sessions.push(sid); }
+      }
+    });
+    var results = sessions.map(function (sid) { return { sessionId: sid, status: _syncSession(sh, sid) }; });
+    var stillPending = results.filter(function (r) { return r.status === 'pending'; }).length;
+    return { ok: true, attempted: sessions.length, stillPending: stillPending, results: results };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -486,6 +637,7 @@ function doPost(e) {
     if (action === 'getData') return _json(_getData());
     if (action === 'saveSession') return _json(_saveSession(payload));
     if (action === 'markAttendance') return _json(_markAttendance(payload));
+    if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
     if (action === 'removeSchedule') {
       var id = payload.id || (payload.row && payload.row.id) || '';
