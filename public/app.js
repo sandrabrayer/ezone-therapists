@@ -360,7 +360,7 @@
   }
 
   function pendingSyncCount() {
-    return state.schedule.filter(function (r) { return String(r.syncStatus || '') === 'pending' && r.attendance; }).length;
+    return state.schedule.filter(function (r) { return String(r.syncStatus || '') === 'pending'; }).length;
   }
   function syncBadge(r) {
     if (!r.attendance) return '';
