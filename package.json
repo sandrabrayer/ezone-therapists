@@ -1,7 +1,7 @@
 {
   "name": "ezone-therapists",
   "version": "1.0.0",
-  "description": "E-ZONE Therapists — therapists self-schedule follow-up treatments for active outpatients (type/location/date), mark attendance, and are debt-gated per patient (incl. groups). Node.js + Express, Google Sheets via Apps Script.",
+  "description": "E-ZONE Therapists — patient dashboard + assignment workflow: register/assign patients with a main treatment plan, schedule follow-up treatments (type/location/date), mark attendance, debt-gated per patient (incl. groups). Node.js + Express, Google Sheets via Apps Script.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

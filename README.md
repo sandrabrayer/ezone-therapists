@@ -10,23 +10,33 @@ Same stack as the E-ZONE siblings (`ezone-outpatient`, `ezone-managers`,
 `ezone-staffing`, `E-Zone-Dashboard`): Node.js + Express serving a vanilla
 HTML/JS frontend, Google Sheets via an Apps Script Web App (`doGet`/`doPost`),
 deployed on Railway. The accent is **cyan/sky** (distinct from the indigo
-dashboard app); iteration-2 redesign notes are in
-[`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md).
+dashboard app) on a comfortable slate-blue base. Redesign notes:
+[`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md) (iteration
+2) and [`CHANGELOG-iteration3-restructure.md`](CHANGELOG-iteration3-restructure.md).
 
 ## Tabs
 
-1. **מטופלים פעילים** — active-outpatients dashboard. Each patient shows the
-   assigned therapist (set by Vered at intake), debt status, a "came from
-   inpatient" badge, and any post-scheduling debt alert. Editors edit the
-   patient record and schedule treatments from here.
-2. **לוח טיפולים** — scheduled treatments, grouped by session, with per-patient
-   attendance marking (occurred / didn't occur). Scheduling is gated by the
-   **debt gate** (see below), per patient.
-3. **תוכנית טיפול** — view each outpatient's treatment plan (read-only).
+1. **דשבורד מטופלים** — active patients with their treatment plan. Each card
+   shows the assigned therapist, the main treatment type + weekly frequency
+   (preferring the locally-set plan, falling back to the outpatient roster), debt
+   status, a "still admitted" badge, origin, and any post-scheduling debt alert.
+   Editors register/edit a patient and schedule from here.
+2. **שיבוץ מטפלים** — the workflow: assign a therapist + set the main treatment
+   plan (editable later), schedule a treatment (when + where + type), and mark
+   the per-treatment did-it-happen status. Scheduling is gated by the **debt
+   gate** (see below), per patient; debt alerts surface here too.
 
-The old **מטופלים באשפוז** (inpatient) tab is removed — inpatient treatment is
-handled in another app. Whether a patient *came from* inpatient is now a flag on
-the patient record (with admitted location + outpatient start date).
+The old **מטופלים באשפוז** (inpatient) tab is gone — inpatient treatment is
+handled in another app. Where a patient *came from* is now an **origin** field on
+the patient record, with an optional "still admitted" + which house. The separate
+treatment-plan tab is merged into the dashboard.
+
+### Intake — «רישום מטופל חדש»
+
+Vered registers a new patient in one form: identity (name + canonical phone),
+origin (where they came from / still admitted + which house), main treatment type,
+weekly frequency, and the assigned therapist. The same form edits the record
+later — the main plan is **editable** after it is set.
 
 ## Scheduling, lists & groups
 
@@ -45,6 +55,10 @@ the patient record (with admitted location + outpatient start date).
 - **Post-scheduling debt alert** — debt is re-checked live on every load/refresh
   for upcoming, unmarked treatments, so a patient who falls into debt *after*
   booking is surfaced on the dashboard and the affected schedule row.
+- **Display relabel** — the legacy outpatient service term **מרכז יום** is shown
+  as **ליווי יומי בקהילה** (`Scheduling.displayServiceType`); the stored value is
+  untouched. The outpatient SOURCE data should eventually adopt the new term too
+  (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
 
 ## Phone — one enforced format
 
@@ -114,19 +128,18 @@ patches + tests, in [`docs/`](docs/):
 ## Access
 
 PIN screen on load; the choice is stored in `sessionStorage` for the session
-only. Three capability levels, kept **separate**:
+only. **One editor code + viewer** — no per-role gating:
 
 | Role | PIN | Can do |
 | ---- | --- | ------ |
-| **מטפל/ת** (therapist / editor) | `5555` | schedule treatments, mark attendance |
-| **משבצת** (assigner — Vered) | `6060` | assign patients to therapists at intake + edit patient records (came-from-inpatient details) |
+| **עורך** (editor) | `5555` | register/assign patients, set & edit the plan, schedule, mark attendance |
 | **צופה** (viewer) | "המשך כצופה בלבד" | read-only |
 
-The assigner is **not** an editor: Vered assigns patients to therapists but does
-not schedule, and therapists schedule for their assigned patients but cannot
-reassign. Both PINs are client-side UX gating (the real enforcement is the
-server-authoritative debt gate); change them in `public/app.js`
-(`EDITOR_PIN` / `ASSIGNER_PIN`).
+The work order — Vered assigns first, the therapist schedules after — is
+**procedure, not software-enforced**: therapists are paid per treatment, so they
+self-enforce getting properly assigned/approved. Any editor can therefore both
+assign and schedule. The PIN is client-side UX gating (the real enforcement is
+the server-authoritative debt gate); change it in `public/app.js` (`EDITOR_PIN`).
 
 ## Local development
 

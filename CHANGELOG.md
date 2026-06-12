@@ -1,5 +1,14 @@
 # Changelog
 
+## Iteration 3 — restructure from real-use feedback
+
+2 tabs (דשבורד מטופלים + שיבוץ מטפלים, Plans merged into the dashboard), access
+simplified to one editor code + viewer (assigner role removed), full
+«רישום מטופל חדש» intake with origin/still-admitted + an editable main plan,
+therapist-dropdown + edit-button fixes, מרכז יום→ליווי יומי בקהילה display
+relabel, expanded Sheet lists, and a lighter slate-blue theme. Full notes:
+[`CHANGELOG-iteration3-restructure.md`](CHANGELOG-iteration3-restructure.md).
+
 ## Iteration 2 — scheduling redesign
 
 Redesigned from treatment-logging into a scheduling app (self-scheduled
