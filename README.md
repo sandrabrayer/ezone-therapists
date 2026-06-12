@@ -21,10 +21,28 @@ dashboard app) on a comfortable slate-blue base. Redesign notes:
    (preferring the locally-set plan, falling back to the outpatient roster), debt
    status, a "still admitted" badge, origin, and any post-scheduling debt alert.
    Editors register/edit a patient and schedule from here.
-2. **שיבוץ מטפלים** — the workflow: assign a therapist + set the main treatment
-   plan (editable later), schedule a treatment (when + where + type), and mark
-   the per-treatment did-it-happen status. Scheduling is gated by the **debt
-   gate** (see below), per patient; debt alerts surface here too.
+2. **שיבוץ מטפלים** — the workflow: a patient list (assign a therapist + set the
+   main treatment plan, editable later; a newly registered patient appears here
+   immediately) and the scheduled treatments (when + where + type) with
+   did-it-happen marking. Filterable by **therapist and by patient**. Scheduling
+   is gated by the **debt gate** (see below), per patient; debt alerts surface here.
+3. **המטפל שלי** — a therapist picks their name from the Therapists dropdown
+   (**no PIN** — friendly entry; the per-patient payment check deters false
+   reporting) and sees only their treatments, bucketed into *past-due-to-mark /
+   this week / upcoming*. Each is marked **happened / didn't happen** — this mark
+   is the **payment trigger** (no mark = no pay) and writes back to outpatient.
+
+### Did-it-happen → outpatient write-back
+
+Marking a treatment saves locally (**source of truth**) and the therapists Apps
+Script writes the result back to outpatient's new `recordTreatmentGiven` endpoint
+(shared-secret, the first cross-app **write**). It is **idempotent by treatment
+id** and re-sends the whole session, so unmarking/editing can't drift downstream
+pay. A **group (קבוצה) is one therapist-payment record at the group rate** (not
+one per patient), while per-patient attendance is still captured for billing. If
+outpatient is unreachable the row is left `syncStatus='pending'` and surfaced as
+"ממתין לסנכרון" with a **«סנכרן עכשיו»** retry — never dropped. See
+[`docs/outpatient-recordTreatmentGiven.patch.md`](docs/outpatient-recordTreatmentGiven.patch.md).
 
 The old **מטופלים באשפוז** (inpatient) tab is gone — inpatient treatment is
 handled in another app. Where a patient *came from* is now an **origin** field on
@@ -133,7 +151,12 @@ only. **One editor code + viewer** — no per-role gating:
 | Role | PIN | Can do |
 | ---- | --- | ------ |
 | **עורך** (editor) | `5555` | register/assign patients, set & edit the plan, schedule, mark attendance |
-| **צופה** (viewer) | "המשך כצופה בלבד" | read-only |
+| **צופה** (viewer) | "המשך כצופה בלבד" | read-only — **except** «המטפל שלי», where marking did-it-happen is open (no PIN) |
+
+The **המטפל שלי** tab is deliberately reachable without the editor PIN: a
+therapist enters as viewer, picks their name, and marks their own treatments. The
+mark is the payment trigger, and the per-patient debt/payment check (plus *no
+mark = no pay*) is what deters false reporting.
 
 The work order — Vered assigns first, the therapist schedules after — is
 **procedure, not software-enforced**: therapists are paid per treatment, so they

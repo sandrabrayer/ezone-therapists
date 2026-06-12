@@ -1,5 +1,14 @@
 # Changelog
 
+## Iteration 4 — personal view + did-it-happen + outpatient write-back
+
+New «המטפל שלי» tab (no-PIN per-therapist view, mark happened/didn't-happen →
+payment trigger), did-it-happen write-back to outpatient's new
+`recordTreatmentGiven` endpoint (idempotent, group=one therapist payment,
+offline-safe with «סנכרן עכשיו» retry), and four fixes (ליווי יומי בקהילה
+selectable, new patient flows to שיבוץ, filter by therapist+patient). Full notes:
+[`CHANGELOG-iteration4-personal-view-writeback.md`](CHANGELOG-iteration4-personal-view-writeback.md).
+
 ## Iteration 3 — restructure from real-use feedback
 
 2 tabs (דשבורד מטופלים + שיבוץ מטפלים, Plans merged into the dashboard), access
