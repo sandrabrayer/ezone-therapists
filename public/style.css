@@ -1,17 +1,17 @@
 :root {
-  --bg:        #08111c;  --bg-elev: #0e1b2b;  --panel: #13243a;  --panel-2: #1a3047;
-  --border:    #2f3d5e;  --text: #ffffff;     --text-soft: #e8f4fb;  --muted: #adc4d8;
+  --bg:        #16263d;  --bg-elev: #1d3252;  --panel: #243a5c;  --panel-2: #2d456a;
+  --border:    #3c557d;  --text: #ffffff;     --text-soft: #eef5fc;  --muted: #b9c8de;
   --accent:    #38bdf8;  --accent-2: #7dd3fc; --accent-deep: #0284c7;
   --red:       #ff7676;  --amber: #f2c355;
-  --shadow:    0 10px 26px rgba(0,0,0,0.5);
+  --shadow:    0 10px 26px rgba(0,0,0,0.4);
 
-  /* ITERATION 2 — accent changed from indigo to CYAN/SKY so this app is
-     visually distinct from the indigo dashboard app at a glance. The dark RTL
-     theme and component structure are unchanged; only the accent family moved.
-     The component CSS below references --green / --green-2 / --green-deep
-     (carried over verbatim); those legacy names are aliased to the cyan accent
-     so everything renders sky-blue. The .chip-paid/partial/unpaid semantic
-     colors are left untouched further down. */
+  /* CYAN/SKY accent keeps this app visually distinct from the indigo dashboard
+     app. ITERATION 3 lightened the navy base from near-black to a comfortable
+     slate-blue (the iteration-2 navy was too dark to use comfortably); the dark
+     RTL theme and component structure are otherwise unchanged. The component CSS
+     below references --green / --green-2 / --green-deep (carried over verbatim);
+     those legacy names are aliased to the cyan accent so everything renders
+     sky-blue. The .chip-paid/partial/unpaid semantic colors are left untouched. */
   --green:      var(--accent);
   --green-2:    var(--accent-2);
   --green-deep: var(--accent-deep);
@@ -22,7 +22,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #0d2436 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #1f4063 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -58,7 +58,7 @@ button, input, select, textarea {
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #0d2436, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #1f4063, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -290,12 +290,9 @@ button, input, select, textarea {
 }
 .toast.error { border-color: #6b2a2a; color: #ff9b9b; }
 
-/* Capability-gated controls. Schedule actions need the therapist (editor)
-   capability; assignment actions need the assigner (Vered) capability. Anything
-   still tagged .edit-only is hidden from plain viewers. */
+/* One editor capability: any editor can assign AND schedule. Edit controls are
+   hidden from plain viewers. */
 body.viewer .edit-only { display: none !important; }
-body:not(.can-schedule) .schedule-only { display: none !important; }
-body:not(.can-assign) .assign-only { display: none !important; }
 
 /* ===== Billing ===== */
 .billing-date-label {
