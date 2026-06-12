@@ -708,3 +708,9 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .mine-picker { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .mine-picker select { min-width: 200px; }
 .mine-row .att-btns { display: inline-flex; gap: 6px; }
+
+/* assignments modal — multiple therapists/plans per patient */
+.assignment-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.assignment-row .a-therapist { flex: 2; min-width: 120px; }
+.assignment-row .a-type { flex: 2; min-width: 130px; }
+.assignment-row .a-freq { flex: 0 0 90px; }
