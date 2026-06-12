@@ -16,27 +16,53 @@ dashboard app) on a comfortable slate-blue base. Redesign notes:
 
 ## Tabs
 
-1. **דשבורד מטופלים** — active patients with their treatment plan. Each card
-   shows the assigned therapist, the main treatment type + weekly frequency
-   (preferring the locally-set plan, falling back to the outpatient roster), debt
-   status, a "still admitted" badge, origin, and any post-scheduling debt alert.
-   Editors register/edit a patient and schedule from here.
-2. **שיבוץ מטפלים** — the workflow: assign a therapist + set the main treatment
-   plan (editable later), schedule a treatment (when + where + type), and mark
-   the per-treatment did-it-happen status. Scheduling is gated by the **debt
-   gate** (see below), per patient; debt alerts surface here too.
+1. **דשבורד מטופלים** — active patients with their treatment plan(s). A patient
+   may have **multiple parallel treatments with different therapists**; each card
+   shows all assigned therapists and plans (type + weekly frequency), debt status,
+   a "still admitted" badge, origin, and any post-scheduling debt alert. Editors
+   register/edit a patient and schedule from here. **«רישום מטופל חדש» lives only
+   here.**
+2. **שיבוץ מטפלים** — the workflow: a patient list where each patient's
+   assignments (therapist + plan) are added/edited/removed via the
+   **«שיבוץ ותוכנית»** modal (a newly registered patient appears here
+   immediately), plus the scheduled treatments (when + where + type) with
+   did-it-happen marking. Filterable by **therapist and by patient**. Scheduling
+   is gated by the **debt gate** (see below), per patient; debt alerts surface here.
+3. **המטופלים שלי** — a real third tab: the therapist picks their name from the
+   Therapists dropdown **inside the tab** (**no PIN** — friendly entry; the
+   per-patient payment check deters false reporting) and sees only their own
+   treatments in four buckets — **טיפולים שנקבעו / טיפולים קרובים / טיפולים שבוצעו
+   / טיפולים שנקבעו ולא בוצעו**. Each is marked **happened / didn't happen** —
+   this mark is the **payment trigger** (no mark = no pay) and writes back to
+   outpatient.
+
+### Did-it-happen → outpatient write-back
+
+Marking a treatment saves locally (**source of truth**) and the therapists Apps
+Script writes the result back to outpatient's new `recordTreatmentGiven` endpoint
+(shared-secret, the first cross-app **write**). It is **idempotent by treatment
+id** and re-sends the whole session, so unmarking/editing can't drift downstream
+pay. A **group (קבוצה) is one therapist-payment record at the group rate** (not
+one per patient), while per-patient attendance is still captured for billing. If
+outpatient is unreachable the row is left `syncStatus='pending'` and surfaced as
+"ממתין לסנכרון" with a **«סנכרן עכשיו»** retry — never dropped. See
+[`docs/outpatient-recordTreatmentGiven.patch.md`](docs/outpatient-recordTreatmentGiven.patch.md).
 
 The old **מטופלים באשפוז** (inpatient) tab is gone — inpatient treatment is
 handled in another app. Where a patient *came from* is now an **origin** field on
 the patient record, with an optional "still admitted" + which house. The separate
 treatment-plan tab is merged into the dashboard.
 
-### Intake — «רישום מטופל חדש»
+### Intake — «רישום מטופל חדש» (dashboard only)
 
 Vered registers a new patient in one form: identity (name + canonical phone),
-origin (where they came from / still admitted + which house), main treatment type,
-weekly frequency, and the assigned therapist. The same form edits the record
-later — the main plan is **editable** after it is set.
+origin (where they came from / still admitted + which house), and an **optional
+initial assignment** (therapist + treatment type + weekly frequency). The patient
+then flows to **שיבוץ מטפלים**, where assignments are fully editable — a patient
+can hold several parallel treatments/therapists, and both the plan (type +
+frequency) and the therapist are editable after being set (stored one row per
+assignment in the `Assignments` sheet). Editing an existing patient from the
+dashboard updates identity + origin; assignments are managed in שיבוץ.
 
 ## Scheduling, lists & groups
 
@@ -94,8 +120,9 @@ approver, note, timestamp) — see [`public/approval.js`](public/approval.js).
 ## Architecture / data sources
 
 This app has its **own** Google Sheet — `Schedule` (one row per patient per
-session), `Approvals`, `Patients` (per-patient extras keyed by phone), and the
-editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
+session), `Approvals`, `Patients` (identity + origin, keyed by phone),
+`Assignments` (one row per patient↔therapist↔plan, so a patient can have several),
+and the editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
 projections through server-side proxy routes — the browser only ever calls
 relative `/api/...` URLs and never sees a secret:
 
@@ -133,7 +160,12 @@ only. **One editor code + viewer** — no per-role gating:
 | Role | PIN | Can do |
 | ---- | --- | ------ |
 | **עורך** (editor) | `5555` | register/assign patients, set & edit the plan, schedule, mark attendance |
-| **צופה** (viewer) | "המשך כצופה בלבד" | read-only |
+| **צופה** (viewer) | "המשך כצופה בלבד" | read-only — **except** «המטופלים שלי», where marking did-it-happen is open (no PIN) |
+
+The **המטופלים שלי** tab is deliberately reachable without the editor PIN: a
+therapist enters as viewer, picks their name, and marks their own treatments. The
+mark is the payment trigger, and the per-patient debt/payment check (plus *no
+mark = no pay*) is what deters false reporting.
 
 The work order — Vered assigns first, the therapist schedules after — is
 **procedure, not software-enforced**: therapists are paid per treatment, so they

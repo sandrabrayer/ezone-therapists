@@ -1,5 +1,22 @@
 # Changelog
 
+## Iteration 5 — structural fixes from real use
+
+«המטופלים שלי» becomes a real third tab (name-picker removed from the global
+header) with four labeled buckets; multiple parallel treatments/therapists per
+patient via a new `Assignments` sheet + «שיבוץ ותוכנית» editor; «רישום מטופל חדש»
+is dashboard-only and flows to שיבוץ; label fixes. Full notes:
+[`CHANGELOG-iteration5-structural-fixes.md`](CHANGELOG-iteration5-structural-fixes.md).
+
+## Iteration 4 — personal view + did-it-happen + outpatient write-back
+
+New «המטפל שלי» tab (no-PIN per-therapist view, mark happened/didn't-happen →
+payment trigger), did-it-happen write-back to outpatient's new
+`recordTreatmentGiven` endpoint (idempotent, group=one therapist payment,
+offline-safe with «סנכרן עכשיו» retry), and four fixes (ליווי יומי בקהילה
+selectable, new patient flows to שיבוץ, filter by therapist+patient). Full notes:
+[`CHANGELOG-iteration4-personal-view-writeback.md`](CHANGELOG-iteration4-personal-view-writeback.md).
+
 ## Iteration 3 — restructure from real-use feedback
 
 2 tabs (דשבורד מטופלים + שיבוץ מטפלים, Plans merged into the dashboard), access

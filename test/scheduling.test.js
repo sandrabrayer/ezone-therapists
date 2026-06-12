@@ -171,3 +171,43 @@ test('evaluateGroup: lookup failure flags every patient (never fail open)', () =
   assert.equal(results[0].gate.decision, 'flag');
   assert.equal(results[0].gate.reason, 'lookup_failed');
 });
+
+// --- «המטופלים שלי» four buckets -------------------------------------------
+
+const TODAY = '2026-06-12';
+
+test('bucketMine: partitions into the four labeled buckets', () => {
+  const rows = [
+    { id: 'a', attendance: 'occurred', scheduledDate: '2026-06-01' },          // performed
+    { id: 'b', attendance: 'missed',   scheduledDate: '2026-06-01' },          // not performed
+    { id: 'c', attendance: '',         scheduledDate: '2026-06-10' },          // scheduled (past, unmarked)
+    { id: 'd', attendance: '',         scheduledDate: TODAY },                 // scheduled (today)
+    { id: 'e', attendance: '',         scheduledDate: '2026-06-20' }           // upcoming (future)
+  ];
+  const b = Scheduling.bucketMine(rows, TODAY);
+  assert.deepEqual(b.performed.map((r) => r.id), ['a']);
+  assert.deepEqual(b.notPerformed.map((r) => r.id), ['b']);
+  assert.deepEqual(b.scheduled.map((r) => r.id), ['c', 'd']);
+  assert.deepEqual(b.upcoming.map((r) => r.id), ['e']);
+});
+
+test('bucketMine: empty / missing dates land in scheduled, not upcoming', () => {
+  const b = Scheduling.bucketMine([{ id: 'x', attendance: '', scheduledDate: '' }], TODAY);
+  assert.deepEqual(b.scheduled.map((r) => r.id), ['x']);
+  assert.equal(b.upcoming.length, 0);
+});
+
+test('multiple parallel treatments per patient — different therapists bucket independently', () => {
+  // ONE patient (same phone) with two parallel treatments by two therapists.
+  const all = [
+    { id: 't1', patientPhone: '0501234567', therapist: 'כנרת', attendance: 'occurred', scheduledDate: '2026-06-05' },
+    { id: 't2', patientPhone: '0501234567', therapist: 'חנן',  attendance: '',         scheduledDate: '2026-06-20' }
+  ];
+  // Each therapist's «המטופלים שלי» view is filtered to their own treatments.
+  const kineret = Scheduling.bucketMine(all.filter((r) => r.therapist === 'כנרת'), TODAY);
+  const hanan   = Scheduling.bucketMine(all.filter((r) => r.therapist === 'חנן'), TODAY);
+  assert.deepEqual(kineret.performed.map((r) => r.id), ['t1']);
+  assert.equal(kineret.upcoming.length, 0);
+  assert.deepEqual(hanan.upcoming.map((r) => r.id), ['t2']);
+  assert.equal(hanan.performed.length, 0);
+});

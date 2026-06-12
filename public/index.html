@@ -25,9 +25,9 @@
       <nav class="tabs">
         <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
         <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
+        <button class="tab" data-view="mine">המטופלים שלי</button>
       </nav>
       <div class="topbar-right">
-        <span id="therapistChip" class="role-badge" title="מטפל/ת — לחצו לבחירה">—</span>
         <span id="roleBadge" class="role-badge">צופה</span>
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
         <button id="logoutBtn" class="btn btn-ghost">יציאה</button>
@@ -58,17 +58,49 @@
       <section id="view-workflow" class="view">
         <div class="toolbar">
           <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-          <button id="newPatientBtn2" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
+          <select id="workflowTherapistFilter" class="search filter-sel"><option value="">כל המטפלים</option></select>
           <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
         </div>
         <div class="kpis">
-          <div class="kpi"><div class="kpi-label">טיפולים שתוזמנו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
-          <div class="kpi"><div class="kpi-label">קרובים (טרם סומנו)</div><div id="kpiUpcoming" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">טיפולים שנקבעו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">טיפולים קרובים</div><div id="kpiUpcoming" class="kpi-value">0</div></div>
           <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiScheduleAlerts" class="kpi-value">0</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">מטופלים לשיבוץ ולקביעת טיפול</div>
+          <div id="assignList" class="billing-list"></div>
         </div>
         <div class="panel">
           <div class="panel-title">טיפולים מתוזמנים — קביעה וסימון ביצוע</div>
           <div id="scheduleList" class="billing-list"></div>
+        </div>
+      </section>
+
+      <!-- My treatments: friendly per-therapist view + did-it-happen marking -->
+      <section id="view-mine" class="view">
+        <div class="toolbar">
+          <label class="mine-picker">אני:
+            <select id="myTherapist"><option value="">— בחר/י את שמך —</option></select>
+          </label>
+          <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+        </div>
+        <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
+        <div id="mineEmpty" class="billing-empty" hidden>בחר/י את שמך כדי לראות את הטיפולים שלך.</div>
+        <div class="panel" id="mineScheduledPanel" hidden>
+          <div class="panel-title">טיפולים שנקבעו</div>
+          <div id="mineScheduled" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineUpcomingPanel" hidden>
+          <div class="panel-title">טיפולים קרובים</div>
+          <div id="mineUpcoming" class="billing-list"></div>
+        </div>
+        <div class="panel" id="minePerformedPanel" hidden>
+          <div class="panel-title">טיפולים שבוצעו</div>
+          <div id="minePerformed" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineNotPerformedPanel" hidden>
+          <div class="panel-title">טיפולים שנקבעו ולא בוצעו</div>
+          <div id="mineNotPerformed" class="billing-list"></div>
         </div>
       </section>
     </main>
@@ -132,20 +164,22 @@
             <input name="phone" inputmode="numeric" maxlength="10" placeholder="0501234567" required />
           </label>
 
-          <div class="form-section-title wide">שיוך ותוכנית טיפול</div>
-          <label>מטפל/ת אחראי/ת (שיוך)
-            <select name="assignedTherapist" id="patientTherapist">
-              <option value="">— לא שויך —</option>
-            </select>
-          </label>
-          <label>סוג טיפול עיקרי
-            <select name="mainTreatmentType" id="patientType">
-              <option value="">—</option>
-            </select>
-          </label>
-          <label>תדירות בשבוע
-            <input name="frequencyPerWeek" type="number" min="0" max="14" step="1" placeholder="לדוגמה 1" />
-          </label>
+          <div id="initialAssignmentSection" class="wide form-grid">
+            <div class="form-section-title wide">שיבוץ ראשוני (ניתן להוסיף/לערוך בלשונית «שיבוץ מטפלים»)</div>
+            <label>מטפל/ת אחראי/ת
+              <select name="assignedTherapist" id="patientTherapist">
+                <option value="">— לא שויך —</option>
+              </select>
+            </label>
+            <label>סוג טיפול
+              <select name="mainTreatmentType" id="patientType">
+                <option value="">—</option>
+              </select>
+            </label>
+            <label>תדירות בשבוע
+              <input name="frequencyPerWeek" type="number" min="0" max="14" step="1" placeholder="לדוגמה 1" />
+            </label>
+          </div>
 
           <div class="form-section-title wide">מקור הגעה</div>
           <label class="wide">מאיפה הגיע/ה
@@ -172,20 +206,17 @@
       </div>
     </div>
 
-    <!-- Therapist identity (who is logged in) -->
-    <div id="therapistModal" class="modal" hidden>
-      <div class="modal-card">
-        <div class="modal-title">מי המטפל/ת?</div>
-        <form id="therapistForm" class="form-grid">
-          <label class="wide">בחר/י את שמך
-            <select name="therapist" id="therapistSelect" required>
-              <option value="">—</option>
-            </select>
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary" id="therapistSubmit">המשך</button>
-          </div>
-        </form>
+    <!-- Manage a patient's assignments (multiple therapists/plans) -->
+    <div id="assignmentsModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title">שיבוץ מטפלים ותוכניות טיפול — <span id="assignmentsPatientName"></span></div>
+        <div class="muted" style="margin-bottom:8px">ניתן לשבץ כמה מטפלים/טיפולים במקביל לאותו מטופל/ת.</div>
+        <div id="assignmentRows"></div>
+        <button type="button" id="addAssignmentRowBtn" class="btn btn-ghost btn-sm">+ הוסף שיבוץ</button>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>סגירה</button>
+          <button type="button" class="btn btn-primary" id="assignmentsSave">שמירה</button>
+        </div>
       </div>
     </div>
   </div>
@@ -195,6 +226,7 @@
   <script src="approval.js?v=__BUILD__"></script>
   <script src="scheduling.js?v=__BUILD__"></script>
   <script src="debt-alert.js?v=__BUILD__"></script>
+  <script src="writeback.js?v=__BUILD__"></script>
   <script src="app.js?v=__BUILD__" defer></script>
 </body>
 </html>
