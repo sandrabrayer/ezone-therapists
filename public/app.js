@@ -296,10 +296,17 @@
     (state.plans || []).forEach(function (p) { add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek); });
     (state.debtRoster || []).forEach(function (c) { add(c.name, c.phone); });
 
+    // Locally-registered patients (Vered's intake) appear on the dashboard even
+    // when they are not yet in the outpatient roster — they are a base source,
+    // not only an overlay.
     var localByPhone = {};
     (state.patients || []).forEach(function (p) {
       var key = normPhone(p.phone);
-      if (key) localByPhone[key] = p;
+      if (!key) return;
+      localByPhone[key] = p;
+      // A deactivated local-only record shouldn't resurface as its own entry
+      // (it still overlays a roster patient if one exists).
+      if (String(p.active) !== 'false') add(p.name, p.phone);
     });
 
     return Object.keys(byPhone).map(function (key) {
