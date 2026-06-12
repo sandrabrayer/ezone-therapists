@@ -1,15 +1,17 @@
 # Cross-app dependencies
 
-`ezone-therapists` consumes three read-only projections from sibling apps. The
-browser never sees a secret — the Node server injects each shared secret and
-forwards to the sibling Apps Script (see `server.js`). All three must be
+`ezone-therapists` consumes three read-only projections from sibling apps and
+makes **one cross-app WRITE** (dep #4). The browser never sees a secret — reads
+are proxied by the Node server, and the write originates server-to-server from
+the therapists Apps Script (which holds its own secret copy). All must be
 deployed on the sibling side for the corresponding feature to work end-to-end.
 
 | # | Dependency | Sibling repo | Status | Blocks |
 | - | ---------- | ------------ | ------ | ------ |
 | 1 | `getDebtStatus` | `ezone-outpatient` | **Open, unmerged** — PR #14 (`claude/nice-edison-5bvwiz`). Must be merged **and the Apps Script redeployed**. | Outpatient debt gate |
-| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. | Treatment-plan tab |
-| 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | Inpatient roster autocomplete (free-text fallback works without it) |
+| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. | Treatment-plan / dashboard plan data |
+| 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | (no UI consumer since the inpatient tab was removed) |
+| 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
 
 ## Env vars on the therapists Railway service
 
@@ -31,10 +33,18 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 The backend enforces the debt gate authoritatively by re-reading live debt on
 save (see [`server-side-gate-enforcement.md`](server-side-gate-enforcement.md)),
 which is its **own** call to outpatient — independent of the Node proxy env
-above. Set on the therapists Apps Script: `OUTPATIENT_SHEETS_URL` and
-`DEBT_STATUS_SECRET`. Until set (and outpatient PR #14 deployed), outpatient
-`clear`/`approved` saves are rejected fail-closed; `flagged` and inpatient saves
-still work.
+above. Set on the therapists Apps Script:
+
+- `OUTPATIENT_SHEETS_URL` — outpatient `/exec` (used for both the debt re-check
+  and the write-back).
+- `DEBT_STATUS_SECRET` — debt re-check. Until set (and dep #1 deployed),
+  outpatient `clear`/`approved` saves are rejected fail-closed; `flagged` saves
+  still work.
+- `TREATMENT_GIVEN_SECRET` — the **did-it-happen write-back** (dep #4); must match
+  the value on the outpatient Apps Script. Until set (and dep #4 deployed),
+  marking a treatment saves locally and leaves it `syncStatus='pending'`; the app
+  retries via `syncPending` ("סנכרן עכשיו" / on refresh). The local mark is the
+  source of truth and is never lost.
 
 ## Source-data follow-up (outpatient side)
 
