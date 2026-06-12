@@ -11,11 +11,12 @@
  *   - Schedule        one row PER PATIENT PER SESSION (group sessions share a
  *                     sessionId; each row keeps its own gate + attendance).
  *   - Approvals       append-only audit of every debtor approval (Ron/Sandra).
- *   - Patients        per-patient record EXTRAS keyed by phone: assigned
- *                     therapist (set by Vered at intake), came-from-inpatient
- *                     flag + admitted location + outpatient start date. The
- *                     active-outpatient roster itself comes from the outpatient
- *                     sibling; this sheet only layers local extras on top.
+ *   - Patients        per-patient intake record keyed by phone: assigned
+ *                     therapist (set by Vered at intake), the MAIN treatment
+ *                     plan (type + weekly frequency, editable later) and origin
+ *                     (where the patient came from + optional still-admitted
+ *                     house). The active-outpatient roster itself comes from the
+ *                     outpatient sibling; this sheet only layers local extras on top.
  *   - Therapists      editable list {name, active} — feeds the dropdown.
  *   - TreatmentTypes  editable list {name, active, isGroup} — feeds the dropdown.
  *
@@ -53,10 +54,14 @@ var APPROVALS_HEADERS = [
   'note', 'amountOwed', 'approvedAt'
 ];
 
-/* Per-patient record extras, keyed by canonical phone. */
+/* Per-patient record extras, keyed by canonical phone. This is Vered's intake
+ * record: identity + assignment + the MAIN treatment plan (type + weekly
+ * frequency, editable later) + origin (where the patient came from, with an
+ * optional "still admitted" + which house). */
 var PATIENTS_HEADERS = [
   'phone', 'name', 'assignedTherapist',
-  'fromInpatient', 'admittedLocation', 'outpatientStartDate',
+  'mainTreatmentType', 'frequencyPerWeek',
+  'origin', 'stillAdmitted', 'admittedHouse',
   'active', 'updatedBy', 'updated'
 ];
 
@@ -64,15 +69,28 @@ var PATIENTS_HEADERS = [
 var THERAPISTS_HEADERS = ['name', 'active'];
 var TREATMENT_TYPES_HEADERS = ['name', 'active', 'isGroup'];
 
-/* Seed values (partial therapist list — more added later by an admin). Seeded
- * ONLY when the sheet is first created; never overwrites edited rows. */
-var THERAPISTS_SEED = ['כנרת', 'דליה', 'הילה', 'עידו', 'חנן', 'מעיין', 'איתן'];
+/* Seed values. A fresh sheet is seeded with the full list; an existing sheet has
+ * any MISSING seed names appended (by name) so additions here reach live sheets
+ * too. Retiring an entry sets active=false (the row stays), so a retired name is
+ * still "present" and never re-added — only a hard row delete would resurrect a
+ * seed name. (דליה appears once; activeNames also de-dupes by name.) */
+var THERAPISTS_SEED = [
+  'כנרת', 'דליה', 'הילה', 'עידו', 'חנן', 'מעיין', 'איתן',
+  'אלה', 'שירן', 'ד"ר שפרינץ', 'דנה', 'רמי', 'ד"ר נטליה',
+  'מרים', 'יסמין', 'תמר', 'שחר', 'יפעת'
+];
 var TREATMENT_TYPES_SEED = [
   { name: 'פרטני כללי', active: 'true', isGroup: 'false' },
   { name: 'פרטני CBT',  active: 'true', isGroup: 'false' },
   { name: 'פרטני EMDR', active: 'true', isGroup: 'false' },
   { name: 'טיפול משפחתי', active: 'true', isGroup: 'false' },
-  { name: 'קבוצה',      active: 'true', isGroup: 'true' }
+  { name: 'קבוצה',      active: 'true', isGroup: 'true' },
+  { name: 'פסיכודינמי', active: 'true', isGroup: 'false' },
+  { name: 'פסיכותרפי ממוקד טראומה', active: 'true', isGroup: 'false' },
+  { name: 'עיסוי טיפולי', active: 'true', isGroup: 'false' },
+  { name: 'מעקב פסיכיאטרי', active: 'true', isGroup: 'false' },
+  { name: 'טיפול ממוקד התמכרויות', active: 'true', isGroup: 'false' },
+  { name: 'טיפול אינטגרטיבי', active: 'true', isGroup: 'false' }
 ];
 
 function _ss() {
@@ -101,19 +119,33 @@ function _ensureSheet(name, headers) {
   return sh;
 }
 
-/* Ensure an editable list sheet exists AND, only when empty, seed it. Seeding an
- * empty sheet is safe (a fresh install); we never touch existing rows so an
- * admin's add/retire/reactivate edits always win. */
+/* Ensure an editable list sheet exists and APPEND any missing seed names. A
+ * fresh sheet gets the full seed; an existing sheet gets only the seed names it
+ * doesn't already have (matched case-insensitively by name), so additions to the
+ * seed reach live sheets. Existing rows are never modified — an admin's
+ * add/retire/reactivate edits always win, and a retired (active=false) name is
+ * still "present" so it is never re-added. */
 function _ensureSeededList(name, headers, seedRows) {
   var sh = _ensureSheet(name, headers);
-  if (sh.getLastRow() < 2 && seedRows && seedRows.length) {
-    var values = seedRows.map(function (r) {
+  if (!seedRows || !seedRows.length) return sh;
+  var have = {};
+  _readAll(sh, headers).forEach(function (r) {
+    var n = String(r.name == null ? '' : r.name).trim().toLowerCase();
+    if (n) have[n] = true;
+  });
+  var toAdd = [];
+  seedRows.forEach(function (r) {
+    var n = String(r.name == null ? '' : r.name).trim().toLowerCase();
+    if (n && !have[n]) { have[n] = true; toAdd.push(r); }
+  });
+  if (toAdd.length) {
+    var values = toAdd.map(function (r) {
       return headers.map(function (h) {
         var v = r[h];
         return (v === undefined || v === null) ? '' : v;
       });
     });
-    sh.getRange(2, 1, values.length, headers.length).setValues(values);
+    sh.getRange(sh.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
   }
   return sh;
 }
@@ -374,7 +406,8 @@ function _markAttendance(payload) {
 }
 
 // Upsert a patient-record extras row, keyed by canonical phone. Holds the
-// Vered-set assignment + the came-from-inpatient details. Not debt-gated.
+// intake record: assignment + main treatment plan (type + weekly frequency,
+// editable later) + origin / still-admitted house. Not debt-gated.
 function _savePatient(payload) {
   var p = payload && payload.patient;
   if (!p || typeof p !== 'object') return { ok: false, error: 'missing_patient' };
@@ -388,9 +421,11 @@ function _savePatient(payload) {
       phone: phone,
       name: p.name || '',
       assignedTherapist: p.assignedTherapist || '',
-      fromInpatient: p.fromInpatient ? 'true' : '',
-      admittedLocation: p.admittedLocation || '',
-      outpatientStartDate: p.outpatientStartDate || '',
+      mainTreatmentType: p.mainTreatmentType || '',
+      frequencyPerWeek: (p.frequencyPerWeek === 0 || p.frequencyPerWeek) ? String(p.frequencyPerWeek) : '',
+      origin: p.origin || '',
+      stillAdmitted: p.stillAdmitted ? 'true' : '',
+      admittedHouse: p.stillAdmitted ? (p.admittedHouse || '') : '',
       active: (p.active === false || p.active === 'false') ? 'false' : 'true',
       updatedBy: p.updatedBy || '',
       updated: p.updated || new Date().toISOString()
