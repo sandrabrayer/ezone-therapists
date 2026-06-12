@@ -209,6 +209,35 @@
     });
   }
 
+  /**
+   * Partition a therapist's treatment rows into the four buckets shown on the
+   * «המטופלים שלי» tab. A patient may have several parallel treatments (even with
+   * different therapists), so callers pass the rows for ONE therapist and each
+   * treatment row is bucketed independently:
+   *   performed     attendance 'occurred'
+   *   notPerformed  attendance 'missed' (scheduled but didn't happen)
+   *   upcoming      not yet marked, scheduled date in the future
+   *   scheduled     not yet marked, scheduled date today or earlier (awaiting mark)
+   * @param {Array} rows treatment rows ({attendance, scheduledDate, ...})
+   * @param {string} today 'YYYY-MM-DD'
+   * @returns {{scheduled:Array, upcoming:Array, performed:Array, notPerformed:Array}}
+   */
+  function bucketMine(rows, today) {
+    var out = { scheduled: [], upcoming: [], performed: [], notPerformed: [] };
+    today = String(today || '');
+    (Array.isArray(rows) ? rows : []).forEach(function (r) {
+      if (!r) return;
+      var att = String(r.attendance || '');
+      if (att === 'occurred') { out.performed.push(r); return; }
+      if (att === 'missed') { out.notPerformed.push(r); return; }
+      var d = String(r.scheduledDate || '');
+      if (d.indexOf('T') !== -1) d = d.split('T')[0];
+      if (d && today && d > today) out.upcoming.push(r);
+      else out.scheduled.push(r);
+    });
+    return out;
+  }
+
   return {
     ATTENDANCE: ATTENDANCE,
     GROUP_TYPE_NAME: GROUP_TYPE_NAME,
@@ -220,6 +249,7 @@
     validateSession: validateSession,
     validateAttendance: validateAttendance,
     buildSessionRows: buildSessionRows,
-    evaluateGroup: evaluateGroup
+    evaluateGroup: evaluateGroup,
+    bucketMine: bucketMine
   };
 });
