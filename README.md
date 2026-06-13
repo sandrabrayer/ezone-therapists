@@ -16,24 +16,24 @@ dashboard app) on a comfortable slate-blue base. Redesign notes:
 
 ## Tabs
 
-1. **דשבורד מטופלים** — active patients with their treatment plan(s). A patient
-   may have **multiple parallel treatments with different therapists**; each card
-   shows all assigned therapists and plans (type + weekly frequency), debt status,
-   a "still admitted" badge, origin, and any post-scheduling debt alert. Editors
-   register/edit a patient and schedule from here. **«רישום מטופל חדש» lives only
-   here.**
-2. **שיבוץ מטפלים** — the workflow: a patient list where each patient's
-   assignments (therapist + plan) are added/edited/removed via the
-   **«שיבוץ ותוכנית»** modal (a newly registered patient appears here
-   immediately), plus the scheduled treatments (when + where + type) with
-   did-it-happen marking. Filterable by **therapist and by patient**. Scheduling
-   is gated by the **debt gate** (see below), per patient; debt alerts surface here.
+1. **דשבורד מטופלים** — **view-only for everyone**: active patients with their
+   treatment plan(s). A patient may have **multiple parallel treatments with
+   different therapists**; each card shows all assigned therapists and plans (type
+   + weekly frequency), debt status, a "still admitted" badge, origin, and any
+   post-scheduling debt alert. No edit controls here.
+2. **שיבוץ מטפלים** — the editable workflow (in edit mode): **«רישום מטופל חדש»**,
+   a patient list where each patient's details/origin («פרטים») and assignments
+   (therapist + plan, via the **«שיבוץ ותוכנית»** modal) are edited, plus the
+   scheduled treatments (when + where + type) with did-it-happen marking.
+   Filterable by **therapist and by patient**. Scheduling is gated by the **debt
+   gate** (see below), per patient; debt alerts surface here.
 3. **המטופלים שלי** — a real third tab: the therapist picks their name from the
-   Therapists dropdown **inside the tab** (**no PIN** — friendly entry; the
-   per-patient payment check deters false reporting) and sees only their own
-   treatments in four buckets — **טיפולים שנקבעו / טיפולים קרובים / טיפולים שבוצעו
-   / טיפולים שנקבעו ולא בוצעו**. Each is marked **happened / didn't happen** —
-   this mark is the **payment trigger** (no mark = no pay) and writes back to
+   **«שם המטפל/ת»** dropdown **inside the tab** (no personal PIN — the picker is
+   code-free; the per-patient payment check deters false reporting) and sees only
+   their own treatments in four buckets — **טיפולים שנקבעו / טיפולים קרובים /
+   טיפולים שבוצעו / טיפולים שנקבעו ולא בוצעו**. In edit mode each is marked
+   **happened / didn't happen** — this mark is the **payment trigger** (no mark =
+   no pay) and writes back to
    outpatient.
 
 ### Did-it-happen → outpatient write-back
@@ -152,26 +152,39 @@ patches + tests, in [`docs/`](docs/):
    patients added directly (no originating lead) have no phone and fall back to
    manual/free-text entry in the inpatient tab.
 
-## Access
+## Access — entry code, edit mode, and tab roles
 
-PIN screen on load; the choice is stored in `sessionStorage` for the session
-only. **One editor code + viewer** — no per-role gating:
+PIN screen on load (`sessionStorage` for the session). A **shared editor code**
+lets Vered/therapists edit; **"המשך כצופה בלבד"** enters read-only.
 
 | Role | PIN | Can do |
 | ---- | --- | ------ |
-| **עורך** (editor) | `5555` | register/assign patients, set & edit the plan, schedule, mark attendance |
-| **צופה** (viewer) | "המשך כצופה בלבד" | read-only — **except** «המטופלים שלי», where marking did-it-happen is open (no PIN) |
+| **עורך** (editor) | `5555` | everything below, once **edit mode** is on |
+| **צופה** (viewer) | "המשך כצופה בלבד" | read-only everywhere |
 
-The **המטופלים שלי** tab is deliberately reachable without the editor PIN: a
-therapist enters as viewer, picks their name, and marks their own treatments. The
-mark is the payment trigger, and the per-patient debt/payment check (plus *no
-mark = no pay*) is what deters false reporting.
+Editing is gated by an explicit **«עריכה» edit-mode toggle** in the header
+(`public/access.js`):
 
-The work order — Vered assigns first, the therapist schedules after — is
-**procedure, not software-enforced**: therapists are paid per treatment, so they
-self-enforce getting properly assigned/approved. Any editor can therefore both
-assign and schedule. The PIN is client-side UX gating (the real enforcement is
-the server-authoritative debt gate); change it in `public/app.js` (`EDITOR_PIN`).
+- The toggle is **editor-only** and appears **only** on שיבוץ מטפלים and
+  המטופלים שלי. Edit controls (registration, assignments, scheduling, marking)
+  appear only when edit mode is **on**.
+- **דשבורד מטופלים is view-only for everyone** — no toggle, no edit controls.
+
+**Tab roles:**
+
+1. **דשבורד מטופלים** — everyone; a view-only overview of all patients + plans.
+2. **שיבוץ מטפלים** — editors (in edit mode): register a new patient, edit a
+   patient's details/origin, add/edit/remove assignments (therapist + plan), and
+   schedule. A therapist **filter** dropdown (default «כל המטפלים») is *not* an
+   identity picker.
+3. **המטופלים שלי** — a therapist picks their own name (**no personal PIN** — the
+   name-picker «שם המטפל/ת» is code-free), then turns on edit mode to **mark
+   did-it-happen** (the payment trigger; *no mark = no pay*).
+
+The work order (Vered assigns, then the therapist schedules) is **procedure, not
+software-enforced** — pay-per-treatment self-enforces it. The code is client-side
+UX gating (the real enforcement is the server-authoritative debt gate); change it
+in `public/app.js` (`EDITOR_PIN`).
 
 ## Local development
 
