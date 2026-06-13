@@ -32,10 +32,14 @@ button, input, select, textarea {
   font-family: inherit;
   color: inherit;
 }
-/* Dark base for selects so the chosen value is always readable on the dark
-   theme (a bare <select> would default to a white box with light text). More
-   specific rules like `.form-grid select` still win where they apply. */
-select {
+/* Dark base for text-like inputs, selects, and textareas so a control is NEVER
+   white-on-white on the dark theme (a bare control defaults to a white box with
+   light inherited text — that was the unreadable תדירות field). Checkboxes/
+   radios keep native rendering. More specific rules like `.form-grid select`
+   still win where they apply. */
+select,
+textarea,
+input:not([type="checkbox"]):not([type="radio"]) {
   background: var(--bg-elev);
   color: var(--text);
   border: 1px solid var(--border);

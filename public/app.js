@@ -70,7 +70,7 @@
     no_payment_record: 'אין רישום תשלומים עבור מטופל זה — לא ניתן לקבוע חוב. דרוש בירור ידני.',
     no_record: 'הטלפון אינו תואם לאף מטופל חוץ. דרוש בירור ידני.',
     ambiguous: 'הטלפון תואם ליותר ממטופל אחד. דרוש בירור ידני.',
-    lookup_failed: 'בדיקת החוב נכשלה כרגע. לא ניתן לאשר טיפול ללא בדיקה — נסה שוב או פנה לבירור.'
+    lookup_failed: 'בדיקת החוב אינה זמינה כרגע — הטיפול יישמר לבירור (לא אומת חוב).'
   };
 
   // --- state -------------------------------------------------------------
@@ -832,10 +832,10 @@
         body + '</div>';
     }).join('');
     var anyBlock = pendingPatients.some(function (pp) { return pp.gate.decision === 'block'; });
-    var anyLookupFail = pendingPatients.some(function (pp) { return pp.gate.reason === 'lookup_failed'; });
     g.hidden = false;
     g.innerHTML = '<div class="form-section-title">בדיקת חוב למטופלים</div>' + rowsHtml;
-    $('#scheduleSubmit').textContent = anyLookupFail ? 'נסה שוב' : (anyBlock ? 'אשר ושמור' : 'שמור');
+    // A debtor needs approval; everything else (clear / flagged-for-review) just saves.
+    $('#scheduleSubmit').textContent = anyBlock ? 'אשר ושמור' : 'שמור';
   }
 
   async function handleScheduleSubmit() {
@@ -844,12 +844,10 @@
     var session = readSession();
 
     // Phase 2 — gate already ran, build rows from the resolved decisions.
+    // (lookup_failed is treated as a flag → saved for review, NOT a retry
+    // dead-end: when the debt endpoint is down, scheduling still completes.)
     if (pendingPatients) {
-      if (pendingPatients.some(function (pp) { return pp.gate.reason === 'lookup_failed'; })) {
-        pendingPatients = null;   // re-run the gate, never save blind
-      } else {
-        return finalizeSchedule(session);
-      }
+      return finalizeSchedule(session);
     }
 
     // Phase 1 — validate session + patients, then run the gate per patient.
@@ -886,9 +884,11 @@
       var pp = pendingPatients[i];
       var d = pp.gate.decision;
       if (d === 'allow') {
-        patients.push({ name: pp.name, phone: pp.phone, gateStatus: 'clear' });
+        patients.push({ name: pp.name, phone: pp.phone, gateStatus: Scheduling.gateStatusForDecision(d) });
       } else if (d === 'flag') {
-        patients.push({ name: pp.name, phone: pp.phone, gateStatus: 'flagged', gateReason: pp.gate.reason });
+        // Any flag — including lookup_failed (debt endpoint down) — saves as
+        // 'flagged' for manual resolution. Never silently 'clear', never a dead-end.
+        patients.push({ name: pp.name, phone: pp.phone, gateStatus: Scheduling.gateStatusForDecision(d), gateReason: pp.gate.reason });
       } else if (d === 'block') {
         var sel = $('.approver-sel[data-i="' + i + '"]');
         var note = $('.approver-note[data-i="' + i + '"]');
@@ -915,6 +915,7 @@
     });
     var nameById = {};
     rows.forEach(function (r) { nameById[r.id] = r.patientName; });
+    var anyFlagged = patients.some(function (p) { return p.gateStatus === 'flagged'; });
     sub.disabled = true;
     apiSaveSession(rows)
       .then(function (res) {
@@ -922,6 +923,8 @@
         if (failed.length) {
           var who = failed.map(function (f) { return (nameById[f.id] || '') + ' (' + saveErrorText(f.error) + ')'; });
           toast('חלק מהמטופלים לא נקבעו: ' + who.join('; '), true);
+        } else if (anyFlagged) {
+          toast('נשמר לבירור — לא ניתן לאמת חוב כרגע');
         } else {
           toast('הטיפול נקבע');
         }

@@ -16,6 +16,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Scheduling = require('../public/scheduling');
+const DebtGate = require('../public/debt-gate');
 
 // --- active-flagged lists --------------------------------------------------
 
@@ -219,4 +220,22 @@ test('multiple parallel treatments per patient — different therapists bucket i
   assert.equal(kineret.upcoming.length, 0);
   assert.deepEqual(hanan.upcoming.map((r) => r.id), ['t2']);
   assert.equal(hanan.performed.length, 0);
+});
+
+// --- gate decision → persisted gateStatus ----------------------------------
+
+test('gateStatusForDecision: allow→clear, block→approved, flag→flagged', () => {
+  assert.equal(Scheduling.gateStatusForDecision('allow'), 'clear');
+  assert.equal(Scheduling.gateStatusForDecision('block'), 'approved');
+  assert.equal(Scheduling.gateStatusForDecision('flag'), 'flagged');
+});
+
+test('lookup_failed (debt endpoint unavailable) persists as flagged, never clear', () => {
+  // The gate returns {decision:'flag', reason:'lookup_failed'} when debt can't be read…
+  const gate = DebtGate.evaluate({ phone: '0501234567', rosterOk: false });
+  assert.equal(gate.decision, 'flag');
+  assert.equal(gate.reason, 'lookup_failed');
+  // …and that saves as 'flagged' (manual resolution) — so scheduling is never a
+  // dead-end retry when the debt endpoint is down.
+  assert.equal(Scheduling.gateStatusForDecision(gate.decision), 'flagged');
 });

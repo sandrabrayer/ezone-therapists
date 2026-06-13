@@ -244,6 +244,22 @@
     return out;
   }
 
+  /**
+   * Map a debt-gate DECISION to the gateStatus a scheduled row PERSISTS as:
+   *   allow → 'clear'
+   *   block → 'approved'  (only after a Ron/Sandra approval is attached)
+   *   flag  → 'flagged'   (manual resolution — INCLUDING lookup_failed, i.e. the
+   *                        debt endpoint was unavailable: we record for review,
+   *                        never silently 'clear' and never dead-end on retry)
+   * @param {string} decision 'allow' | 'block' | 'flag'
+   * @returns {string} gateStatus
+   */
+  function gateStatusForDecision(decision) {
+    if (decision === 'allow') return 'clear';
+    if (decision === 'block') return 'approved';
+    return 'flagged';
+  }
+
   return {
     ATTENDANCE: ATTENDANCE,
     GROUP_TYPE_NAME: GROUP_TYPE_NAME,
@@ -252,6 +268,7 @@
     isActive: isActive,
     activeNames: activeNames,
     isGroupType: isGroupType,
+    gateStatusForDecision: gateStatusForDecision,
     validateSession: validateSession,
     validateAttendance: validateAttendance,
     buildSessionRows: buildSessionRows,
