@@ -24,8 +24,9 @@ are visible to everyone (`public/access.js` is just the tab list):
    shows assigned therapists, plans (type + weekly frequency), debt status, a
    "still admitted" badge, origin, and any post-scheduling debt alert.
 2. **שיבוץ מטפלים** — **«רישום מטופל חדש»**, patient **«פרטים»** (identity/origin),
-   and **«שיבוץ ותוכנית»** (assign therapist + plan). Plus a read-only oversight
-   list of scheduled treatments. Filterable by therapist + patient. Open to all.
+   and per-row **«עריכה»** to add/edit/remove a patient's therapist + plan. Plus a
+   read-only oversight list of scheduled treatments. Filterable by therapist +
+   patient. Open to all.
 3. **המטופלים שלי** — a therapist **picks their name from the in-tab dropdown**
    (`#mineTherapist`) — a fresh pick every open, **never persisted**; until then a
    «בחר/י את שמך» prompt shows. Scoped to their **own assigned patients**, each
@@ -35,6 +36,9 @@ are visible to everyone (`public/access.js` is just the tab list):
    today…+7) / **שבוצעו** / **שנקבעו ולא בוצעו**. Each is **reported happened /
    didn't-happen** (reason required for didn't) — the **payment trigger** (no
    report = no pay), **debt-gated at report time** and written back to outpatient.
+   Each booking also has inline **«עריכה»** (change day / time / location) and,
+   while unreported, **«ביטול טיפול»** (cancel — a reported one must be marked
+   «לא התקיים» first).
 
 Identity is self-asserted (anyone can pick any therapist name); the real controls
 are the outpatient **debt gate** + the **Ron/Sandra approval audit**.
@@ -73,7 +77,10 @@ dashboard updates identity + origin; assignments are managed in שיבוץ.
   admin adds/retires/reactivates entries in the `Therapists` / `TreatmentTypes`
   sheets with no code change. Retiring an entry only removes it from the dropdown
   going forward; past records keep their original therapist/type string.
-- **Locations** are a fixed list (id stored, Hebrew shown): רמות השבים (`ramot`),
+- **Locations** are a fixed list of six (id stored, Hebrew shown): שדה אליעז,
+  קיסריה ריהאב, קיסריה עפרוני, רעננה אשר, רעננה הפרדס, רמות השבים. **Time** is a
+  30-minute dropdown 07:00–21:00. *(Older note below predates this list.)*
+- **(legacy)** earlier locations were: רמות השבים (`ramot`),
   רעננה (`raanana`), אשר (`asher`), קיסריה ערפוני (`arfoni`), קיסריה ריהאב
   (`rehab`). Location is the therapist's scheduling choice, independent of the
   patient's roster house.
