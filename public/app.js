@@ -57,14 +57,14 @@
   // Display-only relabel for legacy outpatient service terms (e.g. מרכז יום).
   function svc(v) { return Scheduling.displayServiceType(v); }
 
-  // --- access: shared editor code + viewer -------------------------------
-  // The shared editor code lets Vered/therapists EDIT; "continue as viewer" is
-  // read-only. (The "no PIN" from the personal view means no PERSONAL pin to pick
-  // your name — that picker is still code-free; entry uses the shared code.)
-  // Editing is gated by an explicit EDIT MODE toggle, available only on the
-  // editable tabs (שיבוץ + המטופלים שלי). The dashboard is view-only for everyone.
-  var EDITOR_PIN = '5555';
-  function isEditor() { return state.role === 'editor'; }
+  // --- access: name-pick roles, no password, no edit mode ----------------
+  // A user is Vered (the office) or a THERAPIST (picked by name). Vered registers
+  // + assigns; therapists see only their own patients and schedule/report.
+  // Actions are always visible and scoped by role + tab (see public/access.js).
+  // Identity is self-asserted — the real controls are the outpatient debt gate
+  // and the Ron/Sandra approval audit.
+  function isVered() { return state.role === 'vered'; }
+  function isTherapist() { return state.role === 'therapist'; }
 
   // Hebrew copy for each gate flag reason (stable ids come from debt-gate.js).
   var FLAG_TEXT = {
@@ -76,8 +76,7 @@
 
   // --- state -------------------------------------------------------------
   var state = {
-    role: 'viewer',
-    editMode: false,
+    role: '',
     therapist: '',
     view: 'dashboard',
     schedule: [],
@@ -690,7 +689,8 @@
     var pty = $('#patientType'); if (pty) { var ptyv = pty.value; pty.innerHTML = typeOptionList(); pty.value = ptyv; }
     var sl = $('#scheduleLocation'); if (sl) sl.innerHTML = locationOptions();
     var ah = $('#admittedHouse'); if (ah) ah.innerHTML = houseOptions();
-    // Identity picker on tab 3 + therapist filter on the workflow tab.
+    // Identity-screen name picker + the tab-3 picker.
+    var idt = $('#idTherapist'); if (idt) { var idv = idt.value; idt.innerHTML = optionList(tNames, idv); idt.value = idv; }
     var my = $('#myTherapist'); if (my) my.innerHTML = optionList(idNames, state.therapist);
     var wf = $('#workflowTherapistFilter'); if (wf) wf.innerHTML = '<option value="">כל המטפלים</option>' +
       tNames.map(function (n) { var s = (n === state.workflowTherapist) ? ' selected' : ''; return '<option value="' + escapeHtml(n) + '"' + s + '>' + escapeHtml(n) + '</option>'; }).join('');
@@ -743,7 +743,7 @@
   }
 
   function openScheduleModal(prefillPatient) {
-    if (!ensureEditor()) return;
+    if (!ensureTherapist()) return;
     var form = $('#scheduleForm');
     form.reset();
     resetGateResults();
@@ -954,7 +954,7 @@
     $('#admittedDetails').hidden = !$('#stillAdmitted').checked;
   }
   function openNewPatient() {
-    if (!ensureEditor()) return;
+    if (!ensureVered()) return;
     $('#patientModalTitle').textContent = 'רישום מטופל חדש';
     fillPatientForm(null);
     $('#initialAssignmentSection').hidden = false;   // initial assignment only for new
@@ -962,7 +962,7 @@
     $('#patientModal').hidden = false;
   }
   function openPatientModal(phone) {
-    if (!ensureEditor()) return;
+    if (!ensureVered()) return;
     var rec = patientByPhone(phone);
     $('#patientModalTitle').textContent = 'עריכת מטופל/ת';
     fillPatientForm(rec || {});
@@ -1022,7 +1022,7 @@
       '</div>';
   }
   function openAssignmentsModal(phone) {
-    if (!ensureEditor()) return;
+    if (!ensureVered()) return;
     var p = patientByPhone(phone);
     if (!p) { toast('מטופל/ת לא נמצא', true); return; }
     assignmentsCtx = { phone: p.phone, removed: [] };
@@ -1070,60 +1070,52 @@
       .finally(function () { btn.disabled = false; });
   }
 
-  function ensureEditor() {
-    if (isEditor()) return true;
-    toast('פעולה זו זמינה לעורכים בלבד', true); return false;
+  function ensureVered() {
+    if (isVered()) return true;
+    toast('פעולה זו זמינה לורד (משרד) בלבד', true); return false;
+  }
+  function ensureTherapist() {
+    if (isTherapist()) return true;
+    toast('פעולה זו זמינה למטפל/ת בלבד', true); return false;
   }
 
   // --- auth / role / edit mode -------------------------------------------
+  // Show only the current role's tabs; the badge shows who you are.
   function applyRole() {
-    document.body.classList.toggle('viewer', !isEditor());
-    if (!isEditor()) setEditMode(false);
-    applyEditToggle();
+    document.body.classList.remove('role-vered', 'role-therapist');
+    if (state.role) document.body.classList.add('role-' + state.role);
+    var badge = $('#whoami');
+    if (badge) badge.textContent = isVered() ? 'ורד' : (state.therapist || '');
+    $$('.tab').forEach(function (t) {
+      t.hidden = !Access.canViewTab(state.role, t.dataset.view);
+    });
   }
   function applyTherapist() { var s = $('#myTherapist'); if (s) s.value = state.therapist || ''; }
 
-  // The edit-mode toggle is available ONLY to editors and ONLY on the editable
-  // tabs (שיבוץ + המטופלים שלי). The dashboard is view-only for everyone.
-  function applyEditToggle() {
-    var btn = $('#editToggle');
-    if (!btn) return;
-    btn.hidden = !Access.editToggleVisible(state.role, state.view);
-    btn.textContent = state.editMode ? 'סיום עריכה' : 'עריכה';
-    btn.classList.toggle('active', state.editMode);
-  }
-  function setEditMode(on) {
-    state.editMode = !!on;
-    document.body.classList.toggle('edit-mode', state.editMode);
-    applyEditToggle();
-  }
-  function toggleEditMode() {
-    if (!isEditor()) return;
-    setEditMode(!state.editMode);
-  }
-
-  function showPin() {
-    $('#pinScreen').hidden = false;
+  function showIdentity() {
+    $('#identityScreen').hidden = false;
     $('#app').hidden = true;
-    $('#pinInput').value = '';
-    $('#pinInput').focus();
+    syncDropdowns();   // populate the therapist picker if data is loaded
   }
-  function enterApp() {
-    $('#pinScreen').hidden = true;
+  // Enter as a chosen role. For a therapist, `name` is their picked name.
+  function enterApp(role, name) {
+    state.role = role;
+    state.therapist = (role === 'therapist') ? (name || '') : '';
+    try { sessionStorage.setItem('ez_identity', JSON.stringify({ role: role, therapist: state.therapist })); } catch (_) {}
+    $('#identityScreen').hidden = true;
     $('#app').hidden = false;
-    setEditMode(false);
     applyRole();
     applyTherapist();
-    setView('dashboard');
+    setView(Access.defaultView(state.role) || 'dashboard');
   }
 
   function setView(view) {
+    if (!Access.canViewTab(state.role, view)) view = Access.defaultView(state.role) || view;
     state.view = view;
     document.body.classList.remove('view-dashboard', 'view-workflow', 'view-mine');
     document.body.classList.add('view-' + view);
     $$('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === view); });
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + view); });
-    applyEditToggle();   // toggle is per-tab
   }
 
   function on(sel, ev, fn) {
@@ -1133,32 +1125,19 @@
   }
 
   function wireEvents() {
-    on('#pinSubmit', 'click', function () {
-      var v = ($('#pinInput').value || '').trim();
-      if (v === EDITOR_PIN) {
-        try { sessionStorage.setItem('ez_role', 'editor'); } catch (_) {}
-        state.role = 'editor';
-        enterApp();
-      } else {
-        var err = $('#pinError'); if (err) err.hidden = false;
-      }
+    // Identity screen — pick who you are (no password).
+    on('#idVered', 'click', function () { enterApp('vered'); });
+    on('#idTherapistGo', 'click', function () {
+      var name = ($('#idTherapist').value || '').trim();
+      if (!name) { var e = $('#idError'); if (e) e.hidden = false; return; }
+      enterApp('therapist', name);
     });
-    on('#pinInput', 'keydown', function (e) {
-      var err = $('#pinError'); if (err) err.hidden = true;
-      if (e.key === 'Enter') { e.preventDefault(); $('#pinSubmit').click(); }
-    });
-    on('#pinViewer', 'click', function () {
-      try { sessionStorage.setItem('ez_role', 'viewer'); } catch (_) {}
-      state.role = 'viewer';
-      enterApp();
-    });
+    on('#idTherapist', 'change', function () { var e = $('#idError'); if (e) e.hidden = true; });
     on('#logoutBtn', 'click', function () {
-      try { sessionStorage.removeItem('ez_role'); } catch (_) {}
-      state.role = 'viewer';
-      setEditMode(false);
-      showPin();
+      try { sessionStorage.removeItem('ez_identity'); } catch (_) {}
+      state.role = ''; state.therapist = '';
+      showIdentity();
     });
-    on('#editToggle', 'click', toggleEditMode);
 
     $$('.tab').forEach(function (t) { t.addEventListener('click', function () { setView(t.dataset.view); }); });
     on('#refreshBtn', 'click', function () { loadAll().then(function () { toast('רועננו'); }).catch(function () {}); });
@@ -1187,7 +1166,7 @@
     on('#assignList', 'click', onPatientListClick);
     on('#scheduleList', 'click', function (e) {
       var b = e.target.closest('[data-att]');
-      if (b) { if (!ensureEditor()) return; markAttendance(b.getAttribute('data-id'), b.getAttribute('data-att')); }
+      if (b) { if (!ensureTherapist()) return; markAttendance(b.getAttribute('data-id'), b.getAttribute('data-att')); }
     });
 
     // Tab 3 «המטפל שלי»: identity picker, search, mark (open to all, no PIN), sync.
@@ -1238,11 +1217,10 @@
 
   function init() {
     try { wireEvents(); } catch (e) { console.error('[ezone-therapists] wireEvents failed', e); }
-    try { state.therapist = sessionStorage.getItem('ez_therapist') || ''; } catch (_) {}
     var saved = null;
-    try { saved = sessionStorage.getItem('ez_role'); } catch (_) {}
-    if (saved === 'editor' || saved === 'viewer') { state.role = saved; enterApp(); }
-    else { showPin(); }
+    try { saved = JSON.parse(sessionStorage.getItem('ez_identity') || 'null'); } catch (_) {}
+    if (saved && Access.isRole(saved.role)) enterApp(saved.role, saved.therapist);
+    else showIdentity();
     loadAll().catch(function () {});
   }
 

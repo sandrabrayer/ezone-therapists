@@ -290,14 +290,15 @@ button, input, select, textarea {
 }
 .toast.error { border-color: #6b2a2a; color: #ff9b9b; }
 
-/* Edit controls appear ONLY in edit mode (the «עריכה» toggle, editor-only, on
-   שיבוץ + המטופלים שלי). The dashboard has no edit controls — view-only. */
-body:not(.edit-mode) .edit-only { display: none !important; }
-/* The edit-mode toggle, lit when active. */
-.edit-toggle.active {
-  background: var(--green-deep); color: #eaf7ff; border-color: var(--green);
-  font-weight: 700;
-}
+/* No edit-mode in iteration 7 — actions are scoped by name-pick role + tab, and
+   are always visible within the role's tab. (.edit-only retained as a no-op
+   marker on action rows; role gating happens at the tab level.) */
+.hidden-tab { display: none !important; }
+
+/* Identity screen — pick who you are (no password). */
+.id-or { color: var(--muted); margin: 10px 0 4px; font-size: 0.9rem; }
+.id-ther-label { display: block; text-align: start; color: var(--text-soft); font-size: 0.95rem; margin-bottom: 6px; }
+.id-ther-label select { width: 100%; margin-top: 4px; }
 
 /* ===== Billing ===== */
 .billing-date-label {
