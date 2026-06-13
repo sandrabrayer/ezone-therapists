@@ -260,6 +260,27 @@
     return 'flagged';
   }
 
+  /**
+   * Build the list of time-of-day options for the scheduling dropdowns, e.g.
+   * timeSlots('07:00','21:00',30) → ['07:00','07:30',…,'21:00'].
+   * @returns {string[]} 'HH:mm' strings, inclusive of both ends
+   */
+  function timeSlots(start, end, stepMin) {
+    function toMin(hhmm) { var p = String(hhmm).split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+    function fromMin(m) { var h = Math.floor(m / 60), mm = m % 60; return (h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm; }
+    var s = toMin(start), e = toMin(end), step = stepMin || 30, out = [];
+    for (var m = s; m <= e; m += step) out.push(fromMin(m));
+    return out;
+  }
+
+  // A booking may be CANCELLED only while it hasn't been reported yet (attendance
+  // pending). A reported treatment must first be marked «לא התקיים» (which
+  // re-syncs given=false to outpatient) before it can be cancelled — keeps the
+  // outpatient pay records consistent.
+  function canCancelBooking(row) {
+    return String((row && row.attendance) || '') === '';
+  }
+
   return {
     ATTENDANCE: ATTENDANCE,
     GROUP_TYPE_NAME: GROUP_TYPE_NAME,
@@ -269,6 +290,8 @@
     activeNames: activeNames,
     isGroupType: isGroupType,
     gateStatusForDecision: gateStatusForDecision,
+    timeSlots: timeSlots,
+    canCancelBooking: canCancelBooking,
     validateSession: validateSession,
     validateAttendance: validateAttendance,
     buildSessionRows: buildSessionRows,

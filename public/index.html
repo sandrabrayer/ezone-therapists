@@ -110,6 +110,24 @@
       </div>
     </div>
 
+    <!-- Edit an existing booking (day / time / location) -->
+    <div id="bookingModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-title">עריכת טיפול — <span id="bookingPatient"></span></div>
+        <form id="bookingForm" class="form-grid">
+          <label>תאריך<input name="scheduledDate" type="date" required /></label>
+          <label>שעה<select name="time" id="bookingTime"><option value="">—</option></select></label>
+          <label>מיקום
+            <select name="location" id="bookingLocation"><option value="">—</option></select>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+            <button type="submit" class="btn btn-primary" id="bookingSave">שמירה</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Schedule a treatment (with inline per-patient debt gate + approval) -->
     <div id="scheduleModal" class="modal" hidden>
       <div class="modal-card modal-card-wide">
@@ -131,7 +149,7 @@
             </select>
           </label>
           <label>תאריך<input name="scheduledDate" type="date" required /></label>
-          <label>שעה<input name="time" type="time" /></label>
+          <label>שעה<select name="time" id="scheduleTime"><option value="">—</option></select></label>
 
           <!-- Patients (single, or several for a group session) -->
           <div class="wide">
