@@ -32,6 +32,17 @@ button, input, select, textarea {
   font-family: inherit;
   color: inherit;
 }
+/* Dark base for selects so the chosen value is always readable on the dark
+   theme (a bare <select> would default to a white box with light text). More
+   specific rules like `.form-grid select` still win where they apply. */
+select {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+select option { background: var(--bg-elev); color: var(--text); }
 
 /* buttons */
 .btn {

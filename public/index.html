@@ -7,33 +7,16 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Identity screen — pick who you are (no password). -->
-  <div id="identityScreen" class="pin-screen">
-    <div class="pin-card">
-      <div class="brand">E-ZONE Therapists</div>
-      <div class="pin-sub">מי את/ה?</div>
-      <button type="button" id="idVered" class="btn btn-primary">ורד (משרד)</button>
-      <div class="id-or">— או —</div>
-      <label class="id-ther-label">מטפל/ת — בחר/י את שמך
-        <select id="idTherapist"><option value="">—</option></select>
-      </label>
-      <button type="button" id="idTherapistGo" class="btn btn-primary">כניסה כמטפל/ת</button>
-      <div id="idError" class="pin-error" hidden>יש לבחור שם</div>
-    </div>
-  </div>
-
-  <div id="app" class="app" hidden>
+  <div id="app" class="app">
     <header class="topbar">
       <div class="logo">E-ZONE <span>Therapists</span></div>
       <nav class="tabs">
-        <button class="tab active" data-view="dashboard" data-roles="vered">דשבורד מטופלים</button>
-        <button class="tab" data-view="workflow" data-roles="vered">שיבוץ מטפלים</button>
-        <button class="tab" data-view="mine" data-roles="therapist">המטופלים שלי</button>
+        <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
+        <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
+        <button class="tab" data-view="mine">המטופלים שלי</button>
       </nav>
       <div class="topbar-right">
-        <span id="whoami" class="role-badge"></span>
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
-        <button id="logoutBtn" class="btn btn-ghost">החלפת משתמש</button>
       </div>
     </header>
 
@@ -81,10 +64,13 @@
       <!-- My patients: therapist schedules + reports on their own patients -->
       <section id="view-mine" class="view">
         <div class="toolbar">
-          <span id="mineHello" class="mine-hello"></span>
+          <label class="mine-picker">שם המטפל/ת:
+            <select id="mineTherapist"><option value="">— בחר/י את שמך —</option></select>
+          </label>
           <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
           <button id="mineScheduleBtn" class="btn btn-primary">+ קביעת טיפול</button>
         </div>
+        <div id="mineEmpty" class="billing-empty">בחר/י את שמך כדי לראות את המטופלים והטיפולים שלך.</div>
         <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
         <div class="panel" id="myPatientsPanel">
           <div class="panel-title">המטופלים שלי — קביעת ימים, שעות ומיקום</div>

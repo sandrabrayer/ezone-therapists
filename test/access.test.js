@@ -1,50 +1,28 @@
 'use strict';
 
 /**
- * Unit tests for public/access.js — the name-pick role access rules (iteration 7).
+ * Unit tests for public/access.js — the tab list (iteration 8: no roles/login).
  * Run with:  npm test     (Node >= 18, built-in test runner)
- *
- * Locks in: Vered (office) sees דשבורד + שיבוץ and registers/assigns; a therapist
- * sees ONLY «המטופלים שלי» and schedules/reports; no edit-mode anywhere.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Access = require('../public/access');
 
-test('tabs per role: Vered gets dashboard+workflow, therapist gets mine only', () => {
-  assert.deepEqual(Access.tabsForRole('vered'), ['dashboard', 'workflow']);
-  assert.deepEqual(Access.tabsForRole('therapist'), ['mine']);
-  assert.deepEqual(Access.tabsForRole('nobody'), []);
+test('all three tabs, dashboard first (default view)', () => {
+  assert.deepEqual(Access.tabs(), ['dashboard', 'workflow', 'mine']);
+  assert.equal(Access.defaultView(), 'dashboard');
 });
 
-test('default view is the first tab of the role', () => {
-  assert.equal(Access.defaultView('vered'), 'dashboard');
-  assert.equal(Access.defaultView('therapist'), 'mine');
+test('isTab recognises the real tabs only', () => {
+  assert.equal(Access.isTab('dashboard'), true);
+  assert.equal(Access.isTab('workflow'), true);
+  assert.equal(Access.isTab('mine'), true);
+  assert.equal(Access.isTab('nope'), false);
+  assert.equal(Access.isTab(''), false);
 });
 
-test('a therapist cannot view Vered tabs and vice-versa', () => {
-  assert.equal(Access.canViewTab('therapist', 'mine'), true);
-  assert.equal(Access.canViewTab('therapist', 'dashboard'), false);
-  assert.equal(Access.canViewTab('therapist', 'workflow'), false);
-  assert.equal(Access.canViewTab('vered', 'workflow'), true);
-  assert.equal(Access.canViewTab('vered', 'mine'), false);
-});
-
-test('register/assign are Vered-only; schedule/report are therapist-only', () => {
-  assert.equal(Access.canRegister('vered'), true);
-  assert.equal(Access.canAssign('vered'), true);
-  assert.equal(Access.canSchedule('vered'), false);
-  assert.equal(Access.canReport('vered'), false);
-
-  assert.equal(Access.canSchedule('therapist'), true);
-  assert.equal(Access.canReport('therapist'), true);
-  assert.equal(Access.canRegister('therapist'), false);
-  assert.equal(Access.canAssign('therapist'), false);
-});
-
-test('isRole accepts only the two real roles', () => {
-  assert.equal(Access.isRole('vered'), true);
-  assert.equal(Access.isRole('therapist'), true);
-  assert.equal(Access.isRole('editor'), false);
-  assert.equal(Access.isRole(''), false);
+test('tabs() returns a copy (callers can\'t mutate the canonical list)', () => {
+  const a = Access.tabs();
+  a.push('x');
+  assert.deepEqual(Access.tabs(), ['dashboard', 'workflow', 'mine']);
 });
