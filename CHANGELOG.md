@@ -1,5 +1,13 @@
 # Changelog
 
+## Iteration 10 (step 1) — the 1899-12-30 date bug
+
+`_readAll` formatted every Date cell as a date, so the time-only `time` cell
+(stored by Sheets on its 1899-12-30 epoch day) showed as "1899-12-30" next to
+bookings. Fixed: time-only cells format as `HH:mm` (pure `sheetdate.js` +
+`Code.gs` mirror); recovers existing rows. Full notes:
+[`CHANGELOG-iteration10-date-fix.md`](CHANGELOG-iteration10-date-fix.md).
+
 ## Iteration 9 — white-field fix + scheduling unblock
 
 Extended the dark control style to text inputs + textarea (fixes the white/

@@ -179,7 +179,14 @@ function _readAll(sh, headers) {
     for (var c = 0; c < headers.length; c++) {
       var v = row[c];
       if (v instanceof Date) {
-        v = Utilities.formatDate(v, Session.getScriptTimeZone() || 'Asia/Jerusalem', 'yyyy-MM-dd');
+        // Mirror of public/sheetdate.js formatCell: a time-only cell is stored
+        // by Sheets on the epoch day (1899-12-30); format it as HH:mm, not as a
+        // date (that produced the bogus "1899-12-30" next to bookings). Real
+        // dates → yyyy-MM-dd.
+        var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
+        v = (v.getFullYear() < 1900)
+          ? Utilities.formatDate(v, tz, 'HH:mm')
+          : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
       }
       obj[headers[c]] = v;
     }
