@@ -1,5 +1,21 @@
 # Changelog
 
+## Iteration 10 (steps 2–4) — edit, time dropdown, locations
+
+Inline **«עריכה»** to edit bookings (day/time/location via new `updateBooking`,
+no gate re-run) and assignments; **«ביטול טיפול»** to cancel an unreported booking
+(reported ones must be marked «לא התקיים» first); **«שעה»** is a 30-min dropdown
+07:00–21:00; the six fixed locations. Full notes:
+[`CHANGELOG-iteration10-edit-time-location.md`](CHANGELOG-iteration10-edit-time-location.md).
+
+## Iteration 10 (step 1) — the 1899-12-30 date bug
+
+`_readAll` formatted every Date cell as a date, so the time-only `time` cell
+(stored by Sheets on its 1899-12-30 epoch day) showed as "1899-12-30" next to
+bookings. Fixed: time-only cells format as `HH:mm` (pure `sheetdate.js` +
+`Code.gs` mirror); recovers existing rows. Full notes:
+[`CHANGELOG-iteration10-date-fix.md`](CHANGELOG-iteration10-date-fix.md).
+
 ## Iteration 9 — white-field fix + scheduling unblock
 
 Extended the dark control style to text inputs + textarea (fixes the white/

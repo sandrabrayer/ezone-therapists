@@ -239,3 +239,22 @@ test('lookup_failed (debt endpoint unavailable) persists as flagged, never clear
   // dead-end retry when the debt endpoint is down.
   assert.equal(Scheduling.gateStatusForDecision(gate.decision), 'flagged');
 });
+
+// --- time slots + cancel guard (iteration 10) ------------------------------
+
+test('timeSlots: 30-min slots 07:00..21:00 inclusive', () => {
+  const slots = Scheduling.timeSlots('07:00', '21:00', 30);
+  assert.equal(slots.length, 29);              // (21-7)*2 + 1
+  assert.equal(slots[0], '07:00');
+  assert.equal(slots[slots.length - 1], '21:00');
+  assert.ok(slots.includes('07:30'));
+  assert.ok(slots.includes('13:00'));
+  assert.ok(!slots.includes('21:30'));         // stops at 21:00
+});
+
+test('canCancelBooking: only an unreported booking can be cancelled', () => {
+  assert.equal(Scheduling.canCancelBooking({ attendance: '' }), true);
+  assert.equal(Scheduling.canCancelBooking({ attendance: 'occurred' }), false);
+  assert.equal(Scheduling.canCancelBooking({ attendance: 'missed' }), false);
+  assert.equal(Scheduling.canCancelBooking(null), true);   // nothing reported
+});

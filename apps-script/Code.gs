@@ -179,7 +179,14 @@ function _readAll(sh, headers) {
     for (var c = 0; c < headers.length; c++) {
       var v = row[c];
       if (v instanceof Date) {
-        v = Utilities.formatDate(v, Session.getScriptTimeZone() || 'Asia/Jerusalem', 'yyyy-MM-dd');
+        // Mirror of public/sheetdate.js formatCell: a time-only cell is stored
+        // by Sheets on the epoch day (1899-12-30); format it as HH:mm, not as a
+        // date (that produced the bogus "1899-12-30" next to bookings). Real
+        // dates → yyyy-MM-dd.
+        var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
+        v = (v.getFullYear() < 1900)
+          ? Utilities.formatDate(v, tz, 'HH:mm')
+          : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
       }
       obj[headers[c]] = v;
     }
@@ -698,6 +705,46 @@ function _removeAssignment(id) {
   }
 }
 
+// Edit an existing booking's day / time / location (by id). Debt is per-patient,
+// not per-slot, so this does NOT re-run the gate. If the booking was already
+// reported (attendance set), re-sync the session so outpatient gets the corrected
+// date/time (idempotent by treatmentId); an unreported booking isn't synced yet.
+function _updateBooking(payload) {
+  var id = payload && payload.id;
+  if (!id) return { ok: false, error: 'missing_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'not_found' };
+    var idIdx = SCHEDULE_HEADERS.indexOf('id');
+    var sidIdx = SCHEDULE_HEADERS.indexOf('sessionId');
+    var attIdx = SCHEDULE_HEADERS.indexOf('attendance');
+    var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
+    var found = -1;
+    for (var i = 0; i < grid.length; i++) {
+      if (String(grid[i][idIdx]) === String(id)) { found = i; break; }
+    }
+    if (found < 0) return { ok: false, error: 'not_found' };
+    function setCol(name, val) {
+      var idx = SCHEDULE_HEADERS.indexOf(name);
+      if (idx > -1) sh.getRange(found + 2, idx + 1, 1, 1).setValues([[val]]);
+    }
+    if (payload.scheduledDate != null) setCol('scheduledDate', String(payload.scheduledDate));
+    if (payload.time != null) setCol('time', String(payload.time));
+    if (payload.location != null) setCol('location', String(payload.location));
+
+    var status = '';
+    if (String(grid[found][attIdx] || '') !== '') {   // already reported → re-sync the correction
+      status = _syncSession(sh, String(grid[found][sidIdx] || id));
+    }
+    return { ok: true, id: id, syncStatus: status };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
 function _removeSchedule(id) {
   if (!id) return { ok: false, error: 'missing_id' };
   var lock = LockService.getScriptLock();
@@ -750,6 +797,7 @@ function doPost(e) {
     if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
     if (action === 'saveAssignment') return _json(_saveAssignment(payload));
+    if (action === 'updateBooking') return _json(_updateBooking(payload));
     if (action === 'removeAssignment') {
       var aid = payload.id || (payload.assignment && payload.assignment.id) || '';
       return _json(_removeAssignment(aid));

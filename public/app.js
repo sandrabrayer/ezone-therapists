@@ -28,16 +28,20 @@
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
   var LOCATIONS = [
-    { id: 'ramot',   he: 'רמות השבים' },
-    { id: 'raanana', he: 'רעננה' },
-    { id: 'asher',   he: 'אשר' },
-    { id: 'arfoni',  he: 'קיסריה ערפוני' },
-    { id: 'rehab',   he: 'קיסריה ריהאב' }
+    { id: 'sde_eliaz',     he: 'שדה אליעז' },
+    { id: 'rehab',         he: 'קיסריה ריהאב' },
+    { id: 'efroni',        he: 'קיסריה עפרוני' },
+    { id: 'raanana_asher', he: 'רעננה אשר' },
+    { id: 'raanana_pardes', he: 'רעננה הפרדס' },
+    { id: 'ramot',         he: 'רמות השבים' }
   ];
+  // Display labels for ids that may sit on OLDER bookings (pre-iteration-10 list)
+  // so historical rows still read in Hebrew even though they're off the dropdown.
+  var LEGACY_LOCATION_LABELS = { raanana: 'רעננה אשר', asher: 'אשר', arfoni: 'קיסריה עפרוני' };
   function locationLabel(v) {
     var s = String(v == null ? '' : v).trim();
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === s) return LOCATIONS[i].he;
-    return s;
+    return LEGACY_LOCATION_LABELS[s] || s;
   }
 
   // ORIGIN HOUSES — a SEPARATE list from the scheduling LOCATIONS, used for the
@@ -181,6 +185,10 @@
     if (!Array.isArray(data.results)) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
+  function apiUpdateBooking(id, fields) {
+    return apiPost({ action: 'updateBooking', id: id, scheduledDate: fields.scheduledDate, time: fields.time, location: fields.location });
+  }
+  function apiRemoveSchedule(id) { return apiPost({ action: 'removeSchedule', id: id }); }
   function apiMarkAttendance(id, attendance, extra) {
     extra = extra || {};
     return apiPost({
@@ -573,7 +581,7 @@
         // Scheduling is the THERAPIST's action — it lives in «המטופלים שלי».
         '<span class="assign-actions">' +
           '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
-          '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שיבוץ ותוכנית</button>' +
+          '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>' +
         '</span>' +
         '</div>';
     });
@@ -587,6 +595,9 @@
     var attBtns = '<span class="att-btns">' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
+      '<button class="btn btn-ghost btn-sm" data-edit-booking="' + escapeHtml(r.id) + '">עריכה</button>' +
+      // Cancel only while the booking hasn't been reported (keeps outpatient pay consistent).
+      (Scheduling.canCancelBooking(r) ? '<button class="btn btn-ghost btn-sm btn-danger" data-cancel-booking="' + escapeHtml(r.id) + '">ביטול טיפול</button>' : '') +
       '</span>';
     return '<div class="billing-row mine-row">' +
       '<div class="p-name">' + escapeHtml(r.patientName) + '</div>' +
@@ -709,6 +720,13 @@
       return '<option value="' + escapeHtml(h.id) + '"' + sel + '>' + escapeHtml(h.he) + '</option>';
     })).join('');
   }
+  // 30-minute time slots 07:00–21:00 for the scheduling dropdowns.
+  function timeOptions(selected) {
+    return ['<option value="">—</option>'].concat(Scheduling.timeSlots('07:00', '21:00', 30).map(function (t) {
+      var sel = (t === selected) ? ' selected' : '';
+      return '<option value="' + t + '"' + sel + '>' + t + '</option>';
+    })).join('');
+  }
 
   function syncDropdowns() {
     var tNames = activeTherapistNames();
@@ -718,6 +736,7 @@
     var sty = $('#scheduleType'); if (sty) { var styv = sty.value; sty.innerHTML = typeOptionList(); sty.value = styv; }
     var pty = $('#patientType'); if (pty) { var ptyv = pty.value; pty.innerHTML = typeOptionList(); pty.value = ptyv; }
     var sl = $('#scheduleLocation'); if (sl) sl.innerHTML = locationOptions();
+    var stime = $('#scheduleTime'); if (stime) { var stv = stime.value; stime.innerHTML = timeOptions(); stime.value = stv; }
     var ah = $('#admittedHouse'); if (ah) ah.innerHTML = houseOptions();
     // Identity-screen name picker.
     // Tab-3 name picker — preserve the current pick across re-renders.
@@ -1050,6 +1069,51 @@
       });
   }
 
+  // --- edit / cancel a booking (therapist, in «המטופלים שלי») -----------
+  var bookingEditId = null;
+  function openBookingEdit(id) {
+    var row = state.schedule.filter(function (r) { return r.id === id; })[0];
+    if (!row) return;
+    bookingEditId = id;
+    $('#bookingPatient').textContent = row.patientName + ' · ' + svc(row.treatmentType);
+    $('#bookingTime').innerHTML = timeOptions(row.time);
+    $('#bookingLocation').innerHTML = locationOptions(row.location);
+    var form = $('#bookingForm');
+    form.querySelector('[name="scheduledDate"]').value = fmtDate(row.scheduledDate) || today();
+    $('#bookingTime').value = row.time || '';
+    $('#bookingLocation').value = row.location || '';
+    $('#bookingModal').hidden = false;
+  }
+  function closeBookingModal() { $('#bookingModal').hidden = true; bookingEditId = null; }
+  function saveBooking() {
+    if (!bookingEditId) return;
+    var btn = $('#bookingSave'); if (btn.disabled) return;
+    var fd = new FormData($('#bookingForm'));
+    var fields = {
+      scheduledDate: fd.get('scheduledDate') || '',
+      time: fd.get('time') || '',
+      location: (fd.get('location') || '').trim()
+    };
+    if (!fields.scheduledDate) { toast('יש לבחור תאריך', true); return; }
+    btn.disabled = true;
+    apiUpdateBooking(bookingEditId, fields)
+      .then(function () { toast('הטיפול עודכן'); return loadAll(); })
+      .then(function () { closeBookingModal(); })
+      .catch(function (err) { toast('שגיאה: ' + err.message, true); })
+      .finally(function () { btn.disabled = false; });
+  }
+  function cancelBooking(id) {
+    var row = state.schedule.filter(function (r) { return r.id === id; })[0];
+    if (!row) return;
+    if (!Scheduling.canCancelBooking(row)) {
+      toast('כדי לבטל טיפול שכבר דווח — סמן/י תחילה «לא התקיים».', true); return;
+    }
+    if (!window.confirm('לבטל את הטיפול של ' + row.patientName + ' בתאריך ' + displayDate(row.scheduledDate) + '?')) return;
+    apiRemoveSchedule(id)
+      .then(function () { toast('הטיפול בוטל'); return loadAll(); })
+      .catch(function (err) { toast('שגיאה: ' + err.message, true); });
+  }
+
   // --- patient intake / edit modal (identity + origin) ------------------
   // The therapist assignment(s) + plan(s) live in the Assignments modal; the
   // intake form captures identity + origin, plus ONE optional INITIAL assignment
@@ -1243,6 +1307,10 @@
     on('#view-mine', 'click', function (e) {
       var sp = e.target.closest('[data-schedule-patient]');
       if (sp) { onPatientListClick(e); return; }
+      var eb = e.target.closest('[data-edit-booking]');
+      if (eb) { openBookingEdit(eb.getAttribute('data-edit-booking')); return; }
+      var cb = e.target.closest('[data-cancel-booking]');
+      if (cb) { cancelBooking(cb.getAttribute('data-cancel-booking')); return; }
       var b = e.target.closest('[data-mine-att]');
       if (b) { markAttendance(b.getAttribute('data-id'), b.getAttribute('data-mine-att')); return; }
       if (e.target.closest('#syncNowBtn')) syncNow();
@@ -1273,8 +1341,9 @@
     on('#assignmentsSave', 'click', saveAssignments);
 
     on('#reportSave', 'click', saveReport);
+    on('#bookingForm', 'submit', function (e) { e.preventDefault(); saveBooking(); });
     $$('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); closeReportModal(); });
+      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); closeReportModal(); closeBookingModal(); });
     });
 
     on('#scheduleForm', 'submit', function (e) { e.preventDefault(); handleScheduleSubmit(); });
