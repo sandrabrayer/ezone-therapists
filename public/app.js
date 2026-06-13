@@ -1214,6 +1214,7 @@
     applyRole();
     applyTherapist();
     setView(Access.defaultView(state.role) || 'dashboard');
+    if (state.loaded) render();   // reflect the chosen role in the lists
   }
 
   function setView(view) {
