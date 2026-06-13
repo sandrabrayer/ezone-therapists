@@ -1,5 +1,14 @@
 # Changelog
 
+## Iteration 6 — label + edit-mode + picker fixes
+
+Replaced the broken «עורך» badge with a working **«עריכה» edit-mode toggle**
+(editor-only, only on שיבוץ + המטופלים שלי; dashboard view-only); finished the
+«מתוזמנים/תוזמנו»→«נקבעו» rename app-wide; clarified the identity picker
+(«אני:»→«שם המטפל/ת:», only in המטופלים שלי). Access rules extracted to
+`public/access.js` + tests. Full notes:
+[`CHANGELOG-iteration6-edit-mode-labels.md`](CHANGELOG-iteration6-edit-mode-labels.md).
+
 ## Iteration 5 — structural fixes from real use
 
 «המטופלים שלי» becomes a real third tab (name-picker removed from the global
