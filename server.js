@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +27,10 @@ const DEBT_STATUS_SECRET = process.env.DEBT_STATUS_SECRET || '';
 const TREATMENT_PLANS_SECRET = process.env.TREATMENT_PLANS_SECRET || '';
 const DASHBOARD_SHEETS_URL = process.env.DASHBOARD_SHEETS_URL || '';
 const OCCUPANCY_SECRET = process.env.OCCUPANCY_SECRET || '';
+// APP_PASSWORD — optional shared UI-gate password. When set, the frontend shows
+// a password screen on open and verifies it here (server-side); when empty, the
+// gate is OFF and the app opens directly. NEVER sent to the browser.
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const BUILD = String(Date.now());
 
 // --- Cache config -----------------------------------------------------------
@@ -204,6 +209,28 @@ app.post('/api/sheets', async (req, res) => {
   }
 });
 
+// --- Shared UI-gate password ------------------------------------------------
+// Constant-time compare so a wrong password can't be probed by timing. Both
+// sides are hashed to fixed length first (timingSafeEqual requires equal-length
+// buffers).
+function passwordMatches(candidate) {
+  if (!APP_PASSWORD) return false;
+  var a = crypto.createHash('sha256').update(String(candidate == null ? '' : candidate)).digest();
+  var b = crypto.createHash('sha256').update(APP_PASSWORD).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// GET — does the app require a password? (boolean only; never the password.)
+app.get('/api/gate', (req, res) => res.json({ ok: true, required: !!APP_PASSWORD }));
+
+// POST { password } — verify. Returns { ok } only; the secret is never echoed.
+// When no APP_PASSWORD is configured the gate is OFF, so any attempt is "ok".
+app.post('/api/gate', (req, res) => {
+  if (!APP_PASSWORD) return res.json({ ok: true, required: false });
+  const candidate = req.body && req.body.password;
+  res.json({ ok: passwordMatches(candidate), required: true });
+});
+
 // --- Cross-app reads (secrets injected server-side) -------------------------
 // The debt gate. NOT cached — a debt decision must be live, never stale.
 app.get('/api/debt-status', (req, res) =>
@@ -228,7 +255,8 @@ app.get('/api/debug/env', (req, res) => {
     debtSecretConfigured: !!DEBT_STATUS_SECRET,
     treatmentPlansSecretConfigured: !!TREATMENT_PLANS_SECRET,
     dashboardUrlConfigured: !!DASHBOARD_SHEETS_URL,
-    occupancySecretConfigured: !!OCCUPANCY_SECRET
+    occupancySecretConfigured: !!OCCUPANCY_SECRET,
+    appPasswordConfigured: !!APP_PASSWORD
   });
 });
 
