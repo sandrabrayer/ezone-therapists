@@ -23,6 +23,7 @@
   var Scheduling = window.Scheduling;
   var DebtAlert = window.DebtAlert;
   var Writeback = window.Writeback;
+  var Access = window.Access;
 
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
@@ -64,8 +65,6 @@
   // editable tabs (שיבוץ + המטופלים שלי). The dashboard is view-only for everyone.
   var EDITOR_PIN = '5555';
   function isEditor() { return state.role === 'editor'; }
-  // Tabs that allow editing (the toggle + edit controls live only here).
-  var EDITABLE_VIEWS = { workflow: true, mine: true };
 
   // Hebrew copy for each gate flag reason (stable ids come from debt-gate.js).
   var FLAG_TEXT = {
@@ -1089,8 +1088,7 @@
   function applyEditToggle() {
     var btn = $('#editToggle');
     if (!btn) return;
-    var show = isEditor() && !!EDITABLE_VIEWS[state.view];
-    btn.hidden = !show;
+    btn.hidden = !Access.editToggleVisible(state.role, state.view);
     btn.textContent = state.editMode ? 'סיום עריכה' : 'עריכה';
     btn.classList.toggle('active', state.editMode);
   }
