@@ -57,14 +57,13 @@
   // Display-only relabel for legacy outpatient service terms (e.g. מרכז יום).
   function svc(v) { return Scheduling.displayServiceType(v); }
 
-  // --- access: name-pick roles, no password, no edit mode ----------------
-  // A user is Vered (the office) or a THERAPIST (picked by name). Vered registers
-  // + assigns; therapists see only their own patients and schedule/report.
-  // Actions are always visible and scoped by role + tab (see public/access.js).
-  // Identity is self-asserted — the real controls are the outpatient debt gate
-  // and the Ron/Sandra approval audit.
-  function isVered() { return state.role === 'vered'; }
-  function isTherapist() { return state.role === 'therapist'; }
+  // --- access: NO roles, NO login -----------------------------------------
+  // The app opens directly; all three tabs are visible to everyone. The only
+  // "identity" is the therapist NAME picked inside «המטופלים שלי» (tab 3) — fresh
+  // each open, NOT persisted. Scheduling/reporting there require a name picked
+  // (`hasTherapist`); tab-2 actions (register/assign) are open to all. The real
+  // controls are the outpatient debt gate + the Ron/Sandra approval audit.
+  function hasTherapist() { return !!state.therapist; }
 
   // Hebrew copy for each gate flag reason (stable ids come from debt-gate.js).
   var FLAG_TEXT = {
@@ -76,8 +75,7 @@
 
   // --- state -------------------------------------------------------------
   var state = {
-    role: '',
-    therapist: '',
+    therapist: '',         // tab-3 selection only — runtime, never persisted
     view: 'dashboard',
     schedule: [],
     approvals: [],
@@ -104,6 +102,12 @@
   function uid() { return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8); }
   function today() {
     var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+  function daysFromToday(n) {
+    var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n);
     var m = String(d.getMonth() + 1).padStart(2, '0');
     var day = String(d.getDate()).padStart(2, '0');
     return d.getFullYear() + '-' + m + '-' + day;
@@ -607,12 +611,21 @@
   }
 
   function renderMine() {
-    var hello = $('#mineHello');
-    if (hello) hello.textContent = state.therapist ? ('שלום, ' + state.therapist) : '';
+    var panels = ['#myPatientsPanel', '#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
+
+    // No name picked yet → prompt, hide everything else.
+    if (!hasTherapist()) {
+      $('#mineEmpty').hidden = false;
+      $('#syncBanner').hidden = true;
+      panels.forEach(function (s) { $(s).hidden = true; });
+      return;
+    }
+    $('#mineEmpty').hidden = true;
+    $('#myPatientsPanel').hidden = false;
 
     // My assigned patients (I am one of their assigned therapists).
     var myPatients = activePatients().filter(function (p) {
-      return state.therapist && p.therapists.indexOf(state.therapist) !== -1 && matchName(p.name, state.mineSearch);
+      return p.therapists.indexOf(state.therapist) !== -1 && matchName(p.name, state.mineSearch);
     }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
     var mpList = $('#myPatientsList');
     if (mpList) mpList.innerHTML = myPatients.length ? myPatients.map(myPatientsRow).join('')
@@ -620,27 +633,19 @@
 
     var pending = pendingSyncCount();
     var banner = $('#syncBanner');
-    if (banner) {
-      if (pending > 0) {
-        banner.hidden = false;
-        banner.innerHTML = '⚠️ ' + pending + ' סימוני טיפול ממתינים לסנכרון למערכת התשלומים. ' +
-          '<button id="syncNowBtn" class="btn btn-ghost btn-sm">סנכרן עכשיו</button>';
-      } else { banner.hidden = true; banner.innerHTML = ''; }
-    }
+    if (pending > 0) {
+      banner.hidden = false;
+      banner.innerHTML = '⚠️ ' + pending + ' סימוני טיפול ממתינים לסנכרון למערכת התשלומים. ' +
+        '<button id="syncNowBtn" class="btn btn-ghost btn-sm">סנכרן עכשיו</button>';
+    } else { banner.hidden = true; banner.innerHTML = ''; }
 
-    var panels = ['#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
-    if (!state.therapist) {
-      panels.forEach(function (s) { $(s).hidden = true; });
-      return;
-    }
-
-    // My treatments = treatments I perform; a patient may also have parallel
-    // treatments with other therapists (those show in their own «המטופלים שלי»).
+    // My treatments = treatments I perform. «קרובים» is the COMING WEEK (next 7
+    // days); everything else unmarked falls into «שנקבעו».
     var mine = state.schedule.filter(function (r) {
       return r.therapist === state.therapist && matchName(r.patientName, state.mineSearch);
     });
     var byDate = function (a, b) { return String(a.scheduledDate).localeCompare(String(b.scheduledDate)); };
-    var b = Scheduling.bucketMine(mine, today());
+    var b = Scheduling.bucketMine(mine, today(), daysFromToday(7));
 
     function fill(panelSel, listSel, rows) {
       $(panelSel).hidden = rows.length === 0;
@@ -715,7 +720,8 @@
     var sl = $('#scheduleLocation'); if (sl) sl.innerHTML = locationOptions();
     var ah = $('#admittedHouse'); if (ah) ah.innerHTML = houseOptions();
     // Identity-screen name picker.
-    var idt = $('#idTherapist'); if (idt) { var idv = idt.value; idt.innerHTML = optionList(tNames, idv); idt.value = idv; }
+    // Tab-3 name picker — preserve the current pick across re-renders.
+    var mt = $('#mineTherapist'); if (mt) { mt.innerHTML = optionList(tNames, state.therapist); mt.value = state.therapist || ''; }
     var wf = $('#workflowTherapistFilter'); if (wf) wf.innerHTML = '<option value="">כל המטפלים</option>' +
       tNames.map(function (n) { var s = (n === state.workflowTherapist) ? ' selected' : ''; return '<option value="' + escapeHtml(n) + '"' + s + '>' + escapeHtml(n) + '</option>'; }).join('');
 
@@ -796,7 +802,7 @@
     var fd = new FormData($('#scheduleForm'));
     return {
       // A therapist always schedules as themselves (the select is locked).
-      therapist: isTherapist() ? state.therapist : (fd.get('therapist') || '').trim(),
+      therapist: state.therapist || (fd.get('therapist') || '').trim(),
       treatmentType: (fd.get('treatmentType') || '').trim(),
       location: (fd.get('location') || '').trim(),
       scheduledDate: fd.get('scheduledDate') || '',
@@ -1061,7 +1067,6 @@
     $('#admittedDetails').hidden = !$('#stillAdmitted').checked;
   }
   function openNewPatient() {
-    if (!ensureVered()) return;
     $('#patientModalTitle').textContent = 'רישום מטופל חדש';
     fillPatientForm(null);
     $('#initialAssignmentSection').hidden = false;   // initial assignment only for new
@@ -1069,7 +1074,6 @@
     $('#patientModal').hidden = false;
   }
   function openPatientModal(phone) {
-    if (!ensureVered()) return;
     var rec = patientByPhone(phone);
     $('#patientModalTitle').textContent = 'עריכת מטופל/ת';
     fillPatientForm(rec || {});
@@ -1129,7 +1133,6 @@
       '</div>';
   }
   function openAssignmentsModal(phone) {
-    if (!ensureVered()) return;
     var p = patientByPhone(phone);
     if (!p) { toast('מטופל/ת לא נמצא', true); return; }
     assignmentsCtx = { phone: p.phone, removed: [] };
@@ -1177,48 +1180,15 @@
       .finally(function () { btn.disabled = false; });
   }
 
-  function ensureVered() {
-    if (isVered()) return true;
-    toast('פעולה זו זמינה לורד (משרד) בלבד', true); return false;
-  }
+  // Scheduling/reporting need a therapist name picked in tab 3 first.
   function ensureTherapist() {
-    if (isTherapist()) return true;
-    toast('פעולה זו זמינה למטפל/ת בלבד', true); return false;
+    if (hasTherapist()) return true;
+    toast('יש לבחור שם מטפל/ת בלשונית «המטופלים שלי»', true); return false;
   }
 
-  // --- auth / role / edit mode -------------------------------------------
-  // Show only the current role's tabs; the badge shows who you are.
-  function applyRole() {
-    document.body.classList.remove('role-vered', 'role-therapist');
-    if (state.role) document.body.classList.add('role-' + state.role);
-    var badge = $('#whoami');
-    if (badge) badge.textContent = isVered() ? 'ורד' : (state.therapist || '');
-    $$('.tab').forEach(function (t) {
-      t.hidden = !Access.canViewTab(state.role, t.dataset.view);
-    });
-  }
-  function applyTherapist() { var h = $('#mineHello'); if (h) h.textContent = state.therapist ? ('שלום, ' + state.therapist) : ''; }
-
-  function showIdentity() {
-    $('#identityScreen').hidden = false;
-    $('#app').hidden = true;
-    syncDropdowns();   // populate the therapist picker if data is loaded
-  }
-  // Enter as a chosen role. For a therapist, `name` is their picked name.
-  function enterApp(role, name) {
-    state.role = role;
-    state.therapist = (role === 'therapist') ? (name || '') : '';
-    try { sessionStorage.setItem('ez_identity', JSON.stringify({ role: role, therapist: state.therapist })); } catch (_) {}
-    $('#identityScreen').hidden = true;
-    $('#app').hidden = false;
-    applyRole();
-    applyTherapist();
-    setView(Access.defaultView(state.role) || 'dashboard');
-    if (state.loaded) render();   // reflect the chosen role in the lists
-  }
-
+  // --- view switching (no roles; all tabs always visible) ----------------
   function setView(view) {
-    if (!Access.canViewTab(state.role, view)) view = Access.defaultView(state.role) || view;
+    if (!Access.isTab(view)) view = Access.defaultView();
     state.view = view;
     document.body.classList.remove('view-dashboard', 'view-workflow', 'view-mine');
     document.body.classList.add('view-' + view);
@@ -1233,18 +1203,10 @@
   }
 
   function wireEvents() {
-    // Identity screen — pick who you are (no password).
-    on('#idVered', 'click', function () { enterApp('vered'); });
-    on('#idTherapistGo', 'click', function () {
-      var name = ($('#idTherapist').value || '').trim();
-      if (!name) { var e = $('#idError'); if (e) e.hidden = false; return; }
-      enterApp('therapist', name);
-    });
-    on('#idTherapist', 'change', function () { var e = $('#idError'); if (e) e.hidden = true; });
-    on('#logoutBtn', 'click', function () {
-      try { sessionStorage.removeItem('ez_identity'); } catch (_) {}
-      state.role = ''; state.therapist = '';
-      showIdentity();
+    // Tab-3 name picker — sets the runtime therapist identity (not persisted).
+    on('#mineTherapist', 'change', function (e) {
+      state.therapist = (e.target.value || '').trim();
+      renderMine();
     });
 
     $$('.tab').forEach(function (t) { t.addEventListener('click', function () { setView(t.dataset.view); }); });
@@ -1318,10 +1280,9 @@
 
   function init() {
     try { wireEvents(); } catch (e) { console.error('[ezone-therapists] wireEvents failed', e); }
-    var saved = null;
-    try { saved = JSON.parse(sessionStorage.getItem('ez_identity') || 'null'); } catch (_) {}
-    if (saved && Access.isRole(saved.role)) enterApp(saved.role, saved.therapist);
-    else showIdentity();
+    // No login: open straight to the dashboard. The tab-3 therapist pick is a
+    // fresh runtime choice each open (never restored from storage).
+    setView('dashboard');
     loadAll().catch(function () {});
   }
 

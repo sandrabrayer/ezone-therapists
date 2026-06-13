@@ -176,37 +176,45 @@ test('evaluateGroup: lookup failure flags every patient (never fail open)', () =
 // --- «המטופלים שלי» four buckets -------------------------------------------
 
 const TODAY = '2026-06-12';
+const WEEK_END = '2026-06-19';   // today + 7 (the "coming week")
 
-test('bucketMine: partitions into the four labeled buckets', () => {
+test('bucketMine: «קרובים» is the coming week (today..+7); else scheduled', () => {
   const rows = [
-    { id: 'a', attendance: 'occurred', scheduledDate: '2026-06-01' },          // performed
-    { id: 'b', attendance: 'missed',   scheduledDate: '2026-06-01' },          // not performed
-    { id: 'c', attendance: '',         scheduledDate: '2026-06-10' },          // scheduled (past, unmarked)
-    { id: 'd', attendance: '',         scheduledDate: TODAY },                 // scheduled (today)
-    { id: 'e', attendance: '',         scheduledDate: '2026-06-20' }           // upcoming (future)
+    { id: 'a', attendance: 'occurred', scheduledDate: '2026-06-01' },   // performed
+    { id: 'b', attendance: 'missed',   scheduledDate: '2026-06-01' },   // not performed
+    { id: 'c', attendance: '',         scheduledDate: '2026-06-10' },   // overdue → scheduled
+    { id: 'd', attendance: '',         scheduledDate: TODAY },          // today → upcoming
+    { id: 'e', attendance: '',         scheduledDate: WEEK_END },       // +7 boundary → upcoming
+    { id: 'f', attendance: '',         scheduledDate: '2026-06-20' },   // +8 (beyond week) → scheduled
+    { id: 'g', attendance: '',         scheduledDate: '2026-07-15' }    // far future → scheduled
   ];
-  const b = Scheduling.bucketMine(rows, TODAY);
+  const b = Scheduling.bucketMine(rows, TODAY, WEEK_END);
   assert.deepEqual(b.performed.map((r) => r.id), ['a']);
   assert.deepEqual(b.notPerformed.map((r) => r.id), ['b']);
-  assert.deepEqual(b.scheduled.map((r) => r.id), ['c', 'd']);
-  assert.deepEqual(b.upcoming.map((r) => r.id), ['e']);
+  assert.deepEqual(b.upcoming.map((r) => r.id), ['d', 'e']);
+  assert.deepEqual(b.scheduled.map((r) => r.id), ['c', 'f', 'g']);
 });
 
 test('bucketMine: empty / missing dates land in scheduled, not upcoming', () => {
-  const b = Scheduling.bucketMine([{ id: 'x', attendance: '', scheduledDate: '' }], TODAY);
+  const b = Scheduling.bucketMine([{ id: 'x', attendance: '', scheduledDate: '' }], TODAY, WEEK_END);
   assert.deepEqual(b.scheduled.map((r) => r.id), ['x']);
   assert.equal(b.upcoming.length, 0);
+});
+
+test('bucketMine: no weekEnd → any future date counts as upcoming', () => {
+  const b = Scheduling.bucketMine([{ id: 'far', attendance: '', scheduledDate: '2026-09-01' }], TODAY);
+  assert.deepEqual(b.upcoming.map((r) => r.id), ['far']);
 });
 
 test('multiple parallel treatments per patient — different therapists bucket independently', () => {
   // ONE patient (same phone) with two parallel treatments by two therapists.
   const all = [
     { id: 't1', patientPhone: '0501234567', therapist: 'כנרת', attendance: 'occurred', scheduledDate: '2026-06-05' },
-    { id: 't2', patientPhone: '0501234567', therapist: 'חנן',  attendance: '',         scheduledDate: '2026-06-20' }
+    { id: 't2', patientPhone: '0501234567', therapist: 'חנן',  attendance: '',         scheduledDate: '2026-06-15' }
   ];
   // Each therapist's «המטופלים שלי» view is filtered to their own treatments.
-  const kineret = Scheduling.bucketMine(all.filter((r) => r.therapist === 'כנרת'), TODAY);
-  const hanan   = Scheduling.bucketMine(all.filter((r) => r.therapist === 'חנן'), TODAY);
+  const kineret = Scheduling.bucketMine(all.filter((r) => r.therapist === 'כנרת'), TODAY, WEEK_END);
+  const hanan   = Scheduling.bucketMine(all.filter((r) => r.therapist === 'חנן'), TODAY, WEEK_END);
   assert.deepEqual(kineret.performed.map((r) => r.id), ['t1']);
   assert.equal(kineret.upcoming.length, 0);
   assert.deepEqual(hanan.upcoming.map((r) => r.id), ['t2']);

@@ -217,15 +217,19 @@
    * treatment row is bucketed independently:
    *   performed     attendance 'occurred'
    *   notPerformed  attendance 'missed' (scheduled but didn't happen)
-   *   upcoming      not yet marked, scheduled date in the future
-   *   scheduled     not yet marked, scheduled date today or earlier (awaiting mark)
+   *   upcoming      not yet marked, scheduled date within the COMING WEEK
+   *                 (today .. weekEnd inclusive)
+   *   scheduled     not yet marked, everything else (overdue, or beyond the week)
    * @param {Array} rows treatment rows ({attendance, scheduledDate, ...})
-   * @param {string} today 'YYYY-MM-DD'
+   * @param {string} today   'YYYY-MM-DD'
+   * @param {string} [weekEnd] 'YYYY-MM-DD' upper bound of "coming week" (e.g.
+   *        today+7). Omit for no upper bound (any future date is "upcoming").
    * @returns {{scheduled:Array, upcoming:Array, performed:Array, notPerformed:Array}}
    */
-  function bucketMine(rows, today) {
+  function bucketMine(rows, today, weekEnd) {
     var out = { scheduled: [], upcoming: [], performed: [], notPerformed: [] };
     today = String(today || '');
+    weekEnd = String(weekEnd || '');
     (Array.isArray(rows) ? rows : []).forEach(function (r) {
       if (!r) return;
       var att = String(r.attendance || '');
@@ -233,7 +237,8 @@
       if (att === 'missed') { out.notPerformed.push(r); return; }
       var d = String(r.scheduledDate || '');
       if (d.indexOf('T') !== -1) d = d.split('T')[0];
-      if (d && today && d > today) out.upcoming.push(r);
+      var inWeek = d && today && d >= today && (!weekEnd || d <= weekEnd);
+      if (inWeek) out.upcoming.push(r);
       else out.scheduled.push(r);
     });
     return out;
