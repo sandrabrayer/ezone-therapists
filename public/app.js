@@ -56,12 +56,16 @@
   // Display-only relabel for legacy outpatient service terms (e.g. מרכז יום).
   function svc(v) { return Scheduling.displayServiceType(v); }
 
-  // --- access: one editor code + viewer (no per-role gating) -------------
-  // Work order (Vered assigns first, therapist schedules after) is PROCEDURE,
-  // not software-enforced: therapists are paid per treatment and self-enforce
-  // getting properly assigned/approved. So any editor can assign AND schedule.
+  // --- access: shared editor code + viewer -------------------------------
+  // The shared editor code lets Vered/therapists EDIT; "continue as viewer" is
+  // read-only. (The "no PIN" from the personal view means no PERSONAL pin to pick
+  // your name — that picker is still code-free; entry uses the shared code.)
+  // Editing is gated by an explicit EDIT MODE toggle, available only on the
+  // editable tabs (שיבוץ + המטופלים שלי). The dashboard is view-only for everyone.
   var EDITOR_PIN = '5555';
   function isEditor() { return state.role === 'editor'; }
+  // Tabs that allow editing (the toggle + edit controls live only here).
+  var EDITABLE_VIEWS = { workflow: true, mine: true };
 
   // Hebrew copy for each gate flag reason (stable ids come from debt-gate.js).
   var FLAG_TEXT = {
@@ -74,6 +78,7 @@
   // --- state -------------------------------------------------------------
   var state = {
     role: 'viewer',
+    editMode: false,
     therapist: '',
     view: 'dashboard',
     schedule: [],
@@ -426,11 +431,8 @@
     if (p.origin) parts.push('<div><span class="p-label">מקור הגעה</span><span class="p-val">' + escapeHtml(p.origin) + '</span></div>');
     parts.push('<div>' + debtChip(p.debtStatus, p.amountOwed) + '</div>');
     var al = patientUpcomingAlert(p.phone);
-    if (al) parts.push('<div class="wide alert-row">⚠️ נכנס/ה לחוב לאחר תזמון (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>');
-    parts.push('<div class="row-actions edit-only">' +
-      '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">עריכה</button>' +
-      '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
-      '</div>');
+    if (al) parts.push('<div class="wide alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>');
+    // Dashboard is VIEW-ONLY for everyone — no edit/schedule actions here.
     return '<div class="billing-row">' + parts.join('') + '</div>';
   }
 
@@ -461,7 +463,7 @@
     if (!state.alerts.length) { el.hidden = true; el.innerHTML = ''; return; }
     var names = state.alerts.map(function (a) { return escapeHtml(a.patientName) + ' (' + money(a.amountOwed) + ')'; });
     el.hidden = false;
-    el.innerHTML = '⚠️ ' + state.alerts.length + ' מטופלים נכנסו לחוב לאחר תזמון טיפול: ' + names.join(', ') +
+    el.innerHTML = '⚠️ ' + state.alerts.length + ' מטופלים נכנסו לחוב לאחר קביעת טיפול: ' + names.join(', ') +
       '. יש לבדוק את הטיפולים הקרובים בלשונית «שיבוץ מטפלים».';
     el.style.margin = '6px 0';
   }
@@ -499,7 +501,7 @@
     return '<div class="sess-patient">' +
       '<span class="sess-pname">' + escapeHtml(r.patientName) + '</span> ' +
       gateChip(r) + ' ' + attendanceChip(r) + syncBadge(r) + ' ' + attBtns +
-      (al ? '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר תזמון (' + money(al.amountOwed) + ')</div>' : '') +
+      (al ? '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ')</div>' : '') +
       '</div>';
   }
 
@@ -535,7 +537,7 @@
     });
     groups.sort(function (a, b) { return String(b[0].scheduledDate || '').localeCompare(String(a[0].scheduledDate || '')); });
     var cards = groups.map(sessionCard);
-    $('#scheduleList').innerHTML = cards.length ? cards.join('') : '<div class="billing-empty">לא תוזמנו טיפולים</div>';
+    $('#scheduleList').innerHTML = cards.length ? cards.join('') : '<div class="billing-empty">אין טיפולים שנקבעו</div>';
   }
 
   // Compact patient list for the שיבוץ tab — ensures a newly registered patient
@@ -554,6 +556,7 @@
         '<span class="assign-ther">' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
         '<span class="assign-actions edit-only">' +
+          '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
           '<button class="btn btn-ghost btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שיבוץ ותוכנית</button>' +
           '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
         '</span>' +
@@ -564,9 +567,10 @@
 
   // --- my treatments (tab 3) — friendly per-therapist did-it-happen view --
   function mineRow(r) {
-    // Marking here is open to everyone (no PIN) — the friendly self-service view;
-    // the patient-payment check deters false reporting, and no mark = no pay.
-    var attBtns = '<span class="att-btns">' +
+    // Marking is the payment trigger, so it lives behind EDIT MODE: a therapist
+    // picks their name (no personal PIN), turns on «עריכה», then marks. The
+    // per-patient payment check + "no mark = no pay" deter false reporting.
+    var attBtns = '<span class="att-btns edit-only">' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
       '</span>';
@@ -883,9 +887,9 @@
         var failed = (res.results || []).filter(function (r) { return !r.ok; });
         if (failed.length) {
           var who = failed.map(function (f) { return (nameById[f.id] || '') + ' (' + saveErrorText(f.error) + ')'; });
-          toast('חלק מהמטופלים לא תוזמנו: ' + who.join('; '), true);
+          toast('חלק מהמטופלים לא נקבעו: ' + who.join('; '), true);
         } else {
-          toast('הטיפול תוזמן');
+          toast('הטיפול נקבע');
         }
         return loadAll();
       })
@@ -1072,14 +1076,34 @@
     toast('פעולה זו זמינה לעורכים בלבד', true); return false;
   }
 
-  // --- auth / role -------------------------------------------------------
+  // --- auth / role / edit mode -------------------------------------------
   function applyRole() {
     document.body.classList.toggle('viewer', !isEditor());
-    var badge = $('#roleBadge');
-    badge.textContent = isEditor() ? 'עורך' : 'צופה';
-    badge.classList.toggle('editor', isEditor());
+    if (!isEditor()) setEditMode(false);
+    applyEditToggle();
   }
   function applyTherapist() { var s = $('#myTherapist'); if (s) s.value = state.therapist || ''; }
+
+  // The edit-mode toggle is available ONLY to editors and ONLY on the editable
+  // tabs (שיבוץ + המטופלים שלי). The dashboard is view-only for everyone.
+  function applyEditToggle() {
+    var btn = $('#editToggle');
+    if (!btn) return;
+    var show = isEditor() && !!EDITABLE_VIEWS[state.view];
+    btn.hidden = !show;
+    btn.textContent = state.editMode ? 'סיום עריכה' : 'עריכה';
+    btn.classList.toggle('active', state.editMode);
+  }
+  function setEditMode(on) {
+    state.editMode = !!on;
+    document.body.classList.toggle('edit-mode', state.editMode);
+    applyEditToggle();
+  }
+  function toggleEditMode() {
+    if (!isEditor()) return;
+    setEditMode(!state.editMode);
+  }
+
   function showPin() {
     $('#pinScreen').hidden = false;
     $('#app').hidden = true;
@@ -1089,6 +1113,7 @@
   function enterApp() {
     $('#pinScreen').hidden = true;
     $('#app').hidden = false;
+    setEditMode(false);
     applyRole();
     applyTherapist();
     setView('dashboard');
@@ -1096,8 +1121,11 @@
 
   function setView(view) {
     state.view = view;
+    document.body.classList.remove('view-dashboard', 'view-workflow', 'view-mine');
+    document.body.classList.add('view-' + view);
     $$('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === view); });
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + view); });
+    applyEditToggle();   // toggle is per-tab
   }
 
   function on(sel, ev, fn) {
@@ -1129,8 +1157,10 @@
     on('#logoutBtn', 'click', function () {
       try { sessionStorage.removeItem('ez_role'); } catch (_) {}
       state.role = 'viewer';
+      setEditMode(false);
       showPin();
     });
+    on('#editToggle', 'click', toggleEditMode);
 
     $$('.tab').forEach(function (t) { t.addEventListener('click', function () { setView(t.dataset.view); }); });
     on('#refreshBtn', 'click', function () { loadAll().then(function () { toast('רועננו'); }).catch(function () {}); });

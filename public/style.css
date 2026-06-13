@@ -290,9 +290,14 @@ button, input, select, textarea {
 }
 .toast.error { border-color: #6b2a2a; color: #ff9b9b; }
 
-/* One editor capability: any editor can assign AND schedule. Edit controls are
-   hidden from plain viewers. */
-body.viewer .edit-only { display: none !important; }
+/* Edit controls appear ONLY in edit mode (the «עריכה» toggle, editor-only, on
+   שיבוץ + המטופלים שלי). The dashboard has no edit controls — view-only. */
+body:not(.edit-mode) .edit-only { display: none !important; }
+/* The edit-mode toggle, lit when active. */
+.edit-toggle.active {
+  background: var(--green-deep); color: #eaf7ff; border-color: var(--green);
+  font-weight: 700;
+}
 
 /* ===== Billing ===== */
 .billing-date-label {

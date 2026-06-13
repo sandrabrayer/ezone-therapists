@@ -28,7 +28,7 @@
         <button class="tab" data-view="mine">המטופלים שלי</button>
       </nav>
       <div class="topbar-right">
-        <span id="roleBadge" class="role-badge">צופה</span>
+        <button id="editToggle" class="btn btn-ghost edit-toggle" hidden>עריכה</button>
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
         <button id="logoutBtn" class="btn btn-ghost">יציאה</button>
       </div>
@@ -39,7 +39,6 @@
       <section id="view-dashboard" class="view active">
         <div class="toolbar">
           <input id="dashboardSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-          <button id="newPatientBtn" class="btn btn-primary edit-only">+ רישום מטופל חדש</button>
         </div>
         <div id="alertBanner" class="wide card-banner card-banner-stop" hidden></div>
         <div class="kpis">
@@ -58,7 +57,8 @@
       <section id="view-workflow" class="view">
         <div class="toolbar">
           <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
-          <select id="workflowTherapistFilter" class="search filter-sel"><option value="">כל המטפלים</option></select>
+          <select id="workflowTherapistFilter" class="search filter-sel" title="סינון לפי מטפל/ת"><option value="">כל המטפלים (סינון)</option></select>
+          <button id="newPatientBtn" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
           <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
         </div>
         <div class="kpis">
@@ -71,7 +71,7 @@
           <div id="assignList" class="billing-list"></div>
         </div>
         <div class="panel">
-          <div class="panel-title">טיפולים מתוזמנים — קביעה וסימון ביצוע</div>
+          <div class="panel-title">טיפולים שנקבעו — קביעה וסימון ביצוע</div>
           <div id="scheduleList" class="billing-list"></div>
         </div>
       </section>
@@ -79,7 +79,7 @@
       <!-- My treatments: friendly per-therapist view + did-it-happen marking -->
       <section id="view-mine" class="view">
         <div class="toolbar">
-          <label class="mine-picker">אני:
+          <label class="mine-picker">שם המטפל/ת:
             <select id="myTherapist"><option value="">— בחר/י את שמך —</option></select>
           </label>
           <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
