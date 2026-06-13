@@ -83,9 +83,9 @@ test('isGroupType: honours an explicit isGroup flag (robust to rename)', () => {
 
 // --- session row building --------------------------------------------------
 
-test('buildSessionRows: single patient -> one row, own gate + attendance', () => {
+test('buildSessionRows: single patient -> one row, own gate + attendance + time', () => {
   const rows = Scheduling.buildSessionRows(
-    { therapist: 'כנרת', treatmentType: 'פרטני כללי', location: 'ramot', scheduledDate: '2026-07-01' },
+    { therapist: 'כנרת', treatmentType: 'פרטני כללי', location: 'ramot', scheduledDate: '2026-07-01', time: '10:30' },
     [{ name: 'דנה', phone: '0501234567', gateStatus: 'clear' }],
     { sessionId: 'sess1', idFn: () => 'row1', now: '2026-06-11' }
   );
@@ -93,6 +93,7 @@ test('buildSessionRows: single patient -> one row, own gate + attendance', () =>
   assert.equal(rows[0].sessionId, 'sess1');
   assert.equal(rows[0].patientName, 'דנה');
   assert.equal(rows[0].location, 'ramot');
+  assert.equal(rows[0].time, '10:30');             // time-of-day carried through
   assert.equal(rows[0].attendance, '');            // pending by default
   assert.equal(rows[0].gateStatus, 'clear');
   assert.equal(rows[0].created, '2026-06-11');

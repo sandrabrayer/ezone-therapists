@@ -1,15 +1,19 @@
 /**
  * access.js
  * -----------------------------------------------------------------------------
- * The app's access rules as pure predicates (iteration 6). Editing is gated by an
- * explicit EDIT MODE that an editor turns on, and only on the editable tabs:
+ * Role-based access rules as pure predicates (iteration 7). Identity is
+ * NAME-PICK, not password-based: a user is either Vered (the office) or a
+ * therapist (picked by name). There is NO edit-mode toggle — actions are
+ * always visible and scoped by role + tab.
  *
- *   - דשבורד מטופלים (dashboard) — VIEW-ONLY for everyone (not editable).
- *   - שיבוץ מטפלים (workflow)     — editable: assignments, plans, scheduling.
- *   - המטופלים שלי (mine)          — editable: the therapist marks did-it-happen.
+ *   - ורד (vered)      — the office: sees דשבורד + שיבוץ; registers patients and
+ *                        assigns therapists. Sees everything.
+ *   - מטפל/ת (therapist) — sees ONLY «המטופלים שלי», scoped to their OWN assigned
+ *                          patients: sets scheduling, the weekly view, and the
+ *                          post-treatment report.
  *
- * The «עריכה» toggle is shown only to an editor and only on an editable tab; the
- * edit controls (.edit-only) are visible only once that editor turns edit mode on.
+ * Identity is self-asserted (no password); the real controls are the
+ * outpatient debt gate and the Ron/Sandra approval audit trail.
  *
  * Framework-free; runs in the browser and under `node --test`.
  * `test/access.test.js` guards it.
@@ -24,24 +28,37 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // The tabs where editing is allowed. The dashboard is deliberately absent.
-  var EDITABLE_VIEWS = { workflow: true, mine: true };
+  var ROLES = { VERED: 'vered', THERAPIST: 'therapist' };
 
-  function isEditableView(view) { return !!EDITABLE_VIEWS[String(view == null ? '' : view)]; }
-  function isEditor(role) { return role === 'editor'; }
+  // The tabs (views) each role may see, in order. The first is the default.
+  var TABS = {
+    vered: ['dashboard', 'workflow'],
+    therapist: ['mine']
+  };
 
-  // The «עריכה» toggle: editor-only, and only on an editable tab.
-  function editToggleVisible(role, view) { return isEditor(role) && isEditableView(view); }
+  function isRole(role) { return role === ROLES.VERED || role === ROLES.THERAPIST; }
+  function tabsForRole(role) { return TABS[role] ? TABS[role].slice() : []; }
+  function defaultView(role) { return (TABS[role] && TABS[role][0]) || ''; }
+  function canViewTab(role, view) { return tabsForRole(role).indexOf(view) !== -1; }
 
-  // Edit controls (.edit-only): visible only when an editor has edit mode ON.
-  // (Viewers can never enter edit mode, so they never see edit controls.)
-  function editControlsVisible(role, editMode) { return isEditor(role) && !!editMode; }
+  // Registering a patient and assigning a therapist are Vered (office) actions.
+  function canRegister(role) { return role === ROLES.VERED; }
+  function canAssign(role) { return role === ROLES.VERED; }
+  // Setting the schedule (days/hours/location) and reporting did-it-happen are
+  // therapist actions, on their own patients.
+  function canSchedule(role) { return role === ROLES.THERAPIST; }
+  function canReport(role) { return role === ROLES.THERAPIST; }
 
   return {
-    EDITABLE_VIEWS: EDITABLE_VIEWS,
-    isEditableView: isEditableView,
-    isEditor: isEditor,
-    editToggleVisible: editToggleVisible,
-    editControlsVisible: editControlsVisible
+    ROLES: ROLES,
+    TABS: TABS,
+    isRole: isRole,
+    tabsForRole: tabsForRole,
+    defaultView: defaultView,
+    canViewTab: canViewTab,
+    canRegister: canRegister,
+    canAssign: canAssign,
+    canSchedule: canSchedule,
+    canReport: canReport
   };
 });

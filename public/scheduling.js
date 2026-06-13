@@ -144,7 +144,7 @@
    * see evaluateGroup). Pure: ids/sessionId/timestamps are injected so tests are
    * deterministic.
    *
-   * @param {object} session {therapist, treatmentType, location, scheduledDate}
+   * @param {object} session {therapist, treatmentType, location, scheduledDate, time}
    * @param {Array}  patients [{name, phone, gateStatus, gateReason, amountOwed,
    *                            approverId, approverName, approvalNote, approvedAt}]
    * @param {object} [opts] {sessionId, idFn, now}
@@ -168,6 +168,7 @@
         treatmentType: String(session.treatmentType || '').trim(),
         location: String(session.location || '').trim(),
         scheduledDate: String(session.scheduledDate || '').trim(),
+        time: String(session.time == null ? '' : session.time).trim(),
         patientName: String(p.name == null ? '' : p.name).trim(),
         patientPhone: String(p.phone == null ? '' : p.phone).trim(),
         attendance: (p.attendance && validateAttendance(p.attendance)) ? p.attendance : ATTENDANCE.PENDING,

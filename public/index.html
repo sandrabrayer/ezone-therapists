@@ -7,15 +7,18 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- PIN screen -->
-  <div id="pinScreen" class="pin-screen">
+  <!-- Identity screen — pick who you are (no password). -->
+  <div id="identityScreen" class="pin-screen">
     <div class="pin-card">
       <div class="brand">E-ZONE Therapists</div>
-      <div class="pin-sub">הזן קוד גישה</div>
-      <input id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="••••" autocomplete="off" />
-      <div id="pinError" class="pin-error" hidden>קוד שגוי</div>
-      <button type="button" id="pinSubmit" class="btn btn-primary">כניסה</button>
-      <button type="button" id="pinViewer" class="btn btn-ghost">המשך כצופה בלבד</button>
+      <div class="pin-sub">מי את/ה?</div>
+      <button type="button" id="idVered" class="btn btn-primary">ורד (משרד)</button>
+      <div class="id-or">— או —</div>
+      <label class="id-ther-label">מטפל/ת — בחר/י את שמך
+        <select id="idTherapist"><option value="">—</option></select>
+      </label>
+      <button type="button" id="idTherapistGo" class="btn btn-primary">כניסה כמטפל/ת</button>
+      <div id="idError" class="pin-error" hidden>יש לבחור שם</div>
     </div>
   </div>
 
@@ -23,14 +26,14 @@
     <header class="topbar">
       <div class="logo">E-ZONE <span>Therapists</span></div>
       <nav class="tabs">
-        <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
-        <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
-        <button class="tab" data-view="mine">המטופלים שלי</button>
+        <button class="tab active" data-view="dashboard" data-roles="vered">דשבורד מטופלים</button>
+        <button class="tab" data-view="workflow" data-roles="vered">שיבוץ מטפלים</button>
+        <button class="tab" data-view="mine" data-roles="therapist">המטופלים שלי</button>
       </nav>
       <div class="topbar-right">
-        <button id="editToggle" class="btn btn-ghost edit-toggle" hidden>עריכה</button>
+        <span id="whoami" class="role-badge"></span>
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
-        <button id="logoutBtn" class="btn btn-ghost">יציאה</button>
+        <button id="logoutBtn" class="btn btn-ghost">החלפת משתמש</button>
       </div>
     </header>
 
@@ -58,8 +61,7 @@
         <div class="toolbar">
           <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
           <select id="workflowTherapistFilter" class="search filter-sel" title="סינון לפי מטפל/ת"><option value="">כל המטפלים (סינון)</option></select>
-          <button id="newPatientBtn" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
-          <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
+          <button id="newPatientBtn" class="btn btn-primary">+ רישום מטופל חדש</button>
         </div>
         <div class="kpis">
           <div class="kpi"><div class="kpi-label">טיפולים שנקבעו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
@@ -76,16 +78,18 @@
         </div>
       </section>
 
-      <!-- My treatments: friendly per-therapist view + did-it-happen marking -->
+      <!-- My patients: therapist schedules + reports on their own patients -->
       <section id="view-mine" class="view">
         <div class="toolbar">
-          <label class="mine-picker">שם המטפל/ת:
-            <select id="myTherapist"><option value="">— בחר/י את שמך —</option></select>
-          </label>
+          <span id="mineHello" class="mine-hello"></span>
           <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <button id="mineScheduleBtn" class="btn btn-primary">+ קביעת טיפול</button>
         </div>
         <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
-        <div id="mineEmpty" class="billing-empty" hidden>בחר/י את שמך כדי לראות את הטיפולים שלך.</div>
+        <div class="panel" id="myPatientsPanel">
+          <div class="panel-title">המטופלים שלי — קביעת ימים, שעות ומיקום</div>
+          <div id="myPatientsList" class="billing-list"></div>
+        </div>
         <div class="panel" id="mineScheduledPanel" hidden>
           <div class="panel-title">טיפולים שנקבעו</div>
           <div id="mineScheduled" class="billing-list"></div>
@@ -108,6 +112,18 @@
     <!-- Toast -->
     <div id="toast" class="toast" hidden></div>
 
+    <!-- Post-treatment report — happened / didn't (reason), with debt gate -->
+    <div id="reportModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-title">דיווח טיפול — <span id="reportPatient"></span></div>
+        <div id="reportBody" class="form-grid"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+          <button type="button" class="btn btn-primary" id="reportSave">שמירה</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Schedule a treatment (with inline per-patient debt gate + approval) -->
     <div id="scheduleModal" class="modal" hidden>
       <div class="modal-card modal-card-wide">
@@ -129,6 +145,7 @@
             </select>
           </label>
           <label>תאריך<input name="scheduledDate" type="date" required /></label>
+          <label>שעה<input name="time" type="time" /></label>
 
           <!-- Patients (single, or several for a group session) -->
           <div class="wide">
