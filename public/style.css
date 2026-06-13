@@ -299,6 +299,7 @@ button, input, select, textarea {
 .id-or { color: var(--muted); margin: 10px 0 4px; font-size: 0.9rem; }
 .id-ther-label { display: block; text-align: start; color: var(--text-soft); font-size: 0.95rem; margin-bottom: 6px; }
 .id-ther-label select { width: 100%; margin-top: 4px; }
+.mine-hello { font-weight: 700; color: var(--text); margin-inline-end: auto; }
 
 /* ===== Billing ===== */
 .billing-date-label {

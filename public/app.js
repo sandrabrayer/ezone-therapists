@@ -125,6 +125,11 @@
     if (!isFinite(n)) return '₪0';
     return '₪' + Math.round(n).toLocaleString('he-IL');
   }
+  function displayDateTime(date, time) {
+    var d = displayDate(date);
+    var t = String(time || '').trim();
+    return t ? (d + ' ' + t) : d;
+  }
   function escapeHtml(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -201,10 +206,12 @@
       treatmentType: row.treatmentType || '',
       location: row.location || '',
       scheduledDate: fmtDate(row.scheduledDate),
+      time: row.time || '',
       patientName: row.patientName || '',
       patientPhone: row.patientPhone || '',
       attendance: row.attendance || '',
       attendanceMarkedAt: row.attendanceMarkedAt || '',
+      reason: row.reason || '',
       gateStatus: row.gateStatus || '',
       gateReason: row.gateReason || '',
       amountOwed: Number(row.amountOwed) || 0,
@@ -490,15 +497,13 @@
     return '';
   }
 
+  // Read-only line for Vered's oversight list (marking is the therapist's job,
+  // done in «המטופלים שלי»).
   function patientLine(r) {
     var al = alertFor(r.id);
-    var attBtns = '<span class="att-btns edit-only">' +
-      '<button class="btn btn-ghost btn-sm" data-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
-      '<button class="btn btn-ghost btn-sm" data-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
-      '</span>';
     return '<div class="sess-patient">' +
       '<span class="sess-pname">' + escapeHtml(r.patientName) + '</span> ' +
-      gateChip(r) + ' ' + attendanceChip(r) + syncBadge(r) + ' ' + attBtns +
+      gateChip(r) + ' ' + attendanceChip(r) + syncBadge(r) +
       (al ? '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ')</div>' : '') +
       '</div>';
   }
@@ -508,7 +513,7 @@
     var isGroup = rows.length > 1;
     var parts = [];
     parts.push('<div class="sess-head">' +
-      '<span class="sess-date">' + escapeHtml(displayDate(head.scheduledDate)) + '</span>' +
+      '<span class="sess-date">' + escapeHtml(displayDateTime(head.scheduledDate, head.time)) + '</span>' +
       '<span class="chip">' + escapeHtml(svc(head.treatmentType)) + (isGroup ? ' · ' + rows.length + ' מטופלים' : '') + '</span>' +
       '<span class="chip">' + escapeHtml(locationLabel(head.location)) + '</span>' +
       '<span class="sess-therapist">' + escapeHtml(head.therapist) + '</span>' +
@@ -553,10 +558,11 @@
         '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
         '<span class="assign-ther">' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
-        '<span class="assign-actions edit-only">' +
+        // Vered's actions: patient details + therapist/plan assignment.
+        // Scheduling is the THERAPIST's action — it lives in «המטופלים שלי».
+        '<span class="assign-actions">' +
           '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
-          '<button class="btn btn-ghost btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שיבוץ ותוכנית</button>' +
-          '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+          '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שיבוץ ותוכנית</button>' +
         '</span>' +
         '</div>';
     });
@@ -574,7 +580,7 @@
       '</span>';
     return '<div class="billing-row mine-row">' +
       '<div class="p-name">' + escapeHtml(r.patientName) + '</div>' +
-      '<div><span class="p-label">תאריך</span><span class="p-val">' + escapeHtml(displayDate(r.scheduledDate)) + '</span></div>' +
+      '<div><span class="p-label">תאריך</span><span class="p-val">' + escapeHtml(displayDateTime(r.scheduledDate, r.time)) + '</span></div>' +
       '<div><span class="p-label">טיפול</span><span class="p-val">' + escapeHtml(svc(r.treatmentType)) + '</span></div>' +
       '<div><span class="p-label">מיקום</span><span class="p-val">' + escapeHtml(locationLabel(r.location)) + '</span></div>' +
       '<div>' + attendanceChip(r) + syncBadge(r) + '</div>' +
@@ -582,10 +588,28 @@
       '</div>';
   }
 
+  // The therapist's own assigned patients (with a «קבע טיפול» action each).
+  function myPatientsRow(p) {
+    return '<div class="assign-row">' +
+      '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
+      '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
+      '<span class="assign-actions">' +
+        '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+      '</span>' +
+      '</div>';
+  }
+
   function renderMine() {
-    // Keep the picker in sync with the chosen identity.
-    var sel = $('#myTherapist');
-    if (sel && sel.value !== state.therapist) sel.value = state.therapist || '';
+    var hello = $('#mineHello');
+    if (hello) hello.textContent = state.therapist ? ('שלום, ' + state.therapist) : '';
+
+    // My assigned patients (I am one of their assigned therapists).
+    var myPatients = activePatients().filter(function (p) {
+      return state.therapist && p.therapists.indexOf(state.therapist) !== -1 && matchName(p.name, state.mineSearch);
+    }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
+    var mpList = $('#myPatientsList');
+    if (mpList) mpList.innerHTML = myPatients.length ? myPatients.map(myPatientsRow).join('')
+      : '<div class="billing-empty">אין מטופלים משויכים אליך עדיין.</div>';
 
     var pending = pendingSyncCount();
     var banner = $('#syncBanner');
@@ -598,13 +622,10 @@
     }
 
     var panels = ['#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
-    var empty = $('#mineEmpty');
     if (!state.therapist) {
-      empty.hidden = false;
       panels.forEach(function (s) { $(s).hidden = true; });
       return;
     }
-    empty.hidden = true;
 
     // My treatments = treatments I perform; a patient may also have parallel
     // treatments with other therapists (those show in their own «המטופלים שלי»).
@@ -679,9 +700,6 @@
 
   function syncDropdowns() {
     var tNames = activeTherapistNames();
-    // The «המטופלים שלי» identity picker must include the saved name even if retired.
-    var idNames = tNames.slice();
-    if (state.therapist && idNames.indexOf(state.therapist) === -1) idNames.push(state.therapist);
     var st = $('#scheduleTherapist'); if (st) st.innerHTML = optionList(tNames, state.therapist);
     var pt = $('#patientTherapist'); if (pt) pt.innerHTML = '<option value="">— לא שויך —</option>' +
       tNames.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>'; }).join('');
@@ -689,9 +707,8 @@
     var pty = $('#patientType'); if (pty) { var ptyv = pty.value; pty.innerHTML = typeOptionList(); pty.value = ptyv; }
     var sl = $('#scheduleLocation'); if (sl) sl.innerHTML = locationOptions();
     var ah = $('#admittedHouse'); if (ah) ah.innerHTML = houseOptions();
-    // Identity-screen name picker + the tab-3 picker.
+    // Identity-screen name picker.
     var idt = $('#idTherapist'); if (idt) { var idv = idt.value; idt.innerHTML = optionList(tNames, idv); idt.value = idv; }
-    var my = $('#myTherapist'); if (my) my.innerHTML = optionList(idNames, state.therapist);
     var wf = $('#workflowTherapistFilter'); if (wf) wf.innerHTML = '<option value="">כל המטפלים</option>' +
       tNames.map(function (n) { var s = (n === state.workflowTherapist) ? ' selected' : ''; return '<option value="' + escapeHtml(n) + '"' + s + '>' + escapeHtml(n) + '</option>'; }).join('');
 
@@ -751,9 +768,12 @@
     $('#patientRows').innerHTML = '';
     patientRowSeq = 0;
     addPatientRow(prefillPatient || {});
-    // syncDropdowns ran inside addPatientRow; now apply defaults.
-    $('#scheduleTherapist').value = (prefillPatient && prefillPatient.therapist) || state.therapist || '';
-    if (prefillPatient && prefillPatient.treatmentType) $('#scheduleType').value = prefillPatient.treatmentType;
+    // syncDropdowns ran inside addPatientRow; now apply defaults. The therapist
+    // schedules as THEMSELVES — lock the therapist field to their identity.
+    var th = $('#scheduleTherapist');
+    th.value = state.therapist || (prefillPatient && prefillPatient.therapist) || '';
+    th.disabled = true;
+    if (prefillPatient && prefillPatient.treatmentType) $('#scheduleType').value = resolveTypeOption(prefillPatient.treatmentType);
     updateGroupUi();
     $('#scheduleModal').hidden = false;
   }
@@ -768,10 +788,12 @@
   function readSession() {
     var fd = new FormData($('#scheduleForm'));
     return {
-      therapist: (fd.get('therapist') || '').trim(),
+      // A therapist always schedules as themselves (the select is locked).
+      therapist: isTherapist() ? state.therapist : (fd.get('therapist') || '').trim(),
       treatmentType: (fd.get('treatmentType') || '').trim(),
       location: (fd.get('location') || '').trim(),
-      scheduledDate: fd.get('scheduledDate') || ''
+      scheduledDate: fd.get('scheduledDate') || '',
+      time: fd.get('time') || ''
     };
   }
 
@@ -1090,7 +1112,7 @@
       t.hidden = !Access.canViewTab(state.role, t.dataset.view);
     });
   }
-  function applyTherapist() { var s = $('#myTherapist'); if (s) s.value = state.therapist || ''; }
+  function applyTherapist() { var h = $('#mineHello'); if (h) h.textContent = state.therapist ? ('שלום, ' + state.therapist) : ''; }
 
   function showIdentity() {
     $('#identityScreen').hidden = false;
@@ -1145,8 +1167,8 @@
     on('#dashboardSearch', 'input', function (e) { state.dashboardSearch = e.target.value; renderDashboard(); });
     on('#workflowSearch', 'input', function (e) { state.workflowSearch = e.target.value; renderSchedule(); });
 
-    on('#newPatientBtn', 'click', openNewPatient);   // dashboard only
-    on('#addScheduleBtn', 'click', function () { openScheduleModal(); });
+    on('#newPatientBtn', 'click', openNewPatient);          // Vered (שיבוץ)
+    on('#mineScheduleBtn', 'click', function () { openScheduleModal(); }); // therapist (מ)
 
     // Delegated patient actions — shared by the dashboard list and the שיבוץ
     // assign list (so a newly registered patient is actionable in both).
@@ -1162,22 +1184,14 @@
         openScheduleModal(rec ? { name: rec.name, phone: rec.phone, treatmentType: first ? first.treatmentType : '', therapist: first ? first.therapist : '' } : null);
       }
     }
-    on('#patientsList', 'click', onPatientListClick);
-    on('#assignList', 'click', onPatientListClick);
-    on('#scheduleList', 'click', function (e) {
-      var b = e.target.closest('[data-att]');
-      if (b) { if (!ensureTherapist()) return; markAttendance(b.getAttribute('data-id'), b.getAttribute('data-att')); }
-    });
+    on('#patientsList', 'click', onPatientListClick);  // Vered dashboard (no actions)
+    on('#assignList', 'click', onPatientListClick);    // Vered שיבוץ (register/assign)
 
-    // Tab 3 «המטפל שלי»: identity picker, search, mark (open to all, no PIN), sync.
-    on('#myTherapist', 'change', function (e) {
-      state.therapist = (e.target.value || '').trim();
-      try { sessionStorage.setItem('ez_therapist', state.therapist); } catch (_) {}
-      applyTherapist();
-      renderMine();
-    });
+    // המטופלים שלי (therapist): schedule + report did-it-happen on their patients.
     on('#mineSearch', 'input', function (e) { state.mineSearch = e.target.value; renderMine(); });
     on('#view-mine', 'click', function (e) {
+      var sp = e.target.closest('[data-schedule-patient]');
+      if (sp) { onPatientListClick(e); return; }
       var b = e.target.closest('[data-mine-att]');
       if (b) { markAttendance(b.getAttribute('data-id'), b.getAttribute('data-mine-att')); return; }
       if (e.target.closest('#syncNowBtn')) syncNow();

@@ -51,7 +51,8 @@ var SCHEDULE_HEADERS = [
   'gateStatus', 'gateReason', 'amountOwed',
   'approverId', 'approverName', 'approvalNote', 'approvedAt',
   'created',
-  'syncStatus', 'syncedAt'
+  'syncStatus', 'syncedAt',
+  'time', 'reason'          // iteration 7 — appended (time-of-day; not-done reason)
 ];
 
 /* Append-only audit trail of every debtor approval. */

@@ -61,8 +61,7 @@
         <div class="toolbar">
           <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
           <select id="workflowTherapistFilter" class="search filter-sel" title="סינון לפי מטפל/ת"><option value="">כל המטפלים (סינון)</option></select>
-          <button id="newPatientBtn" class="btn btn-ghost edit-only">+ רישום מטופל חדש</button>
-          <button id="addScheduleBtn" class="btn btn-primary edit-only">+ קביעת טיפול</button>
+          <button id="newPatientBtn" class="btn btn-primary">+ רישום מטופל חדש</button>
         </div>
         <div class="kpis">
           <div class="kpi"><div class="kpi-label">טיפולים שנקבעו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
@@ -79,16 +78,18 @@
         </div>
       </section>
 
-      <!-- My treatments: friendly per-therapist view + did-it-happen marking -->
+      <!-- My patients: therapist schedules + reports on their own patients -->
       <section id="view-mine" class="view">
         <div class="toolbar">
-          <label class="mine-picker">שם המטפל/ת:
-            <select id="myTherapist"><option value="">— בחר/י את שמך —</option></select>
-          </label>
+          <span id="mineHello" class="mine-hello"></span>
           <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <button id="mineScheduleBtn" class="btn btn-primary">+ קביעת טיפול</button>
         </div>
         <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
-        <div id="mineEmpty" class="billing-empty" hidden>בחר/י את שמך כדי לראות את הטיפולים שלך.</div>
+        <div class="panel" id="myPatientsPanel">
+          <div class="panel-title">המטופלים שלי — קביעת ימים, שעות ומיקום</div>
+          <div id="myPatientsList" class="billing-list"></div>
+        </div>
         <div class="panel" id="mineScheduledPanel" hidden>
           <div class="panel-title">טיפולים שנקבעו</div>
           <div id="mineScheduled" class="billing-list"></div>
@@ -132,6 +133,7 @@
             </select>
           </label>
           <label>תאריך<input name="scheduledDate" type="date" required /></label>
+          <label>שעה<input name="time" type="time" /></label>
 
           <!-- Patients (single, or several for a group session) -->
           <div class="wide">
