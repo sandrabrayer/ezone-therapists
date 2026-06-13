@@ -1,5 +1,14 @@
 # Changelog
 
+## Iteration 9 — white-field fix + scheduling unblock
+
+Extended the dark control style to text inputs + textarea (fixes the white/
+unreadable תדירות field in «שיבוץ ותוכנית»); `lookup_failed` now saves as flagged
+(«שמור לבירור») instead of an infinite «נסה שוב» retry, so scheduling completes
+even when the debt endpoint is down. Confirmed the tab-3 buckets have no render
+bug. Frontend only. Full notes:
+[`CHANGELOG-iteration9-whitefield-scheduling.md`](CHANGELOG-iteration9-whitefield-scheduling.md).
+
 ## Iteration 8 — remove login/roles, fix tab 3
 
 Removed the identity screen and roles entirely — the app opens directly with all
