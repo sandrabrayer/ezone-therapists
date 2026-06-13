@@ -1,5 +1,14 @@
 # Changelog
 
+## Iteration 8 — remove login/roles, fix tab 3
+
+Removed the identity screen and roles entirely — the app opens directly with all
+three tabs visible to everyone. The therapist name picker moved INSIDE «המטופלים
+שלי» (fresh each open, not persisted); «טיפולים קרובים» tightened to the coming
+week (today+7); fixed the blank/white dropdown (dark `<select>` style). Frontend
+only — no Apps Script change. Full notes:
+[`CHANGELOG-iteration8-no-login-tab3.md`](CHANGELOG-iteration8-no-login-tab3.md).
+
 ## Iteration 7 — name-pick roles + scheduling + post-treatment report
 
 Replaced the PIN + edit-mode with **name-pick roles** (Vered / therapist, no

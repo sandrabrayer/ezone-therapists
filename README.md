@@ -14,29 +14,30 @@ dashboard app) on a comfortable slate-blue base. Redesign notes:
 [`CHANGELOG-scheduling-redesign.md`](CHANGELOG-scheduling-redesign.md) (iteration
 2) and [`CHANGELOG-iteration3-restructure.md`](CHANGELOG-iteration3-restructure.md).
 
-## Roles & tabs (name-pick, no password)
+## Tabs (no login, no roles)
 
-Entry is an **identity screen**: pick **«ורד (משרד)»** or a **therapist by name**
-(no PIN, no edit mode). Tabs are role-scoped (`public/access.js`):
+The app opens directly — **no identity screen, no PIN, no roles**. All three tabs
+are visible to everyone (`public/access.js` is just the tab list):
 
-**Vered (office)** sees:
 1. **דשבורד מטופלים** — view-only overview of **all** patients + plan(s). A patient
    may have **multiple parallel treatments with different therapists**; each card
    shows assigned therapists, plans (type + weekly frequency), debt status, a
    "still admitted" badge, origin, and any post-scheduling debt alert.
 2. **שיבוץ מטפלים** — **«רישום מטופל חדש»**, patient **«פרטים»** (identity/origin),
    and **«שיבוץ ותוכנית»** (assign therapist + plan). Plus a read-only oversight
-   list of scheduled treatments. No scheduling/marking here (those are the
-   therapist's). Filterable by therapist + patient.
+   list of scheduled treatments. Filterable by therapist + patient. Open to all.
+3. **המטופלים שלי** — a therapist **picks their name from the in-tab dropdown**
+   (`#mineTherapist`) — a fresh pick every open, **never persisted**; until then a
+   «בחר/י את שמך» prompt shows. Scoped to their **own assigned patients**, each
+   with **«+ קביעת טיפול»** (treatment type + **day + time** + location; therapist
+   locked to the picked name), and their treatments in four buckets —
+   **טיפולים שנקבעו** (overdue / beyond-week) / **קרובים** (the **coming week**,
+   today…+7) / **שבוצעו** / **שנקבעו ולא בוצעו**. Each is **reported happened /
+   didn't-happen** (reason required for didn't) — the **payment trigger** (no
+   report = no pay), **debt-gated at report time** and written back to outpatient.
 
-**Therapist** sees only:
-3. **המטופלים שלי** — scoped to their **own assigned patients**. Lists those
-   patients each with **«+ קביעת טיפול»** (set treatment type + **day + time** +
-   location; the therapist is locked to themselves), and their treatments in four
-   buckets — **טיפולים שנקבעו / קרובים / שבוצעו / שנקבעו ולא בוצעו** (the weekly /
-   scheduled-but-not-done views). Each is **reported happened / didn't-happen**
-   (reason required for didn't) — the **payment trigger** (no report = no pay),
-   **debt-gated at report time** and written back to outpatient.
+Identity is self-asserted (anyone can pick any therapist name); the real controls
+are the outpatient **debt gate** + the **Ron/Sandra approval audit**.
 
 ### Post-treatment report → outpatient write-back
 
@@ -154,23 +155,16 @@ patches + tests, in [`docs/`](docs/):
    patients added directly (no originating lead) have no phone and fall back to
    manual/free-text entry in the inpatient tab.
 
-## Access — name-pick roles (no password)
+## Access — none (open app)
 
-On load, an **identity screen** asks who you are: **«ורד (משרד)»** or a
-**therapist by name** (stored as `ez_identity` for the session). There is **no
-PIN and no edit mode** — actions are always visible and scoped by role + tab
-(`public/access.js`):
-
-| Role | Sees | Can do |
-| ---- | ---- | ------ |
-| **ורד** (office) | דשבורד + שיבוץ | register patients, edit details/origin, assign therapist + plan |
-| **מטפל/ת** (therapist) | המטופלים שלי only | schedule (day/time/location) + report did-it-happen, on their OWN assigned patients |
-
-Identity is **self-asserted** — anyone can pick "Vered" or any therapist name.
-That is an accepted trade-off (no passwords); the real controls are the
-outpatient **debt gate** and the **Ron/Sandra approval audit** (per-patient,
-auto-stamped). Per-therapist PINs can be added later without redoing this. The
-role list / tab map lives in `public/access.js`.
+There is **no login, no PIN, no roles, and no persistence**. The app opens
+directly to דשבורד מטופלים and all three tabs are usable by anyone. The only
+"identity" is the therapist **name** picked inside **המטופלים שלי** — a runtime
+choice, fresh every open, used to scope that tab and to stamp scheduled/reported
+treatments. It is **self-asserted** (anyone can pick any name); the real controls
+are the outpatient **debt gate** and the **Ron/Sandra approval audit**
+(per-patient, auto-stamped). Per-therapist PINs could be added later without
+redoing this.
 
 ## Local development
 
