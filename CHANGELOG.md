@@ -1,5 +1,13 @@
 # Changelog
 
+## Iteration 7 — name-pick roles + scheduling + post-treatment report
+
+Replaced the PIN + edit-mode with **name-pick roles** (Vered / therapist, no
+password); therapist scheduling with **time-of-day**; the **post-treatment
+report** (reason for not-done) **debt-gated at report time** (Ron/Sandra inline
+approval, server-authoritative). Debt-block still pending outpatient PR #14. Full
+notes: [`CHANGELOG-iteration7-roles-scheduling-report.md`](CHANGELOG-iteration7-roles-scheduling-report.md).
+
 ## Iteration 6 — label + edit-mode + picker fixes
 
 Replaced the broken «עורך» badge with a working **«עריכה» edit-mode toggle**
