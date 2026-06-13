@@ -177,7 +177,14 @@
     if (!Array.isArray(data.results)) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
-  function apiMarkAttendance(id, attendance) { return apiPost({ action: 'markAttendance', id: id, attendance: attendance }); }
+  function apiMarkAttendance(id, attendance, extra) {
+    extra = extra || {};
+    return apiPost({
+      action: 'markAttendance', id: id, attendance: attendance,
+      reason: extra.reason || '', approval: extra.approval || null,
+      flagged: !!extra.flagged, gateReason: extra.gateReason || ''
+    });
+  }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
   function apiSavePatient(patient) { return apiPost({ action: 'savePatient', patient: patient }); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
@@ -571,10 +578,9 @@
 
   // --- my treatments (tab 3) — friendly per-therapist did-it-happen view --
   function mineRow(r) {
-    // Marking is the payment trigger, so it lives behind EDIT MODE: a therapist
-    // picks their name (no personal PIN), turns on «עריכה», then marks. The
-    // per-patient payment check + "no mark = no pay" deter false reporting.
-    var attBtns = '<span class="att-btns edit-only">' +
+    // The mark opens the report flow (debt-gated for «happened»; reason for
+    // «didn't»). The payment check + "no mark = no pay" deter false reporting.
+    var attBtns = '<span class="att-btns">' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
       '</span>';
@@ -584,6 +590,7 @@
       '<div><span class="p-label">טיפול</span><span class="p-val">' + escapeHtml(svc(r.treatmentType)) + '</span></div>' +
       '<div><span class="p-label">מיקום</span><span class="p-val">' + escapeHtml(locationLabel(r.location)) + '</span></div>' +
       '<div>' + attendanceChip(r) + syncBadge(r) + '</div>' +
+      (r.attendance === 'missed' && r.reason ? '<div class="wide reason-row">סיבה: ' + escapeHtml(r.reason) + '</div>' : '') +
       '<div class="row-actions">' + attBtns + '</div>' +
       '</div>';
   }
@@ -926,34 +933,112 @@
     debt_verification_unavailable: 'בדיקת החוב אינה זמינה — לא ניתן לאשר',
     debt_verification_unconfigured: 'בדיקת החוב אינה מוגדרת בשרת',
     invalid_approver: 'מאשר/ת לא מורשה',
-    invalid_gate_status: 'סטטוס שער לא תקין'
+    invalid_gate_status: 'סטטוס שער לא תקין',
+    debt_block: 'נמצא חוב בבדיקה החוזרת — נדרש אישור רון/סנדרה כדי לדווח ביצוע'
   };
   function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
 
-  // --- attendance --------------------------------------------------------
-  // The mark is the payment trigger (no mark = no pay) and triggers the
-  // outpatient write-back server-side. Local state is the source of truth; the
-  // returned syncStatus tells us whether the write-back reached outpatient.
+  // --- post-treatment report --------------------------------------------
+  // The report is the payment trigger (no mark = no pay) and drives the
+  // outpatient write-back. happened → debt-gated (block a debtor unless Ron/
+  // Sandra approve); didn't-happen → capture a reason. Local state is the
+  // source of truth; syncStatus tells us whether the write-back reached outpatient.
+  var reportCtx = null;
+
+  // Entry from a mark button. Re-clicking the same outcome clears it (no modal).
   function markAttendance(id, value) {
+    if (!ensureTherapist()) return;
     var row = state.schedule.filter(function (r) { return r.id === id; })[0];
     if (!row) return;
-    var next = (row.attendance === value) ? '' : value;   // toggle off if re-clicked
+    if (row.attendance === value) { commitReport(id, '', {}); return; }   // toggle off
+    openReport(row, value);
+  }
+
+  function openReport(row, outcome) {
+    reportCtx = { id: row.id, outcome: outcome, row: row, gate: null };
+    $('#reportPatient').textContent = row.patientName + ' · ' + svc(row.treatmentType) + ' · ' + displayDateTime(row.scheduledDate, row.time);
+    var body = $('#reportBody');
+    var save = $('#reportSave');
+    if (outcome === 'missed') {
+      body.innerHTML = '<label class="wide">סיבה שלא בוצע<textarea id="reportReason" rows="2" placeholder="מדוע הטיפול לא בוצע"></textarea></label>';
+      save.disabled = false; $('#reportModal').hidden = false; return;
+    }
+    // happened → live debt check (authoritative re-check also runs server-side).
+    body.innerHTML = '<div class="muted">בודק חוב…</div>';
+    save.disabled = true; $('#reportModal').hidden = false;
+    refreshDebtRoster().then(function (roster) {
+      var gate = DebtGate.evaluate({ phone: row.patientPhone, roster: roster.roster, rosterOk: roster.rosterOk });
+      reportCtx.gate = gate;
+      if (gate.decision === 'allow') {
+        body.innerHTML = '<div class="report-ok">ללא חוב — ניתן לאשר ביצוע.</div>';
+      } else if (gate.decision === 'block') {
+        body.innerHTML = '<div class="card-banner card-banner-stop" style="margin:0 0 8px">⛔ חוב פתוח ' + money(gate.amountOwed) +
+          ' — יש להפסיק טיפול. נדרש אישור רון/סנדרה כדי לדווח ביצוע.</div>' +
+          '<div class="gate-approval"><select id="reportApprover"><option value="">— מאשר/ת —</option>' +
+          '<option value="ron">רון</option><option value="sandra">סנדרה</option></select>' +
+          '<input id="reportNote" placeholder="הערת אישור" /></div>';
+      } else {
+        body.innerHTML = '<div class="gate-flag">⚠️ ' + (FLAG_TEXT[gate.reason] || 'דרוש בירור ידני.') + ' יירשם לבירור.</div>';
+      }
+      save.disabled = false;
+    }).catch(function () {
+      reportCtx.gate = { decision: 'flag', reason: 'lookup_failed' };
+      body.innerHTML = '<div class="gate-flag">⚠️ בדיקת חוב נכשלה — יירשם לבירור.</div>';
+      save.disabled = false;
+    });
+  }
+
+  function saveReport() {
+    if (!reportCtx) return;
+    var outcome = reportCtx.outcome;
+    var extra = {};
+    if (outcome === 'missed') {
+      var reason = ($('#reportReason').value || '').trim();
+      if (!reason) { toast('יש לציין סיבה שהטיפול לא בוצע', true); return; }
+      extra.reason = reason;
+    } else {
+      var g = reportCtx.gate;
+      if (g && g.decision === 'block') {
+        var ap = $('#reportApprover'), note = $('#reportNote');
+        var stamp = Approval.buildApproval({
+          approver: ap ? ap.value : '', patientName: reportCtx.row.patientName,
+          patientPhone: reportCtx.row.patientPhone, therapist: state.therapist,
+          note: note ? note.value : '', amountOwed: g.amountOwed
+        });
+        if (!stamp.ok) { toast(stamp.error, true); return; }
+        extra.approval = stamp.approval;
+      } else if (g && g.decision === 'flag') {
+        extra.flagged = true; extra.gateReason = g.reason;
+      }
+    }
+    $('#reportSave').disabled = true;
+    commitReport(reportCtx.id, outcome, extra);
+  }
+  function closeReportModal() { $('#reportModal').hidden = true; reportCtx = null; }
+
+  function commitReport(id, attendance, extra) {
+    var row = state.schedule.filter(function (r) { return r.id === id; })[0];
+    if (!row) return;
     var prev = row.attendance;
-    row.attendance = next;
-    // The whole session is re-synced together; reflect optimistic "pending".
+    row.attendance = attendance;
+    if (extra && extra.reason != null) row.reason = extra.reason;
     state.schedule.forEach(function (r) { if (r.sessionId === row.sessionId) r.syncStatus = 'pending'; });
-    recomputeAlerts();
-    render();
-    apiMarkAttendance(id, next)
+    recomputeAlerts(); render();
+    apiMarkAttendance(id, attendance, extra)
       .then(function (res) {
         var status = res && res.syncStatus;
         if (status) state.schedule.forEach(function (r) { if (r.sessionId === row.sessionId) r.syncStatus = status; });
         render();
-        var msg = next === 'occurred' ? 'סומן כהתקיים' : next === 'missed' ? 'סומן כלא התקיים' : 'הסימון בוטל';
+        var msg = attendance === 'occurred' ? 'דווח: התקיים' : attendance === 'missed' ? 'דווח: לא התקיים' : 'הסימון בוטל';
         if (status === 'pending') msg += ' (ממתין לסנכרון)';
         toast(msg);
+        closeReportModal();
       })
-      .catch(function (err) { row.attendance = prev; recomputeAlerts(); render(); toast('שגיאה: ' + err.message, true); });
+      .catch(function (err) {
+        row.attendance = prev; recomputeAlerts(); render();
+        toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true);
+        var s = $('#reportSave'); if (s) s.disabled = false;
+      });
   }
 
   // --- patient intake / edit modal (identity + origin) ------------------
@@ -1221,8 +1306,9 @@
     });
     on('#assignmentsSave', 'click', saveAssignments);
 
+    on('#reportSave', 'click', saveReport);
     $$('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); });
+      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); closeReportModal(); });
     });
 
     on('#scheduleForm', 'submit', function (e) { e.preventDefault(); handleScheduleSubmit(); });

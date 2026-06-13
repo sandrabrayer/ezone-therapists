@@ -112,6 +112,18 @@
     <!-- Toast -->
     <div id="toast" class="toast" hidden></div>
 
+    <!-- Post-treatment report — happened / didn't (reason), with debt gate -->
+    <div id="reportModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-title">דיווח טיפול — <span id="reportPatient"></span></div>
+        <div id="reportBody" class="form-grid"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+          <button type="button" class="btn btn-primary" id="reportSave">שמירה</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Schedule a treatment (with inline per-patient debt gate + approval) -->
     <div id="scheduleModal" class="modal" hidden>
       <div class="modal-card modal-card-wide">

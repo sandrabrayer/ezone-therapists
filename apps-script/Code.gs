@@ -392,8 +392,11 @@ function _saveSession(payload) {
   }
 }
 
-// Mark whether a scheduled treatment happened (per patient row). Attendance is
-// not debt-gated — it records did-it-happen after the fact.
+// Post-treatment report (per patient row). 'missed' records a reason. 'happened'
+// is DEBT-GATED, authoritatively (server re-reads live debt): a CONFIRMED debtor
+// is BLOCKED unless Ron/Sandra approve inline (audit-stamped). When debt can't be
+// determined (endpoint unconfigured/unavailable, or no/ambiguous match) the
+// report is recorded but FLAGGED for manual resolution — never silently 'clear'.
 function _markAttendance(payload) {
   var id = payload && payload.id;
   if (!id) return { ok: false, error: 'missing_id' };
@@ -409,8 +412,7 @@ function _markAttendance(payload) {
     if (lastRow < 2) return { ok: false, error: 'not_found' };
     var idIdx = SCHEDULE_HEADERS.indexOf('id');
     var sidIdx = SCHEDULE_HEADERS.indexOf('sessionId');
-    var attIdx = SCHEDULE_HEADERS.indexOf('attendance');
-    var atIdx = SCHEDULE_HEADERS.indexOf('attendanceMarkedAt');
+    var phoneIdx = SCHEDULE_HEADERS.indexOf('patientPhone');
     var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
     var found = -1;
     for (var i = 0; i < grid.length; i++) {
@@ -418,15 +420,61 @@ function _markAttendance(payload) {
     }
     if (found < 0) return { ok: false, error: 'not_found' };
 
-    // LOCAL SAVE IS THE SOURCE OF TRUTH — always persist the mark first.
-    sh.getRange(found + 2, attIdx + 1, 1, 1).setValues([[attendance]]);
-    sh.getRange(found + 2, atIdx + 1, 1, 1).setValues([[payload.markedAt || new Date().toISOString()]]);
+    // Default gate fields for this report.
+    var gateStatus = '', gateReason = '', amountOwed = 0;
+    var appr = payload.approval || null;
+
+    // happened → authoritative debt re-check (the payment-driving action).
+    if (attendance === 'occurred') {
+      var phone = String(grid[found][phoneIdx] || '');
+      var verification = _verifyPatientDebt(phone);   // allow|block|flag|unconfigured|unavailable
+      if (verification === 'allow') {
+        gateStatus = 'clear';
+      } else if (verification === 'block') {
+        if (!appr || !_isAllowedApprover(appr.approverId)) {
+          return { ok: false, error: 'debt_block' };   // BLOCK — needs Ron/Sandra
+        }
+        gateStatus = 'approved';
+        amountOwed = Number(appr.amountOwed) || 0;
+      } else {
+        // flag / unconfigured / unavailable — record but FLAG (never 'clear').
+        gateStatus = 'flagged';
+        gateReason = String(payload.gateReason || verification || 'unverified');
+      }
+    }
+
+    // LOCAL SAVE IS THE SOURCE OF TRUTH — persist the report fields.
+    function setCol(name, val) {
+      var idx = SCHEDULE_HEADERS.indexOf(name);
+      if (idx > -1) sh.getRange(found + 2, idx + 1, 1, 1).setValues([[val]]);
+    }
+    setCol('attendance', attendance);
+    setCol('attendanceMarkedAt', payload.markedAt || new Date().toISOString());
+    setCol('reason', attendance === 'missed' ? String(payload.reason || '') : '');
+    setCol('gateStatus', gateStatus);
+    setCol('gateReason', gateReason);
+    if (gateStatus === 'approved') {
+      setCol('amountOwed', amountOwed);
+      setCol('approverId', appr.approverId || '');
+      setCol('approverName', appr.approverName || '');
+      setCol('approvalNote', appr.note || '');
+      setCol('approvedAt', appr.approvedAt || new Date().toISOString());
+      // Append to the debtor-approval audit trail.
+      _upsertByKey(_ensureSheet('Approvals', APPROVALS_HEADERS), APPROVALS_HEADERS, 'id', {
+        id: 'rep_' + id, treatmentId: id, approverId: appr.approverId || '',
+        approverName: appr.approverName || '',
+        patientName: String(grid[found][SCHEDULE_HEADERS.indexOf('patientName')] || ''),
+        patientPhone: String(grid[found][phoneIdx] || ''),
+        therapist: String(grid[found][SCHEDULE_HEADERS.indexOf('therapist')] || ''),
+        note: appr.note || '', amountOwed: amountOwed, approvedAt: appr.approvedAt || new Date().toISOString()
+      });
+    }
 
     // Then sync the whole session to outpatient (best-effort). Any failure
     // leaves the row(s) 'pending' for a later retry — never dropped.
     var sessionId = String(grid[found][sidIdx] || id);
     var status = _syncSession(sh, sessionId);
-    return { ok: true, id: id, attendance: attendance, syncStatus: status };
+    return { ok: true, id: id, attendance: attendance, gateStatus: gateStatus, syncStatus: status };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
