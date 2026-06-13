@@ -7,7 +7,18 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app" class="app">
+  <!-- Shared password gate (shown on open only when APP_PASSWORD is set; never persisted). -->
+  <div id="gateScreen" class="pin-screen" hidden>
+    <div class="pin-card">
+      <div class="brand">E-ZONE Therapists</div>
+      <div class="pin-sub">הזינו סיסמה</div>
+      <input id="gateInput" type="password" placeholder="סיסמה" autocomplete="off" />
+      <div id="gateError" class="pin-error" hidden>סיסמה שגויה</div>
+      <button type="button" id="gateSubmit" class="btn btn-primary">כניסה</button>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
     <header class="topbar">
       <div class="logo">E-ZONE <span>Therapists</span></div>
       <nav class="tabs">

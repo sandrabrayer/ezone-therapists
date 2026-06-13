@@ -162,16 +162,22 @@ patches + tests, in [`docs/`](docs/):
    patients added directly (no originating lead) have no phone and fall back to
    manual/free-text entry in the inpatient tab.
 
-## Access — none (open app)
+## Access — shared password gate (UI only)
 
-There is **no login, no PIN, no roles, and no persistence**. The app opens
-directly to דשבורד מטופלים and all three tabs are usable by anyone. The only
-"identity" is the therapist **name** picked inside **המטופלים שלי** — a runtime
-choice, fresh every open, used to scope that tab and to stamp scheduled/reported
-treatments. It is **self-asserted** (anyone can pick any name); the real controls
-are the outpatient **debt gate** and the **Ron/Sandra approval audit**
-(per-patient, auto-stamped). Per-therapist PINs could be added later without
-redoing this.
+An optional **shared password** is asked on open (when the Node env
+**`APP_PASSWORD`** is set), verified **server-side** via `POST /api/gate`
+(`crypto.timingSafeEqual`; the value is never in frontend source and never
+returned to the browser). It is **not persisted** — re-prompted every open — and
+is **only a gate**: it does not identify the user. If `APP_PASSWORD` is unset the
+gate is **off** and the app opens directly. This gates the **UI**, not the data
+API (`/api/sheets` etc. remain reachable directly).
+
+After the gate, there are **no roles and no per-user login** — all three tabs are
+usable by anyone. The only "identity" is the therapist **name** picked inside
+**המטופלים שלי** — a runtime choice, fresh every open, used to scope that tab and
+to stamp scheduled/reported treatments. It is **self-asserted** (anyone can pick
+any name); the real controls are the outpatient **debt gate** and the
+**Ron/Sandra approval audit** (per-patient, auto-stamped).
 
 ## Local development
 
@@ -183,6 +189,7 @@ export DEBT_STATUS_SECRET="..."
 export TREATMENT_PLANS_SECRET="..."
 export DASHBOARD_SHEETS_URL="https://script.google.com/macros/s/.../exec"  # dashboard
 export OCCUPANCY_SECRET="..."
+export APP_PASSWORD="..."        # optional shared UI-gate password (omit = no gate)
 npm start          # http://localhost:3000
 npm test           # node --test
 ```

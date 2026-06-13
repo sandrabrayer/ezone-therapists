@@ -23,6 +23,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | `TREATMENT_PLANS_SECRET` | matches outpatient `TREATMENT_PLANS_SECRET` Script Property | dep #2 |
 | `DASHBOARD_SHEETS_URL` | dashboard Apps Script `/exec` | `/api/admitted` |
 | `OCCUPANCY_SECRET` | matches dashboard `OCCUPANCY_SECRET` Script Property | dep #3 |
+| `APP_PASSWORD` | (this app only) | optional shared UI-gate password — `/api/gate`. Unset = no gate. Never sent to the browser. |
 
 > **Needed at deploy time (from the project owner):** outpatient's `SHEETS_URL`
 > (`OUTPATIENT_SHEETS_URL` here) and the `DEBT_STATUS_SECRET` value, so the debt

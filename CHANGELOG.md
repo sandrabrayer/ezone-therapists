@@ -1,5 +1,13 @@
 # Changelog
 
+## Iteration 11 — shared password gate (UI)
+
+A single shared password on open (server-side check via the `APP_PASSWORD` Node
+env, timing-safe; never sent to the browser, never persisted — re-prompts every
+open). UI gate only; the therapist still picks their name in tab 3 after. Off
+when `APP_PASSWORD` is unset. Full notes:
+[`CHANGELOG-iteration11-password-gate.md`](CHANGELOG-iteration11-password-gate.md).
+
 ## Iteration 10 (steps 2–4) — edit, time dropdown, locations
 
 Inline **«עריכה»** to edit bookings (day/time/location via new `updateBooking`,

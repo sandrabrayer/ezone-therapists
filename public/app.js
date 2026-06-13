@@ -1270,6 +1270,18 @@
   }
 
   function wireEvents() {
+    // Shared password gate (verified server-side; correct → reveal the app).
+    on('#gateSubmit', 'click', function () {
+      var pw = ($('#gateInput').value || '');
+      apiGateVerify(pw)
+        .then(function (d) { if (d && d.ok) startApp(); else { var e = $('#gateError'); if (e) e.hidden = false; } })
+        .catch(function () { var e = $('#gateError'); if (e) e.hidden = false; });
+    });
+    on('#gateInput', 'keydown', function (e) {
+      var err = $('#gateError'); if (err) err.hidden = true;
+      if (e.key === 'Enter') { e.preventDefault(); $('#gateSubmit').click(); }
+    });
+
     // Tab-3 name picker — sets the runtime therapist identity (not persisted).
     on('#mineTherapist', 'change', function (e) {
       state.therapist = (e.target.value || '').trim();
@@ -1350,12 +1362,40 @@
     on('#patientForm', 'submit', function (e) { e.preventDefault(); handlePatientSubmit(); });
   }
 
-  function init() {
-    try { wireEvents(); } catch (e) { console.error('[ezone-therapists] wireEvents failed', e); }
-    // No login: open straight to the dashboard. The tab-3 therapist pick is a
-    // fresh runtime choice each open (never restored from storage).
+  // --- shared password gate (UI only; verified server-side, never persisted) --
+  async function apiGateStatus() {
+    var r = await fetch('/api/gate', { cache: 'no-store' });
+    return r.json();
+  }
+  async function apiGateVerify(password) {
+    var r = await fetch('/api/gate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password })
+    });
+    return r.json();
+  }
+  function showGate() {
+    $('#gateScreen').hidden = false;
+    $('#app').hidden = true;
+    var i = $('#gateInput'); i.value = ''; i.focus();
+  }
+  // Reveal the app and run the normal direct-open flow (dashboard + load).
+  function startApp() {
+    $('#gateScreen').hidden = true;
+    $('#app').hidden = false;
+    // The tab-3 therapist pick is a fresh runtime choice each open (not stored).
     setView('dashboard');
     loadAll().catch(function () {});
+  }
+
+  function init() {
+    try { wireEvents(); } catch (e) { console.error('[ezone-therapists] wireEvents failed', e); }
+    // Decide the gate first — re-prompted every open, nothing persisted. If the
+    // status check fails (the page itself came from this server, so this is rare)
+    // we open rather than lock anyone out of a UI-only gate.
+    apiGateStatus()
+      .then(function (d) { if (d && d.required) showGate(); else startApp(); })
+      .catch(function () { startApp(); });
   }
 
   function bootWhenReady() {
