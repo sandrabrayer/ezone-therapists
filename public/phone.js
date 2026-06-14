@@ -120,10 +120,37 @@
     return na === nb;
   }
 
+  /**
+   * NORMALIZE then VALIDATE — the canonical entry path. Strips separators and
+   * converts a +972/972 prefix to a leading 0 (via normalizeForMatch), then
+   * requires the result to be canonical (via isCanonical). On success returns
+   * the NORMALIZED canonical value to store; on failure a clear Hebrew error.
+   * Composes the two existing functions — no duplicated logic. Unlike
+   * validateCanonical (strict, no reformat), this accepts a fixable number and
+   * returns it cleaned, but a number that can't be made canonical is rejected
+   * (e.g. a 9-digit number with no leading zero is NOT auto-prepended).
+   * @param {*} raw
+   * @returns {{ok:boolean, value?:string, error?:string}}
+   */
+  function toCanonical(raw) {
+    if (raw == null || String(raw).trim() === '') return { ok: false, error: 'חסר מספר טלפון' };
+    var norm = normalizeForMatch(raw);
+    if (isCanonical(norm)) return { ok: true, value: norm };
+    if (!norm) return { ok: false, error: 'מספר טלפון לא תקין (לדוגמה 0501234567)' };
+    if (norm.length !== 10) {
+      return { ok: false, error: 'מספר טלפון לא תקין — נדרשות בדיוק 10 ספרות (לדוגמה 0501234567)' };
+    }
+    if (norm.charAt(0) !== '0') {
+      return { ok: false, error: 'מספר טלפון לא תקין — חייב להתחיל ב-0 (לדוגמה 0501234567)' };
+    }
+    return { ok: false, error: 'מספר טלפון לא תקין (לדוגמה 0501234567)' };
+  }
+
   return {
     CANONICAL_RE: CANONICAL_RE,
     isCanonical: isCanonical,
     validateCanonical: validateCanonical,
+    toCanonical: toCanonical,
     normalizeForMatch: normalizeForMatch,
     matches: matches
   };

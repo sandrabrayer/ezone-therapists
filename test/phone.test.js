@@ -81,3 +81,39 @@ test('matches: different numbers never match; blanks never match', () => {
   assert.equal(Phone.matches('', ''), false);
   assert.equal(Phone.matches('0501234567', null), false);
 });
+
+// --- toCanonical: normalize THEN validate (the entry path) -----------------
+
+test('toCanonical: already-canonical passes unchanged', () => {
+  assert.deepEqual(Phone.toCanonical('0501234567'), { ok: true, value: '0501234567' });
+});
+
+test('toCanonical: strips separators and returns the normalized canonical', () => {
+  assert.deepEqual(Phone.toCanonical('050-123-4567'), { ok: true, value: '0501234567' });
+  assert.deepEqual(Phone.toCanonical('(050) 123 4567'), { ok: true, value: '0501234567' });
+  assert.deepEqual(Phone.toCanonical(' 050.123.4567 '), { ok: true, value: '0501234567' });
+});
+
+test('toCanonical: +972 / 972 prefix becomes a leading 0', () => {
+  assert.deepEqual(Phone.toCanonical('+972 50-123-4567'), { ok: true, value: '0501234567' });
+  assert.deepEqual(Phone.toCanonical('972501234567'), { ok: true, value: '0501234567' });
+  assert.deepEqual(Phone.toCanonical('+972501234567'), { ok: true, value: '0501234567' });
+});
+
+test('toCanonical: too short / too long → rejected with a message', () => {
+  assert.equal(Phone.toCanonical('050123456').ok, false);        // 9 digits
+  assert.equal(Phone.toCanonical('05012345678').ok, false);      // 11 digits
+  assert.ok(/10 ספרות/.test(Phone.toCanonical('050123456').error));
+});
+
+test('toCanonical: a no-leading-zero 10-digit number is rejected (not auto-prepended)', () => {
+  const r = Phone.toCanonical('5012345678');   // 10 digits but starts with 5
+  assert.equal(r.ok, false);
+  assert.ok(/להתחיל ב-0/.test(r.error));
+});
+
+test('toCanonical: empty / garbage → rejected', () => {
+  assert.equal(Phone.toCanonical('').ok, false);
+  assert.equal(Phone.toCanonical(null).ok, false);
+  assert.equal(Phone.toCanonical('abc').ok, false);
+});
