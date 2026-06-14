@@ -146,12 +146,38 @@
     return { ok: false, error: 'מספר טלפון לא תקין (לדוגמה 0501234567)' };
   }
 
+  /**
+   * RESTORE a phone READ BACK from storage — recovery only, never entry.
+   * Google Sheets, with a phone column left in General/number format, coerces a
+   * canonical "0501234567" to the NUMBER 501234567 on write, dropping the
+   * leading zero. When we read that value back it is a 9-digit number with the
+   * zero gone. This restores it: normalize (String-coerce + strip separators +
+   * 972→0), and if the result is exactly 9 digits — the lost-zero signature —
+   * prepend the 0. Returns the canonical value when recovery yields one, else
+   * the original trimmed string UNTOUCHED (a genuine non-phone isn't mangled).
+   *
+   * This is RECOVERY of data Sheets corrupted at rest; it is NOT the entry path
+   * (a human-typed no-leading-zero number is still rejected by toCanonical).
+   * The column is also forced to text format so future writes keep the zero.
+   * @param {*} raw value read from a sheet cell (may be a number)
+   * @returns {string}
+   */
+  function restoreStored(raw) {
+    if (raw == null) return '';
+    var s = String(raw).trim();
+    if (!s) return '';
+    var digits = normalizeForMatch(s);          // String-coerce, strip, 972→0
+    if (digits.length === 9) digits = '0' + digits;   // recover the dropped zero
+    return isCanonical(digits) ? digits : s;    // else leave the value untouched
+  }
+
   return {
     CANONICAL_RE: CANONICAL_RE,
     isCanonical: isCanonical,
     validateCanonical: validateCanonical,
     toCanonical: toCanonical,
     normalizeForMatch: normalizeForMatch,
+    restoreStored: restoreStored,
     matches: matches
   };
 });
