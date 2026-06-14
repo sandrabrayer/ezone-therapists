@@ -405,9 +405,10 @@
     });
   }
   // Active = not stopped (the default working list everywhere). Stopped = the
-  // discharged / stop-requested list (history kept, off the active list).
-  function activePatients() { return buildPatientRoster().filter(function (p) { return !p.stopped; }); }
-  function stoppedPatients() { return buildPatientRoster().filter(function (p) { return p.stopped; }); }
+  // stop-requested / discharged list (history kept, off the active list). Both
+  // partition one roster via the shared StopFlow.splitStopped.
+  function activePatients() { return StopFlow.splitStopped(buildPatientRoster()).active; }
+  function stoppedPatients() { return StopFlow.splitStopped(buildPatientRoster()).stopped; }
   // Short human label for a patient's assignments (multiple parallel plans).
   function assignmentSummary(p, withTherapist) {
     if (!p.assignments.length) {

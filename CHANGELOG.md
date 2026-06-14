@@ -1,5 +1,20 @@
 # Changelog
 
+## Iteration 15 — stop-flow fixes (local move + rename)
+
+Renamed the dashboard section to **«מטופלים שביקשו לסיים טיפול»** (it's a request
+pending Vered, not a completed discharge). **Fixed the local move:** the stop
+backend matched rows from the raw sheet grid **without** the iteration-13
+leading-zero recovery, so for a patient whose stored phone was mangled
+(`501234567`) the canonical key `0501234567` never matched — the existing Patients
+row wasn't updated (a duplicate stopped row was appended) and their **future
+bookings were never cancelled**, even though the flagStop POST succeeded. New
+`_matchPhone` (recover-then-normalize) is now used on both sides in
+`_markLocalPatientStopped` and `_cancelFutureBookings`; `stopflow.js`
+`futureBookingsToCancel` recovers both sides too; new tested `splitStopped`
+partition drives `activePatients`/`stoppedPatients`. Full notes:
+[`CHANGELOG-iteration15-stop-flow-fixes.md`](CHANGELOG-iteration15-stop-flow-fixes.md).
+
 ## Iteration 14 — patient stop / discharge flow (sender)
 
 The therapists side of the stop flow. A patient is "stopped" when **discharged in
