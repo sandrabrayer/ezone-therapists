@@ -121,6 +121,7 @@ function _ensureSheet(name, headers) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     sh.setFrozenRows(1);
+    _forcePhoneColumnsText(sh, headers);
     return sh;
   }
   var lastCol = Math.max(sh.getLastColumn(), headers.length);
@@ -133,7 +134,20 @@ function _ensureSheet(name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     sh.setFrozenRows(1);
   }
+  _forcePhoneColumnsText(sh, headers);
   return sh;
+}
+
+// Pin every phone column to the '@' (plain text) number format so future saves
+// keep the leading zero instead of being coerced to a number. Covers the whole
+// column (all current + future rows). This protects NEW writes; rows already
+// mangled into numbers are repaired on read by _recoverStoredPhone.
+function _forcePhoneColumnsText(sh, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    if (_isPhoneHeader(headers[i])) {
+      sh.getRange(1, i + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+    }
+  }
 }
 
 /* Ensure an editable list sheet exists and APPEND any missing seed names. A
@@ -187,6 +201,9 @@ function _readAll(sh, headers) {
         v = (v.getFullYear() < 1900)
           ? Utilities.formatDate(v, tz, 'HH:mm')
           : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+      } else if (_isPhoneHeader(headers[c])) {
+        // Repair a phone whose leading zero Sheets dropped on storage.
+        v = _recoverStoredPhone(v);
       }
       obj[headers[c]] = v;
     }
@@ -294,6 +311,37 @@ function _toCanonicalPhone(raw) {
   var norm = _normalizePhoneForMatch(raw);
   return _CANONICAL_PHONE_RE.test(norm) ? norm : '';
 }
+
+// Mirror of public/phone.js recoverStored: READ-side repair of a phone whose
+// leading zero Sheets dropped when it stored a canonical number on a numeric
+// cell (e.g. the number 501234567 for "0501234567"). A 9-digit run not starting
+// with 0 gets its leading 0 restored; everything else is returned as a trimmed
+// string, untouched. NOT an entry path — human input is still strictly validated.
+function _recoverStoredPhone(raw) {
+  if (raw == null) return '';
+  var s = String(raw).trim();
+  if (!s) return '';
+  var digits = s.replace(/[^\d]/g, '');
+  if (digits.length === 9 && digits.charAt(0) !== '0') return '0' + digits;
+  return s;
+}
+
+// Mirror of public/phone.js duplicateOf: the create-time duplicate guard.
+// Returns the first existing patient row that already owns `phone` (matched
+// tolerantly), or null. Inactive patients still own their phone key.
+function _duplicatePatient(phone, patients) {
+  var key = _normalizePhoneForMatch(phone);
+  if (!key || !patients || !patients.length) return null;
+  for (var i = 0; i < patients.length; i++) {
+    var p = patients[i];
+    if (p && _normalizePhoneForMatch(p.phone) === key) return p;
+  }
+  return null;
+}
+
+// Columns that MUST stay plain text so a leading-zero phone is never coerced to a
+// number (the bug that drops the zero). Matched by header name across all sheets.
+function _isPhoneHeader(h) { return h === 'phone' || h === 'patientPhone'; }
 
 // Mirror of public/debt-gate.js evaluate(), returning only 'allow'|'block'|'flag'.
 function _authoritativeGate(phone, roster) {
@@ -647,10 +695,27 @@ function _savePatient(payload) {
   if (String(p.phone == null ? '' : p.phone).trim() === '') return { ok: false, error: 'missing_phone' };
   var phone = _toCanonicalPhone(p.phone);   // normalize + validate; never store non-canonical
   if (!phone) return { ok: false, error: 'invalid_phone' };
+  // 'create' mode rejects a phone that already belongs to a patient (no silent
+  // overwrite of someone else's record). 'edit' (default) still upserts by phone.
+  var isCreate = String((payload && payload.mode) || '').toLowerCase() === 'create';
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
     var sh = _ensureSheet('Patients', PATIENTS_HEADERS);
+    if (isCreate) {
+      var dup = _duplicatePatient(phone, _readAll(sh, PATIENTS_HEADERS));
+      if (dup) {
+        var nm = String(dup.name || '').trim();
+        return {
+          ok: false,
+          error: 'duplicate_phone',
+          existingName: nm,
+          message: nm
+            ? ('כבר קיים/ת מטופל/ת עם מספר הטלפון הזה: ' + nm)
+            : 'כבר קיים/ת מטופל/ת עם מספר הטלפון הזה'
+        };
+      }
+    }
     var rec = {
       phone: phone,
       name: p.name || '',

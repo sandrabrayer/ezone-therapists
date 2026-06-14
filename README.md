@@ -112,6 +112,21 @@ never stored (even via a direct POST). See [`public/phone.js`](public/phone.js).
 Sibling apps stored phones freely, so their values are normalized at **compare
 time** before matching against the canonical key.
 
+**Keeping (and recovering) the leading zero.** Google Sheets would coerce a
+canonical phone written to a number-formatted cell into a number, dropping the
+leading zero (`"0501234567"` → `501234567`). Two-part fix: `_ensureSheet` pins
+every phone column to the `'@'` (plain-text) format so new saves keep the zero,
+and `Phone.recoverStored` (shared, mirrored in `Code.gs`, applied on read both
+server- and client-side) restores the zero on already-mangled 9-digit rows. This
+is **read-side recovery of corrupted data only** — typed input is still strictly
+validated.
+
+**No duplicate patients.** Registering a *new* patient (`savePatient` with
+`mode:'create'`) whose phone already belongs to someone is rejected
+(`duplicate_phone`) with a Hebrew message naming the existing patient
+(`Phone.duplicateOf`), enforced on the form and the backend. Editing an existing
+patient still upserts by phone, and a patient may still hold several assignments.
+
 ## Cross-app debt gate — tri-state, never fail open
 
 Before an outpatient treatment log saves, the app reads debt status from

@@ -121,6 +121,52 @@
   }
 
   /**
+   * RECOVER a value Google Sheets mangled on storage. A canonical phone written
+   * to a number-formatted cell ("0501234567") loses its leading zero and is kept
+   * as the number 501234567 — a 9-digit value whose first digit is NOT 0. That is
+   * the unambiguous "lost-zero" signature, and the ONLY thing this repairs: a
+   * 9-digit run not starting with 0 gets its leading 0 restored, yielding a
+   * canonical 10-digit string. Everything else (already-canonical, blank, legacy
+   * free-form, wrong length) is returned as a trimmed string, untouched.
+   *
+   * This is READ-side recovery of data Sheets corrupted — never an entry path:
+   * a human typing a no-leading-zero number is still rejected by validateCanonical
+   * / toCanonical. Used by the server on read (mirrored in Code.gs) and the client.
+   * @param {*} raw
+   * @returns {string}
+   */
+  function recoverStored(raw) {
+    if (raw == null) return '';
+    var s = String(raw).trim();
+    if (!s) return '';
+    var digits = s.replace(/[^\d]/g, '');
+    if (digits.length === 9 && digits.charAt(0) !== '0') return '0' + digits;
+    return s;
+  }
+
+  /**
+   * Find an existing patient that already owns `phone` — the create-time
+   * duplicate guard. Matches tolerantly (canonical vs legacy free-form are the
+   * same line) via `matches`. Returns the FIRST matching patient object (so the
+   * caller can name them in a message), or null when there is no match, the phone
+   * is blank, or `patients` isn't a usable list. An inactive patient still owns
+   * the phone key, so this does not skip on `active` — re-creating a retired
+   * patient's number is still a duplicate.
+   * @param {*} phone canonical phone being created
+   * @param {Array<{phone:*, name?:*}>} patients existing records
+   * @returns {object|null}
+   */
+  function duplicateOf(phone, patients) {
+    var key = normalizeForMatch(phone);
+    if (!key || !Array.isArray(patients)) return null;
+    for (var i = 0; i < patients.length; i++) {
+      var p = patients[i];
+      if (p && matches(key, p.phone)) return p;
+    }
+    return null;
+  }
+
+  /**
    * NORMALIZE then VALIDATE — the canonical entry path. Strips separators and
    * converts a +972/972 prefix to a leading 0 (via normalizeForMatch), then
    * requires the result to be canonical (via isCanonical). On success returns
@@ -151,6 +197,8 @@
     isCanonical: isCanonical,
     validateCanonical: validateCanonical,
     toCanonical: toCanonical,
+    recoverStored: recoverStored,
+    duplicateOf: duplicateOf,
     normalizeForMatch: normalizeForMatch,
     matches: matches
   };
