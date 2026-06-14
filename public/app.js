@@ -198,7 +198,7 @@
     });
   }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
-  function apiSavePatient(patient) { return apiPost({ action: 'savePatient', patient: patient }); }
+  function apiSavePatient(patient, mode) { return apiPost({ action: 'savePatient', patient: patient, mode: mode || '' }); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
   // Live read — never cached.
@@ -227,7 +227,8 @@
       scheduledDate: fmtDate(row.scheduledDate),
       time: row.time || '',
       patientName: row.patientName || '',
-      patientPhone: row.patientPhone || '',
+      patientPhone: Phone.restoreStored(row.patientPhone),   // recover Sheets-dropped leading zero
+
       attendance: row.attendance || '',
       attendanceMarkedAt: row.attendanceMarkedAt || '',
       reason: row.reason || '',
@@ -250,7 +251,10 @@
       var data = await apiLoad();
       state.schedule = (data.schedule || []).map(normalizeScheduleRow);
       state.approvals = data.approvals || [];
-      state.patients = data.patients || [];
+      state.patients = (data.patients || []).map(function (p) {
+        // Recover the leading zero Sheets may have dropped from the phone key.
+        return Object.assign({}, p, { phone: Phone.restoreStored(p.phone) });
+      });
       state.assignments = data.assignments || [];
       state.therapists = data.therapists || [];
       state.treatmentTypes = data.treatmentTypes || [];
@@ -963,6 +967,7 @@
     invalid_approver: 'מאשר/ת לא מורשה',
     invalid_gate_status: 'סטטוס שער לא תקין',
     invalid_phone: 'מספר טלפון לא תקין (נדרשות 10 ספרות, מתחיל ב-0)',
+    duplicate_phone: 'מטופל/ת עם מספר טלפון זה כבר קיים/ת — יש לערוך את הרשומה הקיימת',
     debt_block: 'נמצא חוב בבדיקה החוזרת — נדרש אישור רון/סנדרה כדי לדווח ביצוע'
   };
   function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
@@ -1160,6 +1165,23 @@
     if (!name) { toast('חסר שם מטופל/ת', true); return; }
     var pv = Phone.toCanonical(fd.get('phone'));    // normalize then validate; store normalized
     if (!pv.ok) { toast(pv.error, true); return; }
+    // New patient (phone editable) must be unique by canonical phone — block a
+    // second record for an existing patient (edit keeps the same row). Backend
+    // re-checks via savePatient mode:'create'.
+    var isCreate = !$('#patientForm [name="phone"]').readOnly;
+    if (isCreate) {
+      var existing = (state.patients || []).map(function (x) {
+        var c = Phone.toCanonical(Phone.restoreStored(x.phone));
+        return { canonical: c.ok ? c.value : '', name: x.name || '' };
+      });
+      if (PatientDedupe.isDuplicateCreate('create', pv.value,
+            existing.map(function (e) { return e.canonical; }))) {
+        var dup = existing.filter(function (e) { return e.canonical === pv.value; })[0];
+        toast('מטופל/ת עם מספר טלפון זה כבר קיים/ת: ' + ((dup && dup.name) || pv.value) +
+          ' — יש לערוך את הרשומה הקיימת', true);
+        return;
+      }
+    }
     var stillAdmitted = !!fd.get('stillAdmitted');
     var patient = {
       phone: pv.value, name: name,
@@ -1175,7 +1197,7 @@
     var wantInitial = !$('#initialAssignmentSection').hidden && (initTher || initType);
 
     sub.disabled = true;
-    apiSavePatient(patient)
+    apiSavePatient(patient, isCreate ? 'create' : 'edit')
       .then(function () {
         if (!wantInitial) return;
         return apiSaveAssignment({
@@ -1185,8 +1207,18 @@
       })
       .then(function () { toast('נשמר'); return loadAll(); })
       .then(function () { closePatientModal(); })
-      .catch(function (err) { toast('שגיאה: ' + err.message, true); })
+      .catch(function (err) { toast('שגיאה: ' + saveErrorText(err.message), true); })
       .finally(function () { sub.disabled = false; });
+  }
+
+  // Frequency (times per week) <select> options: blank default + 1–7.
+  function freqOptions(selected) {
+    var sel = selected == null ? '' : String(selected);
+    var out = '<option value="">—</option>';
+    for (var i = 1; i <= 7; i++) {
+      out += '<option value="' + i + '"' + (sel === String(i) ? ' selected' : '') + '>' + i + '</option>';
+    }
+    return out;
   }
 
   // --- assignments modal (multiple therapists/plans per patient) --------
@@ -1196,7 +1228,7 @@
     return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '">' +
       '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
       '<select class="a-type">' + typeOptionList(resolveTypeOption(a.treatmentType || '')) + '</select>' +
-      '<input class="a-freq" type="number" min="0" max="14" step="1" placeholder="תדירות" value="' + escapeHtml(a.frequencyPerWeek || '') + '" />' +
+      '<select class="a-freq" title="תדירות בשבוע">' + freqOptions(a.frequencyPerWeek) + '</select>' +
       '<button type="button" class="btn btn-ghost btn-sm remove-assignment" title="הסר">✕</button>' +
       '</div>';
   }

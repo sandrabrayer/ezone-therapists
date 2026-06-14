@@ -117,3 +117,25 @@ test('toCanonical: empty / garbage → rejected', () => {
   assert.equal(Phone.toCanonical(null).ok, false);
   assert.equal(Phone.toCanonical('abc').ok, false);
 });
+
+// --- restoreStored: recover a leading zero Sheets dropped at rest ----------
+
+test('restoreStored: an intact canonical string survives unchanged', () => {
+  assert.equal(Phone.restoreStored('0501234567'), '0501234567');
+});
+
+test('restoreStored: a Sheets-stripped 9-digit number recovers its leading 0', () => {
+  assert.equal(Phone.restoreStored(501234567), '0501234567');   // number, zero gone
+  assert.equal(Phone.restoreStored('501234567'), '0501234567'); // string, zero gone
+  assert.equal(Phone.restoreStored(782374928), '0782374928');
+});
+
+test('restoreStored: +972 / separators still normalize on the way back', () => {
+  assert.equal(Phone.restoreStored('972501234567'), '0501234567');
+});
+
+test('restoreStored: a genuine non-phone is left untouched (not mangled)', () => {
+  assert.equal(Phone.restoreStored('12345'), '12345');   // 5 digits — not a phone
+  assert.equal(Phone.restoreStored(''), '');
+  assert.equal(Phone.restoreStored(null), '');
+});

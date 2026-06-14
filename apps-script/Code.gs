@@ -121,6 +121,7 @@ function _ensureSheet(name, headers) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     sh.setFrozenRows(1);
+    _forcePhoneTextFormat(sh, headers);
     return sh;
   }
   var lastCol = Math.max(sh.getLastColumn(), headers.length);
@@ -133,7 +134,22 @@ function _ensureSheet(name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     sh.setFrozenRows(1);
   }
+  _forcePhoneTextFormat(sh, headers);
   return sh;
+}
+
+/* Force a phone column (Patients.phone / Schedule.patientPhone) to PLAIN TEXT
+ * ('@') so Sheets keeps the leading zero instead of coercing "0501234567" to the
+ * number 501234567 on write. Applied to the whole column so every appended row
+ * inherits text format. Idempotent — safe to run on every ensure. (Existing
+ * already-stripped values are recovered on READ by _restoreStoredPhone.) */
+function _forcePhoneTextFormat(sh, headers) {
+  ['phone', 'patientPhone'].forEach(function (h) {
+    var idx = headers.indexOf(h);
+    if (idx > -1) {
+      sh.getRange(1, idx + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+    }
+  });
 }
 
 /* Ensure an editable list sheet exists and APPEND any missing seed names. A
@@ -223,11 +239,19 @@ function _getData() {
   var thSh = _ensureSeededList('Therapists', THERAPISTS_HEADERS,
     THERAPISTS_SEED.map(function (n) { return { name: n, active: 'true' }; }));
   var ttSh = _ensureSeededList('TreatmentTypes', TREATMENT_TYPES_HEADERS, TREATMENT_TYPES_SEED);
+  // Recover any leading zero Sheets dropped from a stored phone, so the matching
+  // key + display are intact for existing (pre-text-format) rows.
+  var schedule = _readAll(schSh, SCHEDULE_HEADERS).map(function (r) {
+    r.patientPhone = _restoreStoredPhone(r.patientPhone); return r;
+  });
+  var patients = _readAll(pSh, PATIENTS_HEADERS).map(function (r) {
+    r.phone = _restoreStoredPhone(r.phone); return r;
+  });
   return {
     ok: true,
-    schedule: _readAll(schSh, SCHEDULE_HEADERS),
+    schedule: schedule,
     approvals: _readAll(aSh, APPROVALS_HEADERS),
-    patients: _readAll(pSh, PATIENTS_HEADERS),
+    patients: patients,
     assignments: _readAll(asSh, ASSIGNMENTS_HEADERS),
     therapists: _readAll(thSh, THERAPISTS_HEADERS),
     treatmentTypes: _readAll(ttSh, TREATMENT_TYPES_HEADERS)
@@ -293,6 +317,21 @@ var _CANONICAL_PHONE_RE = /^0\d{9}$/;
 function _toCanonicalPhone(raw) {
   var norm = _normalizePhoneForMatch(raw);
   return _CANONICAL_PHONE_RE.test(norm) ? norm : '';
+}
+
+// Mirror of public/phone.js restoreStored: recover the leading zero Sheets
+// dropped from a STORED phone (a canonical 0XXXXXXXXX coerced to the 9-digit
+// number XXXXXXXXX). Normalize, and if exactly 9 digits — the lost-zero
+// signature — prepend the 0; return canonical when recovery yields one, else the
+// original string untouched. Recovery of data corrupted at rest, NOT the entry
+// path (a human-typed no-leading-zero number is still rejected on save).
+function _restoreStoredPhone(raw) {
+  if (raw == null) return '';
+  var s = String(raw).trim();
+  if (!s) return '';
+  var digits = _normalizePhoneForMatch(s);
+  if (digits.length === 9) digits = '0' + digits;
+  return _CANONICAL_PHONE_RE.test(digits) ? digits : s;
 }
 
 // Mirror of public/debt-gate.js evaluate(), returning only 'allow'|'block'|'flag'.
@@ -447,7 +486,7 @@ function _markAttendance(payload) {
 
     // happened → authoritative debt re-check (the payment-driving action).
     if (attendance === 'occurred') {
-      var phone = String(grid[found][phoneIdx] || '');
+      var phone = _restoreStoredPhone(grid[found][phoneIdx]);
       var verification = _verifyPatientDebt(phone);   // allow|block|flag|unconfigured|unavailable
       if (verification === 'allow') {
         gateStatus = 'clear';
@@ -647,10 +686,22 @@ function _savePatient(payload) {
   if (String(p.phone == null ? '' : p.phone).trim() === '') return { ok: false, error: 'missing_phone' };
   var phone = _toCanonicalPhone(p.phone);   // normalize + validate; never store non-canonical
   if (!phone) return { ok: false, error: 'invalid_phone' };
+  var mode = String(payload.mode || '');
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
     var sh = _ensureSheet('Patients', PATIENTS_HEADERS);
+    // One record per canonical phone — on CREATE, block a duplicate (mirror of
+    // public/patient-dedupe.js isDuplicateCreate). Edit (mode !== 'create')
+    // upserts the same row; multiple assignments per patient are unaffected.
+    if (mode === 'create') {
+      var existing = _readAll(sh, PATIENTS_HEADERS);
+      for (var i = 0; i < existing.length; i++) {
+        if (_toCanonicalPhone(_restoreStoredPhone(existing[i].phone)) === phone) {
+          return { ok: false, error: 'duplicate_phone', existingName: existing[i].name || '' };
+        }
+      }
+    }
     var rec = {
       phone: phone,
       name: p.name || '',
