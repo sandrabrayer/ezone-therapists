@@ -761,7 +761,7 @@
     return '<div class="patient-row" data-idx="' + idx + '">' +
       '<input class="patient-name" name="pname" list="pdl' + idx + '" placeholder="שם מטופל/ת" autocomplete="off" value="' + escapeHtml(prefill.name || '') + '" />' +
       '<datalist id="pdl' + idx + '" class="patient-name-dl"></datalist>' +
-      '<input class="patient-phone" name="pphone" inputmode="numeric" maxlength="10" placeholder="0501234567" value="' + escapeHtml(prefill.phone || '') + '" />' +
+      '<input class="patient-phone" name="pphone" inputmode="tel" placeholder="0501234567" value="' + escapeHtml(prefill.phone || '') + '" />' +
       '<button type="button" class="btn btn-ghost btn-sm remove-patient" title="הסר">✕</button>' +
       '</div>';
   }
@@ -881,7 +881,7 @@
     for (var i = 0; i < rawPatients.length; i++) {
       var rp = rawPatients[i];
       if (!rp.name) { toast('חסר שם מטופל/ת', true); return; }
-      var pv = Phone.validateCanonical(rp.phone);
+      var pv = Phone.toCanonical(rp.phone);    // normalize then validate; store normalized
       if (!pv.ok) { toast(rp.name + ': ' + pv.error, true); return; }
       patients.push({ name: rp.name, phone: pv.value });
     }
@@ -962,6 +962,7 @@
     debt_verification_unconfigured: 'בדיקת החוב אינה מוגדרת בשרת',
     invalid_approver: 'מאשר/ת לא מורשה',
     invalid_gate_status: 'סטטוס שער לא תקין',
+    invalid_phone: 'מספר טלפון לא תקין (נדרשות 10 ספרות, מתחיל ב-0)',
     debt_block: 'נמצא חוב בבדיקה החוזרת — נדרש אישור רון/סנדרה כדי לדווח ביצוע'
   };
   function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
@@ -1157,7 +1158,7 @@
     var fd = new FormData($('#patientForm'));
     var name = (fd.get('name') || '').trim();
     if (!name) { toast('חסר שם מטופל/ת', true); return; }
-    var pv = Phone.validateCanonical((fd.get('phone') || '').trim());
+    var pv = Phone.toCanonical(fd.get('phone'));    // normalize then validate; store normalized
     if (!pv.ok) { toast(pv.error, true); return; }
     var stillAdmitted = !!fd.get('stillAdmitted');
     var patient = {

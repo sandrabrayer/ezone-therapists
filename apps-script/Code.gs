@@ -286,6 +286,15 @@ function _normalizePhoneForMatch(raw) {
   return digits;
 }
 
+// Mirror of public/phone.js toCanonical: normalize then validate. Returns the
+// canonical 10-digit (leading-zero) phone, or '' when it can't be made canonical.
+// Server-side enforcement so no badly-formatted number is ever stored.
+var _CANONICAL_PHONE_RE = /^0\d{9}$/;
+function _toCanonicalPhone(raw) {
+  var norm = _normalizePhoneForMatch(raw);
+  return _CANONICAL_PHONE_RE.test(norm) ? norm : '';
+}
+
 // Mirror of public/debt-gate.js evaluate(), returning only 'allow'|'block'|'flag'.
 function _authoritativeGate(phone, roster) {
   var key = _normalizePhoneForMatch(phone);
@@ -345,6 +354,11 @@ function _verifyPatientDebt(phone) {
 function _saveScheduleRow(t, schSh, aSh) {
   if (!t || typeof t !== 'object') return { ok: false, error: 'missing_row' };
   if (!t.id) return { ok: false, error: 'missing_id' };
+
+  // Normalize + validate the phone; never store a non-canonical number.
+  var canon = _toCanonicalPhone(t.patientPhone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+  t.patientPhone = canon;
 
   var verification = 'unconfigured';
   var needsVerify = (t.gateStatus === 'clear' || t.gateStatus === 'approved' || !t.gateStatus);
@@ -630,8 +644,9 @@ function _syncPending() {
 function _savePatient(payload) {
   var p = payload && payload.patient;
   if (!p || typeof p !== 'object') return { ok: false, error: 'missing_patient' };
-  var phone = String(p.phone == null ? '' : p.phone).trim();
-  if (!phone) return { ok: false, error: 'missing_phone' };
+  if (String(p.phone == null ? '' : p.phone).trim() === '') return { ok: false, error: 'missing_phone' };
+  var phone = _toCanonicalPhone(p.phone);   // normalize + validate; never store non-canonical
+  if (!phone) return { ok: false, error: 'invalid_phone' };
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
