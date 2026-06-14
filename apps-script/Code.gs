@@ -65,11 +65,14 @@ var APPROVALS_HEADERS = [
 /* Per-patient intake record keyed by canonical phone: identity + origin (where
  * the patient came from, with an optional "still admitted" + which house). The
  * therapist assignment(s) and treatment plan(s) live in the Assignments sheet —
- * a patient can have MULTIPLE parallel treatments/therapists, all editable. */
+ * a patient can have MULTIPLE parallel treatments/therapists, all editable.
+ * The `stopped*` columns (appended) hold a LOCAL stop flag: set when a stop
+ * request was sent to outpatient (flagStop) and pending Vered's confirmation. */
 var PATIENTS_HEADERS = [
   'phone', 'name',
   'origin', 'stillAdmitted', 'admittedHouse',
-  'active', 'updatedBy', 'updated'
+  'active', 'updatedBy', 'updated',
+  'stopped', 'stoppedBy', 'stoppedAt', 'stopNote'   // local stop flag (append-only)
 ];
 
 /* One row per (patient, therapist, treatment plan). A patient may have several
@@ -702,19 +705,18 @@ function _savePatient(payload) {
   lock.tryLock(10000);
   try {
     var sh = _ensureSheet('Patients', PATIENTS_HEADERS);
-    if (isCreate) {
-      var dup = _duplicatePatient(phone, _readAll(sh, PATIENTS_HEADERS));
-      if (dup) {
-        var nm = String(dup.name || '').trim();
-        return {
-          ok: false,
-          error: 'duplicate_phone',
-          existingName: nm,
-          message: nm
-            ? ('כבר קיים/ת מטופל/ת עם מספר הטלפון הזה: ' + nm)
-            : 'כבר קיים/ת מטופל/ת עם מספר הטלפון הזה'
-        };
-      }
+    var existing = _readAll(sh, PATIENTS_HEADERS);
+    var prior = _duplicatePatient(phone, existing);   // same-phone row, if any
+    if (isCreate && prior) {
+      var nm = String(prior.name || '').trim();
+      return {
+        ok: false,
+        error: 'duplicate_phone',
+        existingName: nm,
+        message: nm
+          ? ('כבר קיים/ת מטופל/ת עם מספר הטלפון הזה: ' + nm)
+          : 'כבר קיים/ת מטופל/ת עם מספר הטלפון הזה'
+      };
     }
     var rec = {
       phone: phone,
@@ -724,10 +726,152 @@ function _savePatient(payload) {
       admittedHouse: p.stillAdmitted ? (p.admittedHouse || '') : '',
       active: (p.active === false || p.active === 'false') ? 'false' : 'true',
       updatedBy: p.updatedBy || '',
-      updated: p.updated || new Date().toISOString()
+      updated: p.updated || new Date().toISOString(),
+      // PRESERVE the local stop flag — an identity/origin edit must never clear
+      // it (the whole row is rebuilt on upsert, so carry the prior values).
+      stopped: prior ? (prior.stopped || '') : '',
+      stoppedBy: prior ? (prior.stoppedBy || '') : '',
+      stoppedAt: prior ? (prior.stoppedAt || '') : '',
+      stopNote: prior ? (prior.stopNote || '') : ''
     };
     var res = _upsertByKey(sh, PATIENTS_HEADERS, 'phone', rec);
     return { ok: true, patient: rec, created: !!res.created, updated: !!res.updated };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+/* ===== Patient stop / discharge flow (SENDER) =====
+ * Mirror of public/stopflow.js + the recordTreatmentGiven write-back pattern.
+ * "Mark patient stopped" does NOT discharge directly: it POSTs flagStop to
+ * outpatient (a pending request Vered confirms there). FAIL-CLOSED — if the flag
+ * doesn't reach outpatient, nothing changes locally. On success we set the local
+ * stop flag and cancel the patient's future, unreported bookings (past + already
+ * reported bookings are kept for the record).
+ */
+
+// Today's date as 'yyyy-MM-dd' in the script timezone (mirror of the client's today()).
+function _todayStr() {
+  var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
+  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+}
+
+// POST flagStop to outpatient with the shared secret (server-to-server, secret
+// never reaches the browser). Returns { ok:true } or { ok:false, error }.
+// FAIL-CLOSED: unconfigured URL/secret, non-2xx, or ok:false all return ok:false.
+function _postFlagStop(body) {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('STOP_FLAG_SECRET');
+  if (!url || !secret) return { ok: false, error: 'stop_flag_unconfigured' };
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=flagStop&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, error: 'flag_http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false) return { ok: false, error: (data && data.error) || 'flag_rejected' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'flag_unreachable' };
+  }
+}
+
+// Persist the LOCAL stop flag on the Patients row (create a minimal row if the
+// patient is only in the outpatient roster). Phone matched tolerantly.
+function _markLocalPatientStopped(sh, canonPhone, name, reportedBy, note) {
+  var now = new Date().toISOString();
+  var key = _normalizePhoneForMatch(canonPhone);
+  var phoneIdx = PATIENTS_HEADERS.indexOf('phone');
+  var nameIdx = PATIENTS_HEADERS.indexOf('name');
+  var lastRow = sh.getLastRow();
+  if (lastRow > 1) {
+    var grid = sh.getRange(2, 1, lastRow - 1, PATIENTS_HEADERS.length).getValues();
+    for (var i = 0; i < grid.length; i++) {
+      if (_normalizePhoneForMatch(grid[i][phoneIdx]) !== key) continue;
+      var rowNum = i + 2;
+      function setCol(nm, val) {
+        var idx = PATIENTS_HEADERS.indexOf(nm);
+        if (idx > -1) sh.getRange(rowNum, idx + 1, 1, 1).setValues([[val]]);
+      }
+      setCol('stopped', 'true');
+      setCol('stoppedBy', reportedBy || '');
+      setCol('stoppedAt', now);
+      setCol('stopNote', note || '');
+      if (name && !String(grid[i][nameIdx] || '').trim()) setCol('name', name);
+      return;
+    }
+  }
+  // No local row yet — append a minimal stopped record.
+  _upsertByKey(sh, PATIENTS_HEADERS, 'phone', {
+    phone: canonPhone, name: name || '', origin: '', stillAdmitted: '', admittedHouse: '',
+    active: 'true', updatedBy: reportedBy || '', updated: now,
+    stopped: 'true', stoppedBy: reportedBy || '', stoppedAt: now, stopNote: note || ''
+  });
+}
+
+// Delete the patient's FUTURE, unreported bookings (today forward). Past and
+// already-reported rows are kept. Mirror of stopflow.js futureBookingsToCancel.
+// Returns the number of cancelled rows.
+function _cancelFutureBookings(sh, canonPhone) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 0;
+  var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
+  var today = _todayStr();
+  var key = _normalizePhoneForMatch(canonPhone);
+  var phoneIdx = SCHEDULE_HEADERS.indexOf('patientPhone');
+  var attIdx = SCHEDULE_HEADERS.indexOf('attendance');
+  var dateIdx = SCHEDULE_HEADERS.indexOf('scheduledDate');
+  var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
+  var toDelete = [];
+  for (var i = 0; i < grid.length; i++) {
+    if (_normalizePhoneForMatch(grid[i][phoneIdx]) !== key) continue;
+    if (String(grid[i][attIdx] || '') !== '') continue;        // reported → keep
+    var dcell = grid[i][dateIdx];
+    var d = (dcell instanceof Date)
+      ? Utilities.formatDate(dcell, tz, 'yyyy-MM-dd')
+      : String(dcell || '');
+    if (d.indexOf('T') !== -1) d = d.split('T')[0];
+    if (d && d >= today) toDelete.push(i + 2);                  // sheet row number
+  }
+  for (var j = toDelete.length - 1; j >= 0; j--) sh.deleteRow(toDelete[j]);  // bottom-up
+  return toDelete.length;
+}
+
+// Mark a patient stopped: flag outpatient (fail-closed) → local flag + cancel
+// future bookings. Does NOT discharge the patient directly.
+function _markPatientStopped(payload) {
+  var p = payload || {};
+  var canon = _toCanonicalPhone(p.phone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+
+  // 1) Send the stop flag FIRST. If it doesn't reach Vered, change nothing.
+  var flag = _postFlagStop({
+    phone: canon,
+    name: String(p.name == null ? '' : p.name).trim(),
+    reportedBy: String(p.reportedBy == null ? '' : p.reportedBy).trim(),
+    note: String(p.note == null ? '' : p.note).trim()
+  });
+  if (!flag.ok) return { ok: false, error: flag.error || 'flag_failed' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    // 2) Persist the local stop flag.
+    var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
+    _markLocalPatientStopped(pSh, canon,
+      String(p.name == null ? '' : p.name).trim(),
+      String(p.reportedBy == null ? '' : p.reportedBy).trim(),
+      String(p.note == null ? '' : p.note).trim());
+    // 3) Cancel future, unreported bookings (keep past + reported).
+    var schSh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    var cancelled = _cancelFutureBookings(schSh, canon);
+    return { ok: true, flagged: true, phone: canon, cancelled: cancelled };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -876,6 +1020,7 @@ function doPost(e) {
     if (action === 'markAttendance') return _json(_markAttendance(payload));
     if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
+    if (action === 'markPatientStopped') return _json(_markPatientStopped(payload));
     if (action === 'saveAssignment') return _json(_saveAssignment(payload));
     if (action === 'updateBooking') return _json(_updateBooking(payload));
     if (action === 'removeAssignment') {

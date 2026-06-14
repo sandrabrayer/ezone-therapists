@@ -96,6 +96,23 @@ dashboard updates identity + origin; assignments are managed in שיבוץ.
   untouched. The outpatient SOURCE data should eventually adopt the new term too
   (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
 
+## Stopping a patient (stop / discharge flow)
+
+A patient is **stopped** when they're **discharged in outpatient**
+(`getTreatmentPlans` reports `status: "סיים טיפול"`) **or locally flagged** via
+the **«הפסקת טיפול»** action (Vered in שיבוץ, or a therapist on their own
+patient). The action does **not** discharge directly — it POSTs `flagStop` to
+outpatient (server-to-server from the therapists Apps Script, shared secret
+`STOP_FLAG_SECRET`), a **pending request Vered confirms in outpatient**
+(«נשלחה בקשת הפסקה לאישור ורד»). It is **fail-closed**: only on a successful send
+does the app set a local stop flag and **cancel the patient's future, unreported
+bookings** (past + reported bookings are kept for the record); if the flag can't
+be sent, nothing changes. Stopped patients leave the active list and appear in a
+read-only **«מטופלים שהופסקו / סיימו טיפול»** dashboard section. Pure logic in
+[`public/stopflow.js`](public/stopflow.js) (mirrored in `Code.gs`). Config: set
+the `STOP_FLAG_SECRET` Script Property to match outpatient's; reuses
+`OUTPATIENT_SHEETS_URL` (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
+
 ## Phone — one enforced format
 
 Phone is the patient-matching key, stored in exactly **one** canonical format:

@@ -733,6 +733,9 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .mine-picker select { min-width: 200px; }
 .mine-row .att-btns { display: inline-flex; gap: 6px; }
 
+/* stopped / discharged patients — read-only, visually muted */
+.stopped-row { opacity: 0.7; }
+
 /* assignments modal — multiple therapists/plans per patient */
 .assignment-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .assignment-row .a-therapist { flex: 2; min-width: 120px; }
