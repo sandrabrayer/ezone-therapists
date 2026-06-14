@@ -199,6 +199,7 @@
   }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
   function apiSavePatient(patient, mode) { return apiPost({ action: 'savePatient', patient: patient, mode: mode || 'edit' }); }
+  function apiMarkPatientStopped(body) { return apiPost(Object.assign({ action: 'markPatientStopped' }, body)); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
   // Live read — never cached.
@@ -328,8 +329,13 @@
   // preferred, debt roster as a fallback/union), keyed by normalized phone, then
   // LEFT-JOINED with this app's local intake record. The dashboard's plan view
   // prefers Vered's locally-set main plan and falls back to the roster's.
-  function activePatients() {
+  // Build EVERY patient (active + stopped), each tagged with a `stopped` flag.
+  // `activePatients` / `stoppedPatients` are thin filters over this so the heavy
+  // cross-app join runs once per call site. A patient is stopped when discharged
+  // in outpatient (plan status 'סיים טיפול') OR locally flagged (StopFlow).
+  function buildPatientRoster() {
     var byPhone = {};
+    var planStatusByPhone = {};
     function add(name, phone, serviceType, sessions) {
       var key = normPhone(phone);
       if (!key) return;
@@ -340,7 +346,11 @@
         if ((byPhone[key].sessions == null || byPhone[key].sessions === '') && sessions != null) byPhone[key].sessions = sessions;
       }
     }
-    (state.plans || []).forEach(function (p) { add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek); });
+    (state.plans || []).forEach(function (p) {
+      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek);
+      var k = normPhone(p.phone);
+      if (k && p.status != null && planStatusByPhone[k] == null) planStatusByPhone[k] = p.status;
+    });
     (state.debtRoster || []).forEach(function (c) { add(c.name, c.phone); });
 
     // Locally-registered patients (Vered's intake) appear on the dashboard even
@@ -372,6 +382,7 @@
       var local = localByPhone[key] || {};
       var debt = debtEntryFor(base.phone);
       var assigns = assignsByPhone[key] || [];
+      var planStatus = planStatusByPhone[key] || '';
       return {
         name: local.name || base.name,
         phone: base.phone,
@@ -384,10 +395,19 @@
         admittedHouse: local.admittedHouse || '',
         debtStatus: debt ? String(debt.debtStatus || '').toLowerCase() : '',
         amountOwed: debt ? (Number(debt.amountOwed) || 0) : 0,
+        planStatus: planStatus,
+        stopped: StopFlow.isPatientStopped({ planStatus: planStatus, localStopped: local.stopped }),
+        stoppedBy: local.stoppedBy || '',
+        stoppedAt: local.stoppedAt || '',
+        stopNote: local.stopNote || '',
         key: key
       };
     });
   }
+  // Active = not stopped (the default working list everywhere). Stopped = the
+  // discharged / stop-requested list (history kept, off the active list).
+  function activePatients() { return buildPatientRoster().filter(function (p) { return !p.stopped; }); }
+  function stoppedPatients() { return buildPatientRoster().filter(function (p) { return p.stopped; }); }
   // Short human label for a patient's assignments (multiple parallel plans).
   function assignmentSummary(p, withTherapist) {
     if (!p.assignments.length) {
@@ -488,6 +508,35 @@
       .sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); })
       .map(function (p) { return patientCard(p); });
     $('#patientsList').innerHTML = rows.length ? rows.join('') : '<div class="billing-empty">אין מטופלים פעילים</div>';
+
+    // Stopped / discharged — read-only history (matches the same search box).
+    var stoppedList = $('#stoppedList');
+    if (stoppedList) {
+      var stopped = stoppedPatients()
+        .filter(function (p) { return matchName(p.name, state.dashboardSearch); })
+        .sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
+      var sec = $('#stoppedSection');
+      if (sec) sec.hidden = !stopped.length;
+      stoppedList.innerHTML = stopped.length ? stopped.map(stoppedCard).join('') : '';
+    }
+  }
+
+  // A stopped/discharged patient — read-only line: name, why it's stopped
+  // (discharged in outpatient vs a stop request pending Vered), and the local
+  // who/when/note when we have it.
+  function stoppedCard(p) {
+    var reason = StopFlow.isStoppedStatus(p.planStatus)
+      ? 'סיים טיפול (מטופלי חוץ)'
+      : 'בקשת הפסקה ממתינה לאישור ורד';
+    var meta = [];
+    if (p.stoppedBy) meta.push('ע״י ' + p.stoppedBy);
+    if (p.stoppedAt) meta.push(displayDate(p.stoppedAt));
+    if (p.stopNote) meta.push(p.stopNote);
+    return '<div class="assign-row stopped-row">' +
+      '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
+      '<span class="assign-type">' + escapeHtml(reason) + '</span>' +
+      '<span class="assign-ther">' + escapeHtml(meta.join(' · ')) + '</span>' +
+      '</div>';
   }
 
   function renderAlertBanner(el) {
@@ -590,6 +639,7 @@
         '<span class="assign-actions">' +
           '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
           '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>' +
+          '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
         '</span>' +
         '</div>';
     });
@@ -625,6 +675,7 @@
       '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
       '<span class="assign-actions">' +
         '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+        '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
       '</span>' +
       '</div>';
   }
@@ -1123,6 +1174,21 @@
       .catch(function (err) { toast('שגיאה: ' + err.message, true); });
   }
 
+  // Mark a patient as stopped: send a flagStop request to outpatient (pending
+  // Vered's confirmation) and, on success, cancel their future bookings. Does NOT
+  // discharge directly. Fail-closed server-side — if the flag can't be sent,
+  // nothing changes and the error surfaces here.
+  function markPatientStopped(phone) {
+    var rec = patientByPhone(phone);
+    if (!rec) { toast('מטופל/ת לא נמצא', true); return; }
+    if (!window.confirm('לסמן הפסקת טיפול עבור ' + rec.name + '?\nתישלח בקשה לאישור ורד והטיפולים העתידיים שטרם דווחו יבוטלו.')) return;
+    var note = window.prompt('הערה (לא חובה):', '');
+    if (note === null) return;                       // prompt cancelled → abort
+    apiMarkPatientStopped({ phone: rec.phone, name: rec.name, reportedBy: state.therapist || 'עורך', note: note || '' })
+      .then(function () { toast('נשלחה בקשת הפסקה לאישור ורד'); return loadAll(); })
+      .catch(function (err) { toast('שגיאה: ' + err.message, true); });
+  }
+
   // --- patient intake / edit modal (identity + origin) ------------------
   // The therapist assignment(s) + plan(s) live in the Assignments modal; the
   // intake form captures identity + origin, plus ONE optional INITIAL assignment
@@ -1341,6 +1407,8 @@
       if (ep) { openPatientModal(ep.getAttribute('data-edit-patient')); return; }
       var ap = e.target.closest('[data-assignments-patient]');
       if (ap) { openAssignmentsModal(ap.getAttribute('data-assignments-patient')); return; }
+      var stp = e.target.closest('[data-stop-patient]');
+      if (stp) { markPatientStopped(stp.getAttribute('data-stop-patient')); return; }
       var sp = e.target.closest('[data-schedule-patient]');
       if (sp) {
         var rec = patientByPhone(sp.getAttribute('data-schedule-patient'));
@@ -1354,6 +1422,8 @@
     // המטופלים שלי (therapist): schedule + report did-it-happen on their patients.
     on('#mineSearch', 'input', function (e) { state.mineSearch = e.target.value; renderMine(); });
     on('#view-mine', 'click', function (e) {
+      var stp = e.target.closest('[data-stop-patient]');
+      if (stp) { onPatientListClick(e); return; }
       var sp = e.target.closest('[data-schedule-patient]');
       if (sp) { onPatientListClick(e); return; }
       var eb = e.target.closest('[data-edit-booking]');

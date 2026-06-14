@@ -1,17 +1,18 @@
 # Cross-app dependencies
 
 `ezone-therapists` consumes three read-only projections from sibling apps and
-makes **one cross-app WRITE** (dep #4). The browser never sees a secret — reads
-are proxied by the Node server, and the write originates server-to-server from
-the therapists Apps Script (which holds its own secret copy). All must be
+makes **two cross-app WRITEs** (deps #4, #5). The browser never sees a secret —
+reads are proxied by the Node server, and the writes originate server-to-server
+from the therapists Apps Script (which holds its own secret copies). All must be
 deployed on the sibling side for the corresponding feature to work end-to-end.
 
 | # | Dependency | Sibling repo | Status | Blocks |
 | - | ---------- | ------------ | ------ | ------ |
 | 1 | `getDebtStatus` | `ezone-outpatient` | **Open, unmerged** — PR #14 (`claude/nice-edison-5bvwiz`). Must be merged **and the Apps Script redeployed**. | Outpatient debt gate |
-| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. | Treatment-plan / dashboard plan data |
+| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. | Treatment-plan / dashboard plan data; **patient status** (active vs `סיים טיפול`) for the stop flow |
 | 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | (no UI consumer since the inpatient tab was removed) |
 | 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
+| 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
 
 ## Env vars on the therapists Railway service
 
@@ -46,6 +47,12 @@ above. Set on the therapists Apps Script:
   marking a treatment saves locally and leaves it `syncStatus='pending'`; the app
   retries via `syncPending` ("סנכרן עכשיו" / on refresh). The local mark is the
   source of truth and is never lost.
+- `STOP_FLAG_SECRET` — the **stop-request write** (dep #5, `flagStop`); must match
+  the value on the outpatient Apps Script. **Fail-closed:** until it's set (and the
+  outpatient `flagStop` receiver deployed), «הפסקת טיפול» returns
+  `stop_flag_unconfigured` and changes nothing — no local stop flag, no booking
+  cancellation — so a patient is never hidden until the request actually reaches
+  Vered. Reuses `OUTPATIENT_SHEETS_URL`; no new Node env var (server-to-server).
 
 ## Source-data follow-up (outpatient side)
 

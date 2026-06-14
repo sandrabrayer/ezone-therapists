@@ -1,5 +1,20 @@
 # Changelog
 
+## Iteration 14 — patient stop / discharge flow (sender)
+
+The therapists side of the stop flow. A patient is "stopped" when **discharged in
+outpatient** (`getTreatmentPlans` `status: "סיים טיפול"`) **or locally flagged**
+via the new **«הפסקת טיפול»** action (Vered in שיבוץ, or a therapist on their
+patient). The action POSTs `flagStop` to outpatient (a pending request Vered
+confirms there) and — **fail-closed, only on a successful send** — sets a local
+stop flag and cancels the patient's future unreported bookings (past + reported
+kept). Stopped patients leave the active list (KPIs/שיבוץ/«המטופלים שלי») and
+appear in a read-only dashboard **«מטופלים שהופסקו / סיימו טיפול»** section. New
+pure `stopflow.js` (mirrored in `Code.gs`), unit-tested. **New config:** the
+`STOP_FLAG_SECRET` Script Property on the therapists Apps Script (matches
+outpatient's); reuses `OUTPATIENT_SHEETS_URL`; no new Node env var. Full notes:
+[`CHANGELOG-iteration14-stop-flow.md`](CHANGELOG-iteration14-stop-flow.md).
+
 ## Iteration 13 — phone leading-zero recovery, duplicate guard, times-per-week dropdown
 
 Three phone-keyed fixes. **(1) Leading zero kept and recovered:** `_ensureSheet`
