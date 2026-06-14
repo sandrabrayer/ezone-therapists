@@ -1,5 +1,17 @@
 # Changelog
 
+## Iteration 13 — leading-zero fix, no duplicate patients, frequency dropdown
+
+Three phone-keyed fixes. **(1)** The dashboard's missing leading zero was the
+classic Sheets number-format problem (phone coerced to a number on write, zero
+dropped) — fixed by forcing the phone columns to plain text (`setNumberFormat`)
+and recovering already-stripped rows on read (`Phone.restoreStored`, mirrored in
+`Code.gs`); entry still rejects a human-typed no-leading-zero number. **(2)** One
+record per patient — `savePatient` create-mode blocks a duplicate canonical phone
+(form + backend; pure `patient-dedupe.js`), while edit + multiple assignments are
+unaffected. **(3)** Times-per-week is now a `<select>` (1–7). Full notes:
+[`CHANGELOG-iteration13-phone-zero-dedupe-freq.md`](CHANGELOG-iteration13-phone-zero-dedupe-freq.md).
+
 ## Iteration 12 — enforce canonical phone on entry
 
 Normalize-then-validate at every entry point via one shared normalizer:

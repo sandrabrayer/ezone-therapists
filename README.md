@@ -112,6 +112,23 @@ never stored (even via a direct POST). See [`public/phone.js`](public/phone.js).
 Sibling apps stored phones freely, so their values are normalized at **compare
 time** before matching against the canonical key.
 
+**Storage — text format + leading-zero recovery.** The `Patients.phone` and
+`Schedule.patientPhone` columns are forced to **plain text** (`setNumberFormat`)
+so Sheets keeps the leading zero instead of coercing `0501234567` to the number
+`501234567`. Rows written before that fix are recovered on read by
+`Phone.restoreStored` (mirrored in `Code.gs`): a stored 9-digit value (the
+lost-zero signature) gets its `0` restored, a genuine non-phone is left
+untouched. This is recovery of data corrupted at rest — entry still **rejects** a
+human-typed no-leading-zero number.
+
+**One record per patient.** A patient is unique by canonical phone. Creating a
+**second** record for an existing phone is blocked (`savePatient` create-mode →
+`duplicate_phone`, enforced on the form and the backend; pure
+[`public/patient-dedupe.js`](public/patient-dedupe.js)). Editing the existing
+record stays allowed, and a patient can still hold **multiple parallel
+treatments/assignments** (separate `Assignments` sheet) — only a duplicate
+patient *record* is blocked.
+
 ## Cross-app debt gate — tri-state, never fail open
 
 Before an outpatient treatment log saves, the app reads debt status from
