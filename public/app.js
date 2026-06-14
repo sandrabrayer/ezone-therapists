@@ -198,7 +198,7 @@
     });
   }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
-  function apiSavePatient(patient) { return apiPost({ action: 'savePatient', patient: patient }); }
+  function apiSavePatient(patient, mode) { return apiPost({ action: 'savePatient', patient: patient, mode: mode || 'edit' }); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
   // Live read — never cached.
@@ -227,7 +227,7 @@
       scheduledDate: fmtDate(row.scheduledDate),
       time: row.time || '',
       patientName: row.patientName || '',
-      patientPhone: row.patientPhone || '',
+      patientPhone: Phone.recoverStored(row.patientPhone || ''),
       attendance: row.attendance || '',
       attendanceMarkedAt: row.attendanceMarkedAt || '',
       reason: row.reason || '',
@@ -250,8 +250,16 @@
       var data = await apiLoad();
       state.schedule = (data.schedule || []).map(normalizeScheduleRow);
       state.approvals = data.approvals || [];
-      state.patients = data.patients || [];
-      state.assignments = data.assignments || [];
+      // Repair any phone Sheets mangled (lost leading zero) — mirrors the
+      // server's read-side recovery so the UI is correct even before redeploy.
+      state.patients = (data.patients || []).map(function (p) {
+        if (p && p.phone != null) p.phone = Phone.recoverStored(p.phone);
+        return p;
+      });
+      state.assignments = (data.assignments || []).map(function (a) {
+        if (a && a.patientPhone != null) a.patientPhone = Phone.recoverStored(a.patientPhone);
+        return a;
+      });
       state.therapists = data.therapists || [];
       state.treatmentTypes = data.treatmentTypes || [];
       state.loaded = true;
@@ -1134,7 +1142,10 @@
     $('#admittedHouse').value = rec.admittedHouse || '';
     $('#admittedDetails').hidden = !$('#stillAdmitted').checked;
   }
+  // 'create' rejects a phone that already belongs to a patient; 'edit' upserts.
+  var patientModalMode = 'create';
   function openNewPatient() {
+    patientModalMode = 'create';
     $('#patientModalTitle').textContent = 'רישום מטופל חדש';
     fillPatientForm(null);
     $('#initialAssignmentSection').hidden = false;   // initial assignment only for new
@@ -1143,6 +1154,7 @@
   }
   function openPatientModal(phone) {
     var rec = patientByPhone(phone);
+    patientModalMode = rec ? 'edit' : 'create';
     $('#patientModalTitle').textContent = 'עריכת מטופל/ת';
     fillPatientForm(rec || {});
     // Existing patient: edit identity + origin here; manage assignments in שיבוץ.
@@ -1160,6 +1172,14 @@
     if (!name) { toast('חסר שם מטופל/ת', true); return; }
     var pv = Phone.toCanonical(fd.get('phone'));    // normalize then validate; store normalized
     if (!pv.ok) { toast(pv.error, true); return; }
+    // On create, block a phone that already belongs to a patient (naming them).
+    if (patientModalMode === 'create') {
+      var dup = Phone.duplicateOf(pv.value, state.patients);
+      if (dup) {
+        toast('כבר קיים/ת מטופל/ת עם מספר הטלפון הזה: ' + (dup.name || pv.value), true);
+        return;
+      }
+    }
     var stillAdmitted = !!fd.get('stillAdmitted');
     var patient = {
       phone: pv.value, name: name,
@@ -1175,7 +1195,7 @@
     var wantInitial = !$('#initialAssignmentSection').hidden && (initTher || initType);
 
     sub.disabled = true;
-    apiSavePatient(patient)
+    apiSavePatient(patient, patientModalMode)
       .then(function () {
         if (!wantInitial) return;
         return apiSaveAssignment({
@@ -1185,18 +1205,34 @@
       })
       .then(function () { toast('נשמר'); return loadAll(); })
       .then(function () { closePatientModal(); })
-      .catch(function (err) { toast('שגיאה: ' + err.message, true); })
+      .catch(function (err) {
+        // The server is the duplicate safety-net; surface its Hebrew message.
+        var msg = err.message === 'duplicate_phone'
+          ? 'כבר קיים/ת מטופל/ת עם מספר הטלפון הזה'
+          : err.message;
+        toast('שגיאה: ' + msg, true);
+      })
       .finally(function () { sub.disabled = false; });
   }
 
   // --- assignments modal (multiple therapists/plans per patient) --------
   var assignmentsCtx = { phone: '', removed: [] };
+  // Times-per-week options: blank default + 1..7. Reused by the modal and the
+  // intake form so both offer the same fixed, valid range (no free-form number).
+  function freqOptions(selected) {
+    var sel = String(selected == null ? '' : selected);
+    var out = '<option value="">—</option>';
+    for (var n = 1; n <= 7; n++) {
+      out += '<option value="' + n + '"' + (sel === String(n) ? ' selected' : '') + '>' + n + '</option>';
+    }
+    return out;
+  }
   function assignmentRowHtml(a) {
     a = a || {};
     return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '">' +
       '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
       '<select class="a-type">' + typeOptionList(resolveTypeOption(a.treatmentType || '')) + '</select>' +
-      '<input class="a-freq" type="number" min="0" max="14" step="1" placeholder="תדירות" value="' + escapeHtml(a.frequencyPerWeek || '') + '" />' +
+      '<select class="a-freq">' + freqOptions(a.frequencyPerWeek) + '</select>' +
       '<button type="button" class="btn btn-ghost btn-sm remove-assignment" title="הסר">✕</button>' +
       '</div>';
   }

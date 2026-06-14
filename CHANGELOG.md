@@ -1,5 +1,19 @@
 # Changelog
 
+## Iteration 13 — phone leading-zero recovery, duplicate guard, times-per-week dropdown
+
+Three phone-keyed fixes. **(1) Leading zero kept and recovered:** `_ensureSheet`
+pins phone columns to plain text (`setNumberFormat('@')`) so new saves keep the
+zero, and a new shared `Phone.recoverStored` (mirrored in `Code.gs`, applied in
+`_readAll` and on the client) restores the zero on already-mangled 9-digit rows —
+entry still rejects a human-typed no-leading-zero number. **(2) No duplicate
+patients:** `savePatient` gains a create/edit mode; on create, an existing
+canonical phone is rejected (`duplicate_phone`) with a Hebrew message naming the
+existing patient — enforced on form + backend; edit still upserts. **(3)
+Times-per-week** is a `<select>` (blank + 1–7) in both the intake modal and
+`assignmentRowHtml`. Full notes:
+[`CHANGELOG-iteration13-phone-recovery-dedupe-freq.md`](CHANGELOG-iteration13-phone-recovery-dedupe-freq.md).
+
 ## Iteration 12 — enforce canonical phone on entry
 
 Normalize-then-validate at every entry point via one shared normalizer:

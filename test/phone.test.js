@@ -117,3 +117,54 @@ test('toCanonical: empty / garbage → rejected', () => {
   assert.equal(Phone.toCanonical(null).ok, false);
   assert.equal(Phone.toCanonical('abc').ok, false);
 });
+
+// --- recoverStored: read-side repair of Sheets' lost leading zero ----------
+
+test('recoverStored: a 9-digit lost-zero phone is restored to canonical', () => {
+  assert.equal(Phone.recoverStored('501234567'), '0501234567');
+  assert.equal(Phone.recoverStored(501234567), '0501234567');   // numeric, as Sheets stores it
+  assert.equal(Phone.isCanonical(Phone.recoverStored(501234567)), true);
+});
+
+test('recoverStored: a leading zero survives the Sheets number round-trip', () => {
+  const canonical = '0501234567';
+  const mangled = Number(canonical);            // Sheets drops the zero -> 501234567
+  assert.equal(Phone.recoverStored(mangled), canonical);
+});
+
+test('recoverStored: already-canonical is left untouched', () => {
+  assert.equal(Phone.recoverStored('0501234567'), '0501234567');
+});
+
+test('recoverStored: non-signature values pass through as a trimmed string', () => {
+  assert.equal(Phone.recoverStored(''), '');
+  assert.equal(Phone.recoverStored(null), '');
+  assert.equal(Phone.recoverStored(undefined), '');
+  assert.equal(Phone.recoverStored('  0501234567 '), '0501234567'); // trimmed, not mangled
+  assert.equal(Phone.recoverStored('050-123-4567'), '050-123-4567'); // 10 digits -> not the signature
+  assert.equal(Phone.recoverStored('05012345678'), '05012345678');   // 11 digits -> not the signature
+  assert.equal(Phone.recoverStored('012345678'), '012345678');       // 9 digits but already leads 0
+});
+
+// --- duplicateOf: create-time duplicate guard ------------------------------
+
+test('duplicateOf: finds an existing patient by canonical or legacy form', () => {
+  const patients = [{ phone: '0501234567', name: 'דנה' }, { phone: '0521111111', name: 'רון' }];
+  assert.equal(Phone.duplicateOf('0501234567', patients).name, 'דנה');
+  assert.equal(Phone.duplicateOf('050-123-4567', patients).name, 'דנה');   // same line, legacy form
+  assert.equal(Phone.duplicateOf('+972501234567', patients).name, 'דנה');
+});
+
+test('duplicateOf: a retired (inactive) patient still owns the phone', () => {
+  const patients = [{ phone: '0501234567', name: 'דנה', active: 'false' }];
+  assert.equal(Phone.duplicateOf('0501234567', patients).name, 'דנה');
+});
+
+test('duplicateOf: returns null when there is no match / blank / bad input', () => {
+  const patients = [{ phone: '0501234567', name: 'דנה' }];
+  assert.equal(Phone.duplicateOf('0529999999', patients), null);
+  assert.equal(Phone.duplicateOf('', patients), null);
+  assert.equal(Phone.duplicateOf(null, patients), null);
+  assert.equal(Phone.duplicateOf('0501234567', []), null);
+  assert.equal(Phone.duplicateOf('0501234567', null), null);
+});
