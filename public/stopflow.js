@@ -100,12 +100,15 @@
    */
   function futureBookingsToCancel(rows, phone, today, phoneApi) {
     var P = phoneApi || Phone;
-    var key = P.normalizeForMatch(phone);
+    // Recover a leading zero Sheets may have dropped BEFORE normalizing, so a
+    // canonical key matches a mangled stored phone (e.g. 501234567). Without this
+    // the patient's own bookings are missed and never cancelled.
+    var key = P.normalizeForMatch(P.recoverStored(phone));
     var t = String(today || '');
     if (!key || !t) return [];
     return (Array.isArray(rows) ? rows : []).filter(function (r) {
       if (!r) return false;
-      if (P.normalizeForMatch(r.patientPhone) !== key) return false;
+      if (P.normalizeForMatch(P.recoverStored(r.patientPhone)) !== key) return false;
       if (String(r.attendance || '') !== '') return false;     // already reported → keep
       var d = String(r.scheduledDate || '');
       if (d.indexOf('T') !== -1) d = d.split('T')[0];
@@ -123,12 +126,28 @@
       .filter(Boolean);
   }
 
+  /**
+   * Partition a built roster into { active, stopped } by each item's `stopped`
+   * flag — the "local move". This is what removes a just-flagged patient from the
+   * active working lists and surfaces them in the stop-request list.
+   * @param {Array} patients roster items carrying a boolean `stopped`
+   * @returns {{active:Array, stopped:Array}}
+   */
+  function splitStopped(patients) {
+    var active = [], stopped = [];
+    (Array.isArray(patients) ? patients : []).forEach(function (p) {
+      (p && p.stopped ? stopped : active).push(p);
+    });
+    return { active: active, stopped: stopped };
+  }
+
   return {
     DISCHARGED_STATUS: DISCHARGED_STATUS,
     isStoppedStatus: isStoppedStatus,
     isPatientStopped: isPatientStopped,
     buildFlagStopPayload: buildFlagStopPayload,
     futureBookingsToCancel: futureBookingsToCancel,
-    futureBookingIdsToCancel: futureBookingIdsToCancel
+    futureBookingIdsToCancel: futureBookingIdsToCancel,
+    splitStopped: splitStopped
   };
 });

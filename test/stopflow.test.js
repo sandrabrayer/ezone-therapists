@@ -99,3 +99,44 @@ test('futureBookingsToCancel: handles ISO datetime scheduledDate', () => {
   const rows = [{ id: 'iso', patientPhone: '0501234567', scheduledDate: '2026-06-20T10:00', attendance: '' }];
   assert.deepEqual(StopFlow.futureBookingIdsToCancel(rows, '0501234567', TODAY), ['iso']);
 });
+
+test('futureBookingsToCancel: cancels bookings whose stored phone lost its leading zero', () => {
+  // The bug: Sheets mangled the stored phone to 501234567 (number / 9 digits).
+  // The canonical key must still match it, or the patient's bookings are never
+  // cancelled. Both a numeric and a 9-digit-string stored phone must match.
+  const rows = [
+    { id: 'mangled-num', patientPhone: 501234567, scheduledDate: '2026-06-20', attendance: '' },
+    { id: 'mangled-str', patientPhone: '501234567', scheduledDate: '2026-06-21', attendance: '' },
+    { id: 'clean',       patientPhone: '0501234567', scheduledDate: '2026-06-22', attendance: '' }
+  ];
+  assert.deepEqual(
+    StopFlow.futureBookingIdsToCancel(rows, '0501234567', TODAY).sort(),
+    ['clean', 'mangled-num', 'mangled-str']
+  );
+});
+
+// --- splitStopped: the local move (active vs stop-request list) -------------
+
+test('splitStopped: flagged patients move to the stopped list, others stay active', () => {
+  const roster = [
+    { name: 'אורי', stopped: false },
+    { name: 'דנה', stopped: true },     // locally flagged → moves
+    { name: 'רון', stopped: true },     // discharged → moves
+    { name: 'מאיה', stopped: false }
+  ];
+  const { active, stopped } = StopFlow.splitStopped(roster);
+  assert.deepEqual(active.map(function (p) { return p.name; }), ['אורי', 'מאיה']);
+  assert.deepEqual(stopped.map(function (p) { return p.name; }), ['דנה', 'רון']);
+});
+
+test('splitStopped: empty / bad input → empty partitions', () => {
+  assert.deepEqual(StopFlow.splitStopped([]), { active: [], stopped: [] });
+  assert.deepEqual(StopFlow.splitStopped(null), { active: [], stopped: [] });
+});
+
+test('a just-flagged patient (local stopped=true) classifies as stopped — the move', () => {
+  // What buildPatientRoster computes per patient: a local stop flag (stored as
+  // the string 'true') marks them stopped, so splitStopped moves them.
+  const moved = StopFlow.isPatientStopped({ planStatus: 'פעיל', localStopped: 'true' });
+  assert.equal(moved, true);
+});

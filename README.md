@@ -108,10 +108,16 @@ outpatient (server-to-server from the therapists Apps Script, shared secret
 does the app set a local stop flag and **cancel the patient's future, unreported
 bookings** (past + reported bookings are kept for the record); if the flag can't
 be sent, nothing changes. Stopped patients leave the active list and appear in a
-read-only **«מטופלים שהופסקו / סיימו טיפול»** dashboard section. Pure logic in
+read-only **«מטופלים שביקשו לסיים טיפול»** dashboard section. Pure logic in
 [`public/stopflow.js`](public/stopflow.js) (mirrored in `Code.gs`). Config: set
 the `STOP_FLAG_SECRET` Script Property to match outpatient's; reuses
 `OUTPATIENT_SHEETS_URL` (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
+
+The row matchers that apply the local move (update the Patients row) and cancel
+future bookings **recover a leading zero Sheets may have dropped** before matching
+(mirroring the iteration-13 read-path repair) — otherwise a patient whose stored
+phone was mangled (`501234567`) wouldn't match the canonical key `0501234567`, so
+their row and bookings would be missed.
 
 ## Phone — one enforced format
 

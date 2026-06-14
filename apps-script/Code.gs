@@ -346,6 +346,12 @@ function _duplicatePatient(phone, patients) {
 // number (the bug that drops the zero). Matched by header name across all sheets.
 function _isPhoneHeader(h) { return h === 'phone' || h === 'patientPhone'; }
 
+// Match key for a phone read from a RAW grid cell: REPAIR a leading zero Sheets
+// dropped (mirror of _recoverStoredPhone), THEN normalize. _readAll already
+// recovers on read, but raw-grid scans (the stop flow's row matchers) do not — so
+// without this a canonical key never matches a mangled stored phone (501234567).
+function _matchPhone(raw) { return _normalizePhoneForMatch(_recoverStoredPhone(raw)); }
+
 // Mirror of public/debt-gate.js evaluate(), returning only 'allow'|'block'|'flag'.
 function _authoritativeGate(phone, roster) {
   var key = _normalizePhoneForMatch(phone);
@@ -786,24 +792,27 @@ function _postFlagStop(body) {
 // patient is only in the outpatient roster). Phone matched tolerantly.
 function _markLocalPatientStopped(sh, canonPhone, name, reportedBy, note) {
   var now = new Date().toISOString();
-  var key = _normalizePhoneForMatch(canonPhone);
+  var key = _matchPhone(canonPhone);
   var phoneIdx = PATIENTS_HEADERS.indexOf('phone');
   var nameIdx = PATIENTS_HEADERS.indexOf('name');
   var lastRow = sh.getLastRow();
   if (lastRow > 1) {
     var grid = sh.getRange(2, 1, lastRow - 1, PATIENTS_HEADERS.length).getValues();
     for (var i = 0; i < grid.length; i++) {
-      if (_normalizePhoneForMatch(grid[i][phoneIdx]) !== key) continue;
+      if (_matchPhone(grid[i][phoneIdx]) !== key) continue;
+      // Found the existing row — update its stop columns IN PLACE (no duplicate).
       var rowNum = i + 2;
-      function setCol(nm, val) {
-        var idx = PATIENTS_HEADERS.indexOf(nm);
-        if (idx > -1) sh.getRange(rowNum, idx + 1, 1, 1).setValues([[val]]);
+      var keepName = name && !String(grid[i][nameIdx] || '').trim() ? name : grid[i][nameIdx];
+      var update = {};
+      update.stopped = 'true';
+      update.stoppedBy = reportedBy || '';
+      update.stoppedAt = now;
+      update.stopNote = note || '';
+      update.name = keepName;
+      for (var h = 0; h < PATIENTS_HEADERS.length; h++) {
+        var col = PATIENTS_HEADERS[h];
+        if (update.hasOwnProperty(col)) sh.getRange(rowNum, h + 1, 1, 1).setValues([[update[col]]]);
       }
-      setCol('stopped', 'true');
-      setCol('stoppedBy', reportedBy || '');
-      setCol('stoppedAt', now);
-      setCol('stopNote', note || '');
-      if (name && !String(grid[i][nameIdx] || '').trim()) setCol('name', name);
       return;
     }
   }
@@ -823,14 +832,14 @@ function _cancelFutureBookings(sh, canonPhone) {
   if (lastRow < 2) return 0;
   var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
   var today = _todayStr();
-  var key = _normalizePhoneForMatch(canonPhone);
+  var key = _matchPhone(canonPhone);
   var phoneIdx = SCHEDULE_HEADERS.indexOf('patientPhone');
   var attIdx = SCHEDULE_HEADERS.indexOf('attendance');
   var dateIdx = SCHEDULE_HEADERS.indexOf('scheduledDate');
   var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
   var toDelete = [];
   for (var i = 0; i < grid.length; i++) {
-    if (_normalizePhoneForMatch(grid[i][phoneIdx]) !== key) continue;
+    if (_matchPhone(grid[i][phoneIdx]) !== key) continue;
     if (String(grid[i][attIdx] || '') !== '') continue;        // reported → keep
     var dcell = grid[i][dateIdx];
     var d = (dcell instanceof Date)
