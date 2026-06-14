@@ -98,14 +98,19 @@ dashboard updates identity + origin; assignments are managed in שיבוץ.
 
 ## Phone — one enforced format
 
-Phone is the patient-matching key. This app accepts exactly **one** canonical
-format: 10 digits, no separators, leading zero (e.g. `0501234567`). Input is
-validated and a wrong shape is a hard error — we never silently reformat. The
-canonical string is the only thing stored.
+Phone is the patient-matching key, stored in exactly **one** canonical format:
+10 digits, no separators, leading zero (e.g. `0501234567`). On entry the app
+**normalizes then validates** (`Phone.toCanonical`): strip spaces/dashes/parens,
+convert a `+972`/`972` prefix to a leading `0`, and if the result is a valid
+10-digit leading-zero number, **store the normalized form**; otherwise reject the
+save with a clear Hebrew message (a number with no leading zero is rejected, not
+auto-prepended). The **normalizer is shared** with the debt-match comparison
+(`normalizeForMatch`) — one implementation. Both the browser forms and the Apps
+Script `savePatient`/`_saveScheduleRow` enforce it, so a non-canonical number is
+never stored (even via a direct POST). See [`public/phone.js`](public/phone.js).
 
-Sibling apps stored phones freely, so their values are normalized **at
-compare time** (strip spaces/dashes/parens; `+972`/`972` → `0`) before matching
-against the canonical key. See [`public/phone.js`](public/phone.js).
+Sibling apps stored phones freely, so their values are normalized at **compare
+time** before matching against the canonical key.
 
 ## Cross-app debt gate — tri-state, never fail open
 

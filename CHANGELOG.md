@@ -1,5 +1,15 @@
 # Changelog
 
+## Iteration 12 — enforce canonical phone on entry
+
+Normalize-then-validate at every entry point via one shared normalizer:
+`Phone.toCanonical` (composes the existing `normalizeForMatch` → `isCanonical`)
+stores the normalized 10-digit/leading-zero form and rejects the rest with a
+clear Hebrew message. Inputs relaxed (drop maxlength, `inputmode=tel`) so
+separators/`+972` can be typed; backend `savePatient`/`_saveScheduleRow` enforce
+too (no non-canonical number ever stored). Existing data untouched. Full notes:
+[`CHANGELOG-iteration12-phone-enforcement.md`](CHANGELOG-iteration12-phone-enforcement.md).
+
 ## Iteration 11 — shared password gate (UI)
 
 A single shared password on open (server-side check via the `APP_PASSWORD` Node
