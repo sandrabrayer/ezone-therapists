@@ -82,6 +82,7 @@
     therapist: '',         // tab-3 selection only — runtime, never persisted
     view: 'dashboard',
     schedule: [],
+    occurrences: [],       // virtual recurring occurrences for the coming week
     approvals: [],
     patients: [],
     assignments: [],
@@ -194,7 +195,10 @@
     return apiPost({
       action: 'markAttendance', id: id, attendance: attendance,
       reason: extra.reason || '', approval: extra.approval || null,
-      flagged: !!extra.flagged, gateReason: extra.gateReason || ''
+      flagged: !!extra.flagged, gateReason: extra.gateReason || '',
+      // For a recurring occurrence (virtual until reported), the backend
+      // materializes this booking row first (create-only, idempotent by id).
+      occurrence: extra.occurrence || null
     });
   }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
@@ -373,7 +377,8 @@
       if (!key) return;
       (assignsByPhone[key] = assignsByPhone[key] || []).push({
         id: a.id, therapist: a.therapist || '', treatmentType: a.treatmentType || '',
-        frequencyPerWeek: a.frequencyPerWeek != null ? String(a.frequencyPerWeek) : ''
+        frequencyPerWeek: a.frequencyPerWeek != null ? String(a.frequencyPerWeek) : '',
+        slots: a.slots || ''
       });
     });
 
@@ -409,6 +414,30 @@
   // partition one roster via the shared StopFlow.splitStopped.
   function activePatients() { return StopFlow.splitStopped(buildPatientRoster()).active; }
   function stoppedPatients() { return StopFlow.splitStopped(buildPatientRoster()).stopped; }
+
+  // The coming week's recurring occurrences for the picked therapist (virtual —
+  // not persisted until reported). Skips stopped patients and any occurrence whose
+  // deterministic id is already a real Schedule row (idempotent re-view).
+  function buildOccurrences() {
+    if (!hasTherapist()) return [];
+    var roster = buildPatientRoster();
+    var nameByKey = {}, stoppedByKey = {};
+    roster.forEach(function (p) {
+      nameByKey[p.key] = { name: p.name };
+      if (p.stopped) stoppedByKey[p.key] = true;
+    });
+    var existingIds = {};
+    (state.schedule || []).forEach(function (r) { if (r && r.id) existingIds[r.id] = true; });
+    return Recurring.generateOccurrences({
+      assignments: state.assignments || [],
+      therapist: state.therapist,
+      today: today(),
+      horizonDays: 7,
+      patientsByPhone: nameByKey,
+      stoppedPhones: stoppedByKey,
+      existingScheduleIds: existingIds
+    });
+  }
   // Short human label for a patient's assignments (multiple parallel plans).
   function assignmentSummary(p, withTherapist) {
     if (!p.assignments.length) {
@@ -651,15 +680,18 @@
   function mineRow(r) {
     // The mark opens the report flow (debt-gated for «happened»; reason for
     // «didn't»). The payment check + "no mark = no pay" deter false reporting.
+    // A VIRTUAL recurring occurrence has no sheet row yet → only report buttons
+    // (reporting materializes it); edit/cancel apply once it's a real booking.
     var attBtns = '<span class="att-btns">' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
       '<button class="btn btn-ghost btn-sm" data-mine-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
-      '<button class="btn btn-ghost btn-sm" data-edit-booking="' + escapeHtml(r.id) + '">עריכה</button>' +
-      // Cancel only while the booking hasn't been reported (keeps outpatient pay consistent).
-      (Scheduling.canCancelBooking(r) ? '<button class="btn btn-ghost btn-sm btn-danger" data-cancel-booking="' + escapeHtml(r.id) + '">ביטול טיפול</button>' : '') +
+      (r.recurring ? '' :
+        '<button class="btn btn-ghost btn-sm" data-edit-booking="' + escapeHtml(r.id) + '">עריכה</button>' +
+        // Cancel only while the booking hasn't been reported (keeps outpatient pay consistent).
+        (Scheduling.canCancelBooking(r) ? '<button class="btn btn-ghost btn-sm btn-danger" data-cancel-booking="' + escapeHtml(r.id) + '">ביטול טיפול</button>' : '')) +
       '</span>';
     return '<div class="billing-row mine-row">' +
-      '<div class="p-name">' + escapeHtml(r.patientName) + '</div>' +
+      '<div class="p-name">' + escapeHtml(r.patientName) + (r.recurring ? ' <span class="recurring-tag">קבוע</span>' : '') + '</div>' +
       '<div><span class="p-label">תאריך</span><span class="p-val">' + escapeHtml(displayDateTime(r.scheduledDate, r.time)) + '</span></div>' +
       '<div><span class="p-label">טיפול</span><span class="p-val">' + escapeHtml(svc(r.treatmentType)) + '</span></div>' +
       '<div><span class="p-label">מיקום</span><span class="p-val">' + escapeHtml(locationLabel(r.location)) + '</span></div>' +
@@ -715,6 +747,12 @@
     var mine = state.schedule.filter(function (r) {
       return r.therapist === state.therapist && matchName(r.patientName, state.mineSearch);
     });
+    // Plus the coming week's RECURRING occurrences (virtual until reported). They
+    // bucket as normal upcoming rows; an occurrence already materialized as a real
+    // Schedule row is dropped by generateOccurrences (idempotent by id).
+    state.occurrences = buildOccurrences();
+    var occ = state.occurrences.filter(function (o) { return matchName(o.patientName, state.mineSearch); });
+    mine = mine.concat(occ);
     var byDate = function (a, b) { return String(a.scheduledDate).localeCompare(String(b.scheduledDate)); };
     var b = Scheduling.bucketMine(mine, today(), daysFromToday(7));
 
@@ -1034,10 +1072,16 @@
   // source of truth; syncStatus tells us whether the write-back reached outpatient.
   var reportCtx = null;
 
+  // A reportable row by id — a real Schedule row, or a virtual recurring occurrence.
+  function reportableById(id) {
+    return (state.schedule || []).filter(function (r) { return r.id === id; })[0] ||
+           (state.occurrences || []).filter(function (o) { return o.id === id; })[0] || null;
+  }
+
   // Entry from a mark button. Re-clicking the same outcome clears it (no modal).
   function markAttendance(id, value) {
     if (!ensureTherapist()) return;
-    var row = state.schedule.filter(function (r) { return r.id === id; })[0];
+    var row = reportableById(id);
     if (!row) return;
     if (row.attendance === value) { commitReport(id, '', {}); return; }   // toggle off
     openReport(row, value);
@@ -1107,7 +1151,17 @@
 
   function commitReport(id, attendance, extra) {
     var row = state.schedule.filter(function (r) { return r.id === id; })[0];
-    if (!row) return;
+    if (!row) {
+      // Reporting a VIRTUAL recurring occurrence: promote it to a real row in
+      // local state and tell the backend to materialize it (idempotent by id).
+      var occ = (state.occurrences || []).filter(function (o) { return o.id === id; })[0];
+      if (!occ) return;
+      row = Object.assign({}, occ);
+      delete row.recurring;
+      state.schedule.push(row);
+      extra = extra || {};
+      extra.occurrence = occ;
+    }
     var prev = row.attendance;
     row.attendance = attendance;
     if (extra && extra.reason != null) row.reason = extra.reason;
@@ -1294,13 +1348,60 @@
     }
     return out;
   }
+  // Weekly recurring pattern editor: one slot row per weekly session (weekday +
+  // time + location). 0=ראשון … 6=שבת (matches JS getDay used by Recurring).
+  var WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+  function weekdayOptions(selected) {
+    var sel = String(selected == null ? '' : selected);
+    return ['<option value="">— יום —</option>'].concat(WEEKDAY_LABELS.map(function (lab, idx) {
+      return '<option value="' + idx + '"' + (sel === String(idx) ? ' selected' : '') + '>' + lab + '</option>';
+    })).join('');
+  }
+  function slotRowHtml(slot) {
+    slot = slot || {};
+    return '<div class="slot-row">' +
+      '<select class="s-weekday">' + weekdayOptions(slot.weekday) + '</select>' +
+      '<select class="s-time">' + timeOptions(slot.time || '') + '</select>' +
+      '<select class="s-location">' + locationOptions(slot.location || '') + '</select>' +
+      '</div>';
+  }
+  // N slot rows: prefer stored slots, else N empty rows to match the frequency.
+  function slotsEditorHtml(slots, freq) {
+    var arr = Recurring.parseSlots(slots);
+    var n = arr.length || (parseInt(freq, 10) || 0);
+    var html = '';
+    for (var i = 0; i < n; i++) html += slotRowHtml(arr[i] || {});
+    return html;
+  }
+  function readSlotRows(container) {
+    return $$('.slot-row', container).map(function (el) {
+      return {
+        weekday: el.querySelector('.s-weekday').value,
+        time: el.querySelector('.s-time').value,
+        location: el.querySelector('.s-location').value
+      };
+    });
+  }
+  // Rebuild a row's slot editor to match its chosen frequency, preserving values.
+  function syncSlotEditor(rowEl) {
+    var n = parseInt(rowEl.querySelector('.a-freq').value, 10) || 0;
+    var container = rowEl.querySelector('.a-slots');
+    var existing = readSlotRows(container);
+    var html = '';
+    for (var i = 0; i < n; i++) html += slotRowHtml(existing[i] || {});
+    container.innerHTML = html;
+  }
   function assignmentRowHtml(a) {
     a = a || {};
     return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '">' +
-      '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
-      '<select class="a-type">' + typeOptionList(resolveTypeOption(a.treatmentType || '')) + '</select>' +
-      '<select class="a-freq">' + freqOptions(a.frequencyPerWeek) + '</select>' +
-      '<button type="button" class="btn btn-ghost btn-sm remove-assignment" title="הסר">✕</button>' +
+      '<div class="assignment-head">' +
+        '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
+        '<select class="a-type">' + typeOptionList(resolveTypeOption(a.treatmentType || '')) + '</select>' +
+        '<select class="a-freq">' + freqOptions(a.frequencyPerWeek) + '</select>' +
+        '<button type="button" class="btn btn-ghost btn-sm remove-assignment" title="הסר">✕</button>' +
+      '</div>' +
+      '<div class="a-slots-label">מועדים שבועיים קבועים:</div>' +
+      '<div class="a-slots">' + slotsEditorHtml(a.slots, a.frequencyPerWeek) + '</div>' +
       '</div>';
   }
   function openAssignmentsModal(phone) {
@@ -1332,9 +1433,21 @@
       var freq = (el.querySelector('.a-freq').value || '').trim();
       if (!ther && !type) continue;                       // blank row -> skip
       if (!ther) { toast('יש לבחור מטפל/ת לכל שיבוץ', true); return; }
+      // Weekly recurring pattern (optional): all-or-nothing — either no slots, or
+      // exactly `freq` complete slots {weekday,time,location}.
+      var slotsJson = '';
+      var filled = readSlotRows(el.querySelector('.a-slots')).filter(function (s) {
+        return s.weekday !== '' || s.time || s.location;
+      });
+      if (filled.length) {
+        if (!freq) { toast(ther + ': יש לבחור תדירות בשבוע לפני הגדרת מועדים', true); return; }
+        var v = Recurring.validateSlots(filled, freq);
+        if (!v.ok) { toast(ther + ': ' + v.error, true); return; }
+        slotsJson = JSON.stringify(v.slots);
+      }
       var aid = el.getAttribute('data-aid') || '';
       if (aid) keptIds[aid] = true;
-      toSave.push({ id: aid || uid(), patientPhone: phone, therapist: ther, treatmentType: type, frequencyPerWeek: freq, updatedBy: state.therapist || 'עורך' });
+      toSave.push({ id: aid || uid(), patientPhone: phone, therapist: ther, treatmentType: type, frequencyPerWeek: freq, slots: slotsJson, updatedBy: state.therapist || 'עורך' });
     }
     // Existing assignments whose row was deleted -> remove.
     var existing = (patientByPhone(phone) || { assignments: [] }).assignments;
@@ -1457,6 +1570,12 @@
     on('#assignmentRows', 'click', function (e) {
       var rm = e.target.closest('.remove-assignment');
       if (rm) rm.closest('.assignment-row').remove();
+    });
+    // Changing an assignment's frequency rebuilds its weekly slot editor.
+    on('#assignmentRows', 'change', function (e) {
+      if (e.target.classList && e.target.classList.contains('a-freq')) {
+        syncSlotEditor(e.target.closest('.assignment-row'));
+      }
     });
     on('#assignmentsSave', 'click', saveAssignments);
 

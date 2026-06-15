@@ -96,6 +96,27 @@ dashboard updates identity + origin; assignments are managed in שיבוץ.
   untouched. The outpatient SOURCE data should eventually adopt the new term too
   (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
 
+## Weekly recurring pattern (set once)
+
+A therapist sets a **weekly recurring pattern per assignment**: N slots
+(N = `frequencyPerWeek`), each `{ weekday, time, location }` — e.g. CBT 3×/week =
+ראשון 10:00 רעננה אשר · שלישי 10:00 · חמישי 10:00. It's edited in the per-patient
+assignments modal and stored as a `slots` JSON column on `Assignments` (empty =
+no recurrence; existing assignments are unaffected).
+
+Generation is **rolling and virtual**: `Recurring.generateOccurrences`
+([`public/recurring.js`](public/recurring.js)) materializes only the **coming
+week's** occurrences into the therapist's «קרובים» view — nothing is pre-written to
+the sheet. Each occurrence has a **deterministic id**
+`occ_<assignmentId>_<YYYYMMDD>_<HHMM>` that doubles as the Schedule row id and the
+write-back `treatmentId`, so re-viewing a week **never duplicates** (an occurrence
+already materialized as a real row is dropped). Reporting is unchanged — on report
+the backend **materializes** the booking row (create-only, idempotent by id) then
+runs the same authoritative report-time debt gate; materialization itself is
+ungated. The pattern keeps generating until the patient is **stopped/discharged**
+(stop halts generation and cancels future bookings). A one-off session is still
+booked exactly as before.
+
 ## Stopping a patient (stop / discharge flow)
 
 A patient is **stopped** when they're **discharged in outpatient**

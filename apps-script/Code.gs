@@ -78,10 +78,12 @@ var PATIENTS_HEADERS = [
 /* One row per (patient, therapist, treatment plan). A patient may have several
  * active rows — multiple parallel treatments with multiple therapists. `id` is
  * the client-generated upsert key; `patientPhone` links to Patients/roster.
- * Retiring a plan sets active=false (the row stays for history). */
+ * Retiring a plan sets active=false (the row stays for history). `slots` (appended)
+ * is the weekly recurring pattern: JSON [{weekday,time,location}], N = frequencyPerWeek. */
 var ASSIGNMENTS_HEADERS = [
   'id', 'patientPhone', 'therapist', 'treatmentType', 'frequencyPerWeek',
-  'active', 'updatedBy', 'updated'
+  'active', 'updatedBy', 'updated',
+  'slots'                                  // weekly recurring pattern (append-only)
 ];
 
 /* Editable, active-flagged lists. */
@@ -470,6 +472,38 @@ function _saveSession(payload) {
   }
 }
 
+// Materialize a VIRTUAL recurring occurrence into a real Schedule booking row.
+// CREATE-ONLY + idempotent by the deterministic occurrence id: if a row with that
+// id already exists (already reported/materialized) it is left untouched, so a
+// stale occurrence payload can never wipe a reported row. Ungated — the debt gate
+// runs at report time in _markAttendance.
+function _materializeOccurrenceRow(sh, occ) {
+  var id = String((occ && occ.id) || '');
+  if (!id) return;
+  var idIdx = SCHEDULE_HEADERS.indexOf('id');
+  var lastRow = sh.getLastRow();
+  if (lastRow > 1) {
+    var ids = sh.getRange(2, idIdx + 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === id) return;   // already a real row — never overwrite
+    }
+  }
+  var canon = _toCanonicalPhone(occ.patientPhone);
+  _upsertByKey(sh, SCHEDULE_HEADERS, 'id', {
+    id: id,
+    sessionId: occ.sessionId || id,
+    therapist: occ.therapist || '',
+    treatmentType: occ.treatmentType || '',
+    location: occ.location || '',
+    scheduledDate: occ.scheduledDate || '',
+    patientName: occ.patientName || '',
+    patientPhone: canon || String(occ.patientPhone == null ? '' : occ.patientPhone),
+    attendance: '',
+    time: occ.time || '',
+    created: new Date().toISOString()
+  });
+}
+
 // Post-treatment report (per patient row). 'missed' records a reason. 'happened'
 // is DEBT-GATED, authoritatively (server re-reads live debt): a CONFIRMED debtor
 // is BLOCKED unless Ron/Sandra approve inline (audit-stamped). When debt can't be
@@ -486,6 +520,13 @@ function _markAttendance(payload) {
   lock.waitLock(10000);
   try {
     var sh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    // A recurring occurrence is VIRTUAL until reported — materialize its booking
+    // row now (create-only, idempotent by the deterministic id) so the rest of
+    // this function reports it exactly like any other booking. The debt gate below
+    // is the authoritative check; materialization itself is ungated.
+    if (payload.occurrence && String(payload.occurrence.id) === String(id)) {
+      _materializeOccurrenceRow(sh, payload.occurrence);
+    }
     var lastRow = sh.getLastRow();
     if (lastRow < 2) return { ok: false, error: 'not_found' };
     var idIdx = SCHEDULE_HEADERS.indexOf('id');
@@ -907,7 +948,11 @@ function _saveAssignment(payload) {
       frequencyPerWeek: (a.frequencyPerWeek === 0 || a.frequencyPerWeek) ? String(a.frequencyPerWeek) : '',
       active: (a.active === false || a.active === 'false') ? 'false' : 'true',
       updatedBy: a.updatedBy || '',
-      updated: a.updated || new Date().toISOString()
+      updated: a.updated || new Date().toISOString(),
+      // Weekly recurring pattern: store the JSON string as-is (already a string
+      // from the client, or stringify a passed array). Empty = no recurrence.
+      slots: (a.slots == null || a.slots === '') ? ''
+        : (typeof a.slots === 'string' ? a.slots : JSON.stringify(a.slots))
     };
     var res = _upsertByKey(sh, ASSIGNMENTS_HEADERS, 'id', rec);
     return { ok: true, assignment: rec, created: !!res.created, updated: !!res.updated };
