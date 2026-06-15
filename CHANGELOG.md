@@ -1,5 +1,20 @@
 # Changelog
 
+## Iteration 16 — true weekly recurring pattern
+
+A therapist sets a **weekly recurring pattern once per assignment** — N slots
+(N = `frequencyPerWeek`), each `{weekday, time, location}` — stored as an appended
+`slots` JSON column on `Assignments`. `Recurring.generateOccurrences` (new pure
+`public/recurring.js`) materializes the **coming week's** occurrences for the
+weekly «קרובים» view: **rolling, virtual** (never pre-written to the sheet) and
+**idempotent** — each has a deterministic id `occ_<assignmentId>_<YYYYMMDD>_<HHMM>`
+(= Schedule id = write-back `treatmentId`), so re-viewing never duplicates.
+Reporting is unchanged: on report the backend **materializes** the row (create-only,
+idempotent) then runs the same report-time debt gate (materialization itself
+ungated). Stopped/discharged patients produce no occurrences. Pattern editor lives
+in the assignments modal. Full notes:
+[`CHANGELOG-iteration16-recurring-pattern.md`](CHANGELOG-iteration16-recurring-pattern.md).
+
 ## Iteration 15 — stop-flow fixes (local move + rename)
 
 Renamed the dashboard section to **«מטופלים שביקשו לסיים טיפול»** (it's a request
