@@ -1,5 +1,26 @@
 # Changelog
 
+## Iteration 17 — clinical billing-type push + nested פרטני menu
+
+On assignment save, the patient's **clinical treatment type** is pushed to the
+outpatient app (`setClinicalType`) so its per-patient billing rate follows the
+clinical plan picked here. New `_postSetClinicalType` in `apps-script/Code.gs`
+fires from `_saveAssignment` after the local upsert (outside the lock), same
+server-to-server `UrlFetchApp` pattern as `flagStop` — secret
+**`CLINICAL_TYPE_SECRET`** read from a Script Property, never sent to the browser,
+phone sent as the canonical 10-digit key. **Fail-open-with-flag** (not fail-closed
+like the stop flow): the assignment always saves locally; only `{ok:true,matched:1}`
+proceeds silently, while `no_match` / `multi_match` / `unknown_type` / unreachable /
+unconfigured each **warn** the user that billing-type sync failed (and why) — never
+swallowed. Also: the 5 individual-billing types (פסיכודינמי, פסיכותרפי ממוקד טראומה,
+עיסוי טיפולי, טיפול ממוקד התמכרויות, טיפול אינטגרטיבי) are nested under one
+**פרטני** `<optgroup>` in the picker — **display only**, the saved value stays the
+specific clinical name. New pure `public/clinical-sync.js` (mirrored by `Code.gs`,
+used by `app.js`) + `test/clinical-sync.test.js`. Needs `CLINICAL_TYPE_SECRET` on
+**both** Apps Scripts + the outpatient receiver (dep #6) + a redeploy on both sides.
+Full notes:
+[`CHANGELOG-iteration17-clinical-type-push.md`](CHANGELOG-iteration17-clinical-type-push.md).
+
 ## Iteration 16 — true weekly recurring pattern
 
 A therapist sets a **weekly recurring pattern once per assignment** — N slots

@@ -140,6 +140,28 @@ future bookings **recover a leading zero Sheets may have dropped** before matchi
 phone was mangled (`501234567`) wouldn't match the canonical key `0501234567`, so
 their row and bookings would be missed.
 
+## Clinical billing-type push (assignment → outpatient)
+
+When an assignment is saved, the patient's chosen **clinical treatment type** is
+pushed to outpatient (`setClinicalType`) so its **per-patient billing rate**
+follows the clinical plan picked here. Server-to-server from the therapists Apps
+Script (`_postSetClinicalType`, same `UrlFetchApp` pattern as `flagStop`), shared
+secret **`CLINICAL_TYPE_SECRET`**, the phone sent as the canonical 10-digit key.
+Unlike the stop flow it is **fail-open-with-flag**: the assignment **always saves
+locally** — only `{ok:true, matched:1}` proceeds silently, while `no_match` /
+`multi_match` / `unknown_type` / unreachable / unconfigured each **warn** the user
+that billing-type sync failed (and why), never silently swallowed. The 5
+individual-billing types (פסיכודינמי, פסיכותרפי ממוקד טראומה, עיסוי טיפולי, טיפול
+ממוקד התמכרויות, טיפול אינטגרטיבי) are nested under one **פרטני** group in the
+picker — display only, the saved value stays the specific clinical name. Pure logic
+in [`public/clinical-sync.js`](public/clinical-sync.js) (mirrored in `Code.gs`).
+Config: set the `CLINICAL_TYPE_SECRET` Script Property to match outpatient's;
+reuses `OUTPATIENT_SHEETS_URL`. The outpatient receiver is already **live**
+(outpatient PR #30), so once the secret is set here and the therapists Apps Script
+is redeployed, the push works end-to-end (see
+[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) and
+[`docs/outpatient-setClinicalType.patch.md`](docs/outpatient-setClinicalType.patch.md)).
+
 ## Phone — one enforced format
 
 Phone is the patient-matching key, stored in exactly **one** canonical format:

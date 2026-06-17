@@ -206,6 +206,14 @@
   function apiMarkPatientStopped(body) { return apiPost(Object.assign({ action: 'markPatientStopped' }, body)); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
+
+  // The assignment ALWAYS saves locally; pushing the clinical billing type to
+  // outpatient is a best-effort side-effect the server reports back as
+  // `clinicalSync`. ClinicalSync.warningFor maps a FAILED sync to a Hebrew reason
+  // so we WARN rather than silently swallow it (null = nothing pushed / synced OK).
+  function clinicalSyncWarning(data) {
+    return ClinicalSync.warningFor(data && data.clinicalSync);
+  }
   // Live read — never cached.
   async function apiDebtStatus() {
     var r = await fetch('/api/debt-status', { cache: 'no-store' });
@@ -789,12 +797,32 @@
   }
   // Treatment-type options: value is the stored string, LABEL is relabeled so a
   // legacy 'מרכז יום' entry shows as 'ליווי יומי בקהילה' (and the seeded new
-  // term shows directly). Fix: ליווי יומי בקהילה is now selectable/visible.
+  // term shows directly). The 5 individual-billing types (ClinicalSync) are
+  // nested under one 'פרטני' <optgroup> — DISPLAY ONLY: every option keeps its
+  // own distinct value, so the saved treatmentType stays the specific clinical
+  // name, never the group label. Every other active type stays inline.
   function typeOptionList(selected) {
-    return ['<option value="">—</option>'].concat(activeTypeNames().map(function (n) {
+    function opt(n) {
       var sel = (n === selected) ? ' selected' : '';
       return '<option value="' + escapeHtml(n) + '"' + sel + '>' + escapeHtml(svc(n)) + '</option>';
-    })).join('');
+    }
+    var names = activeTypeNames();
+    var part = ClinicalSync.partitionTypes(names);
+    var parts = ['<option value="">—</option>'];
+    var groupPlaced = false;
+    names.forEach(function (n) {
+      if (ClinicalSync.isIndividualBillingType(n)) {
+        // Emit the whole פרטני group once, at the position of its first member.
+        if (!groupPlaced) {
+          parts.push('<optgroup label="' + escapeHtml(ClinicalSync.GROUP_LABEL) + '">' +
+            part.grouped.map(opt).join('') + '</optgroup>');
+          groupPlaced = true;
+        }
+        return;
+      }
+      parts.push(opt(n));
+    });
+    return parts.join('');
   }
   // Resolve a stored/legacy plan type to a value that EXISTS in the type list,
   // mapping the relabeled term (מרכז יום → ליווי יומי בקהילה) when needed.
@@ -1316,16 +1344,25 @@
     var wantInitial = !$('#initialAssignmentSection').hidden && (initTher || initType);
 
     sub.disabled = true;
+    var initSyncWarning = null;
     apiSavePatient(patient, patientModalMode)
       .then(function () {
         if (!wantInitial) return;
         return apiSaveAssignment({
           id: uid(), patientPhone: pv.value, therapist: initTher,
           treatmentType: initType, frequencyPerWeek: initFreq, updatedBy: state.therapist || 'עורך'
+        }).then(function (data) {
+          // Save stuck locally; flag if the outpatient billing-type sync didn't.
+          var w = clinicalSyncWarning(data);
+          if (w) initSyncWarning = svc(initType) + ': ' + w;
         });
       })
-      .then(function () { toast('נשמר'); return loadAll(); })
-      .then(function () { closePatientModal(); })
+      .then(function () { return loadAll(); })
+      .then(function () {
+        closePatientModal();
+        if (initSyncWarning) toast('נשמר, אך סנכרון סוג החיוב נכשל — ' + initSyncWarning, true);
+        else toast('נשמר');
+      })
       .catch(function (err) {
         // The server is the duplicate safety-net; surface its Hebrew message.
         var msg = err.message === 'duplicate_phone'
@@ -1454,12 +1491,30 @@
     var toRemove = existing.filter(function (a) { return a.id && !keptIds[a.id]; }).map(function (a) { return a.id; });
 
     btn.disabled = true;
+    // Collect any billing-type sync warnings across the saved rows. The saves
+    // succeed regardless; a warning means the assignment stuck locally but the
+    // outpatient billing-type sync didn't — surfaced, never swallowed.
+    var syncWarnings = [];
     var chain = Promise.resolve();
-    toSave.forEach(function (a) { chain = chain.then(function () { return apiSaveAssignment(a); }); });
+    toSave.forEach(function (a) {
+      chain = chain.then(function () {
+        return apiSaveAssignment(a).then(function (data) {
+          var w = clinicalSyncWarning(data);
+          if (w) syncWarnings.push(svc(a.treatmentType) + ': ' + w);
+        });
+      });
+    });
     toRemove.forEach(function (id) { chain = chain.then(function () { return apiRemoveAssignment(id); }); });
     chain
-      .then(function () { toast('השיבוצים נשמרו'); return loadAll(); })
-      .then(function () { closeAssignmentsModal(); })
+      .then(function () { return loadAll(); })
+      .then(function () {
+        closeAssignmentsModal();
+        if (syncWarnings.length) {
+          toast('השיבוצים נשמרו, אך סנכרון סוג החיוב נכשל — ' + syncWarnings.join(' · '), true);
+        } else {
+          toast('השיבוצים נשמרו');
+        }
+      })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); })
       .finally(function () { btn.disabled = false; });
   }
