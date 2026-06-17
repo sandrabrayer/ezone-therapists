@@ -1,7 +1,7 @@
 # Cross-app dependencies
 
 `ezone-therapists` consumes three read-only projections from sibling apps and
-makes **two cross-app WRITEs** (deps #4, #5). The browser never sees a secret —
+makes **three cross-app WRITEs** (deps #4, #5, #6). The browser never sees a secret —
 reads are proxied by the Node server, and the writes originate server-to-server
 from the therapists Apps Script (which holds its own secret copies). All must be
 deployed on the sibling side for the corresponding feature to work end-to-end.
@@ -13,6 +13,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | (no UI consumer since the inpatient tab was removed) |
 | 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
 | 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
+| 6 | `setClinicalType` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-setClinicalType.patch.md`](outpatient-setClinicalType.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | On assignment save, pushes the patient's clinical treatment type so outpatient's per-patient billing rate follows the clinical plan |
 
 ## Env vars on the therapists Railway service
 
@@ -53,6 +54,15 @@ above. Set on the therapists Apps Script:
   `stop_flag_unconfigured` and changes nothing — no local stop flag, no booking
   cancellation — so a patient is never hidden until the request actually reaches
   Vered. Reuses `OUTPATIENT_SHEETS_URL`; no new Node env var (server-to-server).
+- `CLINICAL_TYPE_SECRET` — the **clinical billing-type push** (dep #6,
+  `setClinicalType`); must match the value on the outpatient Apps Script.
+  **Fail-open-with-flag** (NOT fail-closed like the stop flow): the assignment is
+  always saved locally; if the secret is unset, the outpatient receiver isn't
+  deployed, or it returns `no_match` / `multi_match` / `unknown_type`, the save
+  still sticks and the UI **warns** that billing-type sync failed (and why) — never
+  silently swallowed. Reuses `OUTPATIENT_SHEETS_URL`; **no new Node/Railway env
+  var** (the write goes Apps Script → Apps Script). Requires an Apps Script
+  redeploy on **both** sides once the receiver patch is applied.
 
 ## Source-data follow-up (outpatient side)
 

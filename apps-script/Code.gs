@@ -829,6 +829,70 @@ function _postFlagStop(body) {
   }
 }
 
+/* ===== Clinical billing-type push (SENDER) =====
+ * On assignment save, push the patient's clinical treatment type to outpatient
+ * so its per-patient billing rate follows the clinical plan chosen here. Mirror
+ * of public/clinical-sync.js (buildPayload + interpretResponse). Same server-to-
+ * server pattern as _postFlagStop / _postTreatmentsGiven: UrlFetchApp
+ * + the OUTPATIENT_SHEETS_URL and a shared secret read from Script Properties
+ * (CLINICAL_TYPE_SECRET) — the secret NEVER reaches the browser.
+ *
+ * FAIL-OPEN-WITH-FLAG (deliberately NOT fail-closed like the stop flow): the
+ * assignment is already saved locally by the time we call this, so the push
+ * never throws and never blocks the save. Instead it returns a structured
+ * outcome the caller attaches to the response, so the UI can WARN the user when
+ * the billing-type sync didn't land — we never silently swallow a mismatch.
+ *   { ok:true,  matched:1 }                                  → synced silently
+ *   { ok:false, reason:'no_match' | 'multi_match' |
+ *               'unknown_type' | 'unconfigured' |
+ *               'invalid_phone' | 'http_<code>' |
+ *               'non_ok' | 'unreachable' }                   → surfaced to user
+ *
+ * The outpatient endpoint is the authority on which types are billable clinical
+ * types; a non-clinical type (e.g. a group session) comes back as 'unknown_type'
+ * and is flagged rather than guessed at here.
+ */
+function _postSetClinicalType(phone, clinicalTreatmentType) {
+  // Push the canonical key so it matches outpatient's phone matching.
+  var canon = _toCanonicalPhone(phone);
+  if (!canon) return { ok: false, reason: 'invalid_phone' };
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('CLINICAL_TYPE_SECRET');
+  if (!url || !secret) return { ok: false, reason: 'unconfigured' };
+  var type = String(clinicalTreatmentType == null ? '' : clinicalTreatmentType).trim();
+  try {
+    // action + secret on the query string mirrors the existing outbound calls;
+    // the full {action,secret,phone,clinicalTreatmentType} object is ALSO sent in
+    // the JSON body per the setClinicalType contract, so the receiver can read
+    // either. The secret stays server-to-server (never echoed to the browser).
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=setClinicalType&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({
+        action: 'setClinicalType',
+        secret: secret,
+        phone: canon,
+        clinicalTreatmentType: type
+      }),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, reason: 'http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (data && data.ok === true && (data.matched === 1 || data.matched === '1')) {
+      return { ok: true, matched: 1 };
+    }
+    // Surface the outpatient-supplied reason verbatim (no_match / multi_match /
+    // unknown_type) so the user sees WHY; fall back to a generic non_ok.
+    var reason = (data && (data.reason || data.error)) ? String(data.reason || data.error) : 'non_ok';
+    return { ok: false, reason: reason };
+  } catch (e) {
+    return { ok: false, reason: 'unreachable' };
+  }
+}
+
 // Persist the LOCAL stop flag on the Patients row (create a minimal row if the
 // patient is only in the outpatient roster). Phone matched tolerantly.
 function _markLocalPatientStopped(sh, canonPhone, name, reportedBy, note) {
@@ -936,11 +1000,12 @@ function _saveAssignment(payload) {
   if (!a.id) return { ok: false, error: 'missing_id' };
   var phone = String(a.patientPhone == null ? '' : a.patientPhone).trim();
   if (!phone) return { ok: false, error: 'missing_phone' };
+  var rec, res;
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
     var sh = _ensureSheet('Assignments', ASSIGNMENTS_HEADERS);
-    var rec = {
+    rec = {
       id: String(a.id),
       patientPhone: phone,
       therapist: a.therapist || '',
@@ -954,11 +1019,20 @@ function _saveAssignment(payload) {
       slots: (a.slots == null || a.slots === '') ? ''
         : (typeof a.slots === 'string' ? a.slots : JSON.stringify(a.slots))
     };
-    var res = _upsertByKey(sh, ASSIGNMENTS_HEADERS, 'id', rec);
-    return { ok: true, assignment: rec, created: !!res.created, updated: !!res.updated };
+    res = _upsertByKey(sh, ASSIGNMENTS_HEADERS, 'id', rec);
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
+  var result = { ok: true, assignment: rec, created: !!res.created, updated: !!res.updated };
+  // Push the clinical treatment type to outpatient billing AFTER the local save
+  // and OUTSIDE the lock (no network round-trip held under lock). Fail-open: the
+  // assignment is saved regardless; we attach the sync outcome so the UI can warn
+  // when billing-type sync didn't land (never silently swallowed). Skip the push
+  // for a blank type — there is nothing to bill against.
+  if (rec.treatmentType) {
+    result.clinicalSync = _postSetClinicalType(rec.patientPhone, rec.treatmentType);
+  }
+  return result;
 }
 
 function _removeAssignment(id) {
