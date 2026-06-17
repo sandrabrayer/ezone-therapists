@@ -201,6 +201,16 @@
       occurrence: extra.occurrence || null
     });
   }
+  // iteration 18 step 2 — record the 3-state session outcome (storage-only; no
+  // debt gate, no outpatient write-back — that's step 3). For a virtual recurring
+  // occurrence the backend materializes the booking row first (idempotent by id).
+  function apiSetSessionOutcome(id, outcome, extra) {
+    extra = extra || {};
+    return apiPost({
+      action: 'setSessionOutcome', id: id, outcome: outcome,
+      outcomeAt: extra.outcomeAt || '', occurrence: extra.occurrence || null
+    });
+  }
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
   function apiSavePatient(patient, mode) { return apiPost({ action: 'savePatient', patient: patient, mode: mode || 'edit' }); }
   function apiMarkPatientStopped(body) { return apiPost(Object.assign({ action: 'markPatientStopped' }, body)); }
@@ -244,6 +254,9 @@
       attendance: row.attendance || '',
       attendanceMarkedAt: row.attendanceMarkedAt || '',
       reason: row.reason || '',
+      // iteration 18 step 2 — 3-state session outcome (storage-only) + its stamp.
+      outcome: row.outcome || '',
+      outcomeAt: row.outcomeAt || '',
       gateStatus: row.gateStatus || '',
       gateReason: row.gateReason || '',
       amountOwed: Number(row.amountOwed) || 0,
@@ -604,6 +617,13 @@
     if (r.attendance === 'missed') return '<span class="chip chip-unpaid">לא התקיים</span>';
     return '<span class="chip">טרם סומן</span>';
   }
+  // iteration 18 step 2 — the 3-state session outcome chip (storage-only).
+  function outcomeChip(r) {
+    if (r.outcome === 'happened') return '<span class="chip chip-paid">התקיים</span>';
+    if (r.outcome === 'therapist_cancelled') return '<span class="chip chip-partial">המטפל ביטל / לא הגיע</span>';
+    if (r.outcome === 'patient_no_show') return '<span class="chip chip-unpaid">המטופל לא הגיע</span>';
+    return '<span class="chip">טרם סומן</span>';
+  }
   function gateChip(r) {
     if (r.gateStatus === 'approved') return '<span class="chip chip-partial">אושר למרות חוב (' + money(r.amountOwed) + ')</span>';
     if (r.gateStatus === 'flagged') return '<span class="chip chip-unpaid">לבירור</span>';
@@ -617,7 +637,7 @@
     var al = alertFor(r.id);
     return '<div class="sess-patient">' +
       '<span class="sess-pname">' + escapeHtml(r.patientName) + '</span> ' +
-      gateChip(r) + ' ' + attendanceChip(r) + syncBadge(r) +
+      gateChip(r) + ' ' + outcomeChip(r) + syncBadge(r) +
       (al ? '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ')</div>' : '') +
       '</div>';
   }
@@ -684,15 +704,21 @@
     $('#assignList').innerHTML = rows.length ? rows.join('') : '<div class="billing-empty">אין מטופלים</div>';
   }
 
-  // --- my treatments (tab 3) — friendly per-therapist did-it-happen view --
+  // --- my treatments (tab 3) — friendly per-therapist session-outcome view --
   function mineRow(r) {
-    // The mark opens the report flow (debt-gated for «happened»; reason for
-    // «didn't»). The payment check + "no mark = no pay" deter false reporting.
-    // A VIRTUAL recurring occurrence has no sheet row yet → only report buttons
-    // (reporting materializes it); edit/cancel apply once it's a real booking.
-    var attBtns = '<span class="att-btns">' +
-      '<button class="btn btn-ghost btn-sm" data-mine-att="occurred" data-id="' + escapeHtml(r.id) + '">התקיים</button>' +
-      '<button class="btn btn-ghost btn-sm" data-mine-att="missed" data-id="' + escapeHtml(r.id) + '">לא התקיים</button>' +
+    // A VIRTUAL recurring occurrence has no sheet row yet → marking it materializes
+    // the booking first; edit/cancel apply only once it's a real booking.
+    // iteration 18 step 2 — a 3-state outcome picker (storage-only) replaces the
+    // old happened/didn't pair. Buttons are generated from Outcome.VALUES so the
+    // UI can never drift from the allowed set; the chosen one is highlighted.
+    var outcomeBtns = Outcome.VALUES.map(function (v) {
+      var on = r.outcome === v;
+      return '<button class="btn btn-ghost btn-sm outcome-btn outcome-' + v + (on ? ' is-active' : '') +
+        '" data-mine-outcome="' + v + '" data-id="' + escapeHtml(r.id) + '" aria-pressed="' + on + '">' +
+        escapeHtml(Outcome.labelFor(v)) + '</button>';
+    }).join('');
+    var attBtns = '<span class="att-btns outcome-picker" role="group" aria-label="תוצאת הטיפול">' +
+      outcomeBtns +
       (r.recurring ? '' :
         '<button class="btn btn-ghost btn-sm" data-edit-booking="' + escapeHtml(r.id) + '">עריכה</button>' +
         // Cancel only while the booking hasn't been reported (keeps outpatient pay consistent).
@@ -703,8 +729,7 @@
       '<div><span class="p-label">תאריך</span><span class="p-val">' + escapeHtml(displayDateTime(r.scheduledDate, r.time)) + '</span></div>' +
       '<div><span class="p-label">טיפול</span><span class="p-val">' + escapeHtml(svc(r.treatmentType)) + '</span></div>' +
       '<div><span class="p-label">מיקום</span><span class="p-val">' + escapeHtml(locationLabel(r.location)) + '</span></div>' +
-      '<div>' + attendanceChip(r) + syncBadge(r) + '</div>' +
-      (r.attendance === 'missed' && r.reason ? '<div class="wide reason-row">סיבה: ' + escapeHtml(r.reason) + '</div>' : '') +
+      '<div>' + outcomeChip(r) + syncBadge(r) + '</div>' +
       '<div class="row-actions">' + attBtns + '</div>' +
       '</div>';
   }
@@ -1212,6 +1237,48 @@
       });
   }
 
+  // --- session outcome (iteration 18 step 2) ----------------------------
+  // The therapist marks one of three outcomes (happened / therapist-cancelled /
+  // patient-no-show). STORAGE-ONLY: it stamps the Schedule row and does NOTHING
+  // else — no debt gate, no outpatient write-back (that is step 3). No modal:
+  // one click records it (optimistic, with rollback on failure).
+  function markOutcome(id, value) {
+    if (!ensureTherapist()) return;
+    if (!Outcome.isValid(value)) return;
+    var src = reportableById(id);
+    if (!src) return;
+
+    // Promote a VIRTUAL recurring occurrence to a real local row (the backend
+    // materializes its booking row from the occurrence payload, idempotent by id).
+    var row = state.schedule.filter(function (r) { return r.id === id; })[0];
+    var occurrence = null;
+    if (!row) {
+      var occ = (state.occurrences || []).filter(function (o) { return o.id === id; })[0];
+      if (!occ) return;
+      occurrence = occ;
+      row = Object.assign({}, occ);
+      delete row.recurring;
+      state.schedule.push(row);
+    }
+
+    var built = Outcome.buildOutcome(row, value);
+    if (!built.ok) { toast('ערך לא חוקי', true); return; }
+    var prev = row.outcome, prevAt = row.outcomeAt;
+    row.outcome = value;
+    row.outcomeAt = built.record.outcomeAt;
+    render();
+    apiSetSessionOutcome(id, value, { outcomeAt: built.record.outcomeAt, occurrence: occurrence })
+      .then(function (res) {
+        if (res && res.outcomeAt) row.outcomeAt = res.outcomeAt;
+        render();
+        toast('נרשם: ' + Outcome.labelFor(value));
+      })
+      .catch(function (err) {
+        row.outcome = prev; row.outcomeAt = prevAt; render();
+        toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true);
+      });
+  }
+
   // --- edit / cancel a booking (therapist, in «המטופלים שלי») -----------
   var bookingEditId = null;
   function openBookingEdit(id) {
@@ -1599,6 +1666,9 @@
       if (eb) { openBookingEdit(eb.getAttribute('data-edit-booking')); return; }
       var cb = e.target.closest('[data-cancel-booking]');
       if (cb) { cancelBooking(cb.getAttribute('data-cancel-booking')); return; }
+      var ob = e.target.closest('[data-mine-outcome]');
+      if (ob) { markOutcome(ob.getAttribute('data-id'), ob.getAttribute('data-mine-outcome')); return; }
+      // Legacy binary mark (kept for step 3 wiring; no longer surfaced in the UI).
       var b = e.target.closest('[data-mine-att]');
       if (b) { markAttendance(b.getAttribute('data-id'), b.getAttribute('data-mine-att')); return; }
       if (e.target.closest('#syncNowBtn')) syncNow();
