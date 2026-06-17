@@ -698,6 +698,15 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .sess-pname { font-weight: 600; }
 .att-btns { display: inline-flex; gap: 6px; margin-inline-start: auto; }
 
+/* iteration 18 step 2 — 3-state session-outcome picker (RTL, dark theme).
+   The chosen outcome is highlighted; its color matches the outcome chip:
+   happened = ok, therapist-cancelled = warn, patient-no-show = bad. */
+.outcome-picker { flex-wrap: wrap; }
+.outcome-btn.is-active { color: #04212e; font-weight: 600; border-color: transparent; }
+.outcome-btn.outcome-happened.is-active            { background: #d4edda; color: #155724; border-color: #155724; }
+.outcome-btn.outcome-therapist_cancelled.is-active { background: #fff3cd; color: #856404; border-color: #856404; }
+.outcome-btn.outcome-patient_no_show.is-active     { background: #f8d7da; color: #721c24; border-color: #721c24; }
+
 /* per-patient gate results inside the schedule modal */
 .gate-patient {
   padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);

@@ -52,7 +52,8 @@ var SCHEDULE_HEADERS = [
   'approverId', 'approverName', 'approvalNote', 'approvedAt',
   'created',
   'syncStatus', 'syncedAt',
-  'time', 'reason'          // iteration 7 — appended (time-of-day; not-done reason)
+  'time', 'reason',         // iteration 7 — appended (time-of-day; not-done reason)
+  'outcome', 'outcomeAt'    // iteration 18 step 2 — appended (3-state session outcome + stamp)
 ];
 
 /* Append-only audit trail of every debtor approval. */
@@ -594,6 +595,60 @@ function _markAttendance(payload) {
     var sessionId = String(grid[found][sidIdx] || id);
     var status = _syncSession(sh, sessionId);
     return { ok: true, id: id, attendance: attendance, gateStatus: gateStatus, syncStatus: status };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+/* ===== Session outcome (iteration 18, step 2) =====
+ * The therapist marks what actually happened to a scheduled session as exactly
+ * ONE of three mutually-exclusive outcomes. STORAGE-ONLY: this records the
+ * stamped outcome on the Schedule row and does NOTHING else — no debt gate, no
+ * pay computation, no outpatient write-back (that is step 3). The legacy binary
+ * `attendance` field + its writeback (_markAttendance / _syncSession) are left
+ * deliberately untouched. The token set is CLOSED — mirror of public/outcome.js. */
+var OUTCOME_VALUES = ['happened', 'therapist_cancelled', 'patient_no_show'];
+
+function _setSessionOutcome(payload) {
+  var id = payload && payload.id;
+  if (!id) return { ok: false, error: 'missing_id' };
+  var outcome = String(payload.outcome == null ? '' : payload.outcome);
+  if (OUTCOME_VALUES.indexOf(outcome) === -1) return { ok: false, error: 'invalid_outcome' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    // A recurring occurrence is VIRTUAL until acted on — materialize its booking
+    // row now (create-only, idempotent by id) so we stamp a real row, exactly as
+    // the report flow does. Materialization itself is ungated.
+    if (payload.occurrence && String(payload.occurrence.id) === String(id)) {
+      _materializeOccurrenceRow(sh, payload.occurrence);
+    }
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'not_found' };
+    var idIdx = SCHEDULE_HEADERS.indexOf('id');
+    var grid = sh.getRange(2, 1, lastRow - 1, SCHEDULE_HEADERS.length).getValues();
+    var found = -1;
+    for (var i = 0; i < grid.length; i++) {
+      if (String(grid[i][idIdx]) === String(id)) { found = i; break; }
+    }
+    if (found < 0) return { ok: false, error: 'not_found' };
+
+    function col(name) { return String(grid[found][SCHEDULE_HEADERS.indexOf(name)] || ''); }
+    function setCol(name, val) {
+      var idx = SCHEDULE_HEADERS.indexOf(name);
+      if (idx > -1) sh.getRange(found + 2, idx + 1, 1, 1).setValues([[val]]);
+    }
+    var stampedAt = payload.outcomeAt || new Date().toISOString();
+    setCol('outcome', outcome);
+    setCol('outcomeAt', stampedAt);
+    // STORAGE-ONLY — no _syncSession / writeback here (step 3 wires pay).
+    return {
+      ok: true, id: id, outcome: outcome, outcomeAt: stampedAt,
+      patientName: col('patientName'), patientPhone: col('patientPhone'),
+      therapist: col('therapist'), treatmentType: col('treatmentType'),
+      scheduledDate: col('scheduledDate')
+    };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -1146,6 +1201,7 @@ function doPost(e) {
     if (action === 'getData') return _json(_getData());
     if (action === 'saveSession') return _json(_saveSession(payload));
     if (action === 'markAttendance') return _json(_markAttendance(payload));
+    if (action === 'setSessionOutcome') return _json(_setSessionOutcome(payload));
     if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
     if (action === 'markPatientStopped') return _json(_markPatientStopped(payload));

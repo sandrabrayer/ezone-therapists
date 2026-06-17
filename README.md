@@ -33,17 +33,42 @@ are visible to everyone (`public/access.js` is just the tab list):
    with **«+ קביעת טיפול»** (treatment type + **day + time** + location; therapist
    locked to the picked name), and their treatments in four buckets —
    **טיפולים שנקבעו** (overdue / beyond-week) / **קרובים** (the **coming week**,
-   today…+7) / **שבוצעו** / **שנקבעו ולא בוצעו**. Each is **reported happened /
-   didn't-happen** (reason required for didn't) — the **payment trigger** (no
-   report = no pay), **debt-gated at report time** and written back to outpatient.
-   Each booking also has inline **«עריכה»** (change day / time / location) and,
-   while unreported, **«ביטול טיפול»** (cancel — a reported one must be marked
-   «לא התקיים» first).
+   today…+7) / **שבוצעו** / **שנקבעו ולא בוצעו**. Each session is marked with a
+   **3-state outcome** — **התקיים** / **המטפל ביטל / לא הגיע** / **המטופל לא הגיע**
+   (see below). Each booking also has inline **«עריכה»** (change day / time /
+   location) and, while unreported, **«ביטול טיפול»** (cancel).
 
 Identity is self-asserted (anyone can pick any therapist name); the real controls
 are the outpatient **debt gate** + the **Ron/Sandra approval audit**.
 
-### Post-treatment report → outpatient write-back
+### Session outcome — 3-state (storage-only)
+
+The therapist marks what actually happened to a scheduled session as exactly
+**one of three** mutually-exclusive outcomes (`public/outcome.js`, mirrored by
+`apps-script/Code.gs:_setSessionOutcome`):
+
+| stored token          | label                    |
+| --------------------- | ------------------------ |
+| `happened`            | התקיים                   |
+| `therapist_cancelled` | המטפל ביטל / לא הגיע      |
+| `patient_no_show`     | המטופל לא הגיע            |
+
+English tokens are stored (the app's enum convention); Hebrew is display-only.
+One click on the picker in «המטופלים שלי» records the outcome **stamped** with
+the session's identity — `patient`, `therapist`, `treatmentType`, `scheduledDate`,
+`outcome`, `outcomeAt` (timestamp) — on the patient's `Schedule` row (new
+`outcome` / `outcomeAt` columns). The token set is **closed**: the backend
+rejects anything else (`invalid_outcome`).
+
+This step is **storage-only**: marking an outcome does **no** pay computation and
+triggers **no** outpatient write-back. Wiring the outcome to therapist pay / the
+outpatient receiver is a **follow-up step**; until then the legacy binary
+`attendance` field + its write-back (below) are left in place, untouched. The
+«המטופלים שלי» buckets do follow the outcome, though: `happened` → **שבוצעו**,
+`therapist_cancelled` / `patient_no_show` → **שנקבעו ולא בוצעו**, and a session
+with an outcome set can no longer be cancelled.
+
+### Post-treatment report → outpatient write-back (legacy binary, pre-3-state)
 
 Marking a treatment saves locally (**source of truth**) and the therapists Apps
 Script writes the result back to outpatient's new `recordTreatmentGiven` endpoint
@@ -216,7 +241,8 @@ approver, note, timestamp) — see [`public/approval.js`](public/approval.js).
 ## Architecture / data sources
 
 This app has its **own** Google Sheet — `Schedule` (one row per patient per
-session), `Approvals`, `Patients` (identity + origin, keyed by phone),
+session; carries both the legacy binary `attendance` and the 3-state `outcome` /
+`outcomeAt`), `Approvals`, `Patients` (identity + origin, keyed by phone),
 `Assignments` (one row per patient↔therapist↔plan, so a patient can have several),
 and the editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
 projections through server-side proxy routes — the browser only ever calls

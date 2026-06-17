@@ -1,5 +1,22 @@
 # Changelog
 
+## Iteration 18 (step 2) — three-state session outcome (storage-only)
+
+The therapist now marks each session instance with an explicit **3-state
+outcome** — **`happened`** (התקיים) / **`therapist_cancelled`** (המטפל ביטל /
+לא הגיע) / **`patient_no_show`** (המטופל לא הגיע) — replacing the old binary
+happened/didn't pair in «המטופלים שלי». New pure **`public/outcome.js`** (closed
+value set + `buildOutcome` stamp, mirrored by `apps-script/Code.gs`) and a new
+**`_setSessionOutcome`** action that validates against the three values
+(`invalid_outcome` otherwise) and stamps **patient, therapist, treatmentType,
+date, outcome, timestamp** onto two new appended `Schedule` columns
+(`outcome`, `outcomeAt`). **Storage-only**: no debt gate, no pay computation, no
+outpatient write-back — wiring the outcome to pay / the outpatient receiver is
+**step 3**, so the legacy `attendance` + `writeback.js` path is left intact and
+untouched. New `test/outcome.test.js`; full suite green. **Needs an Apps Script
+redeploy** (new columns + action); no new Railway env vars. Full notes:
+[`CHANGELOG-iteration18-session-outcome.md`](CHANGELOG-iteration18-session-outcome.md).
+
 ## Iteration 17 — clinical billing-type push + nested פרטני menu
 
 On assignment save, the patient's **clinical treatment type** is pushed to the
