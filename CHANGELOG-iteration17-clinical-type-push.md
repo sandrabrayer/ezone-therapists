@@ -63,8 +63,9 @@ display only:** each option keeps its own distinct value, so the saved
 - **`CLINICAL_TYPE_SECRET`** must be set as a **Script Property on the therapists
   Apps Script** (where the write originates) and the **same value** on outpatient.
   **No new Railway/Node env var** — the write goes Apps Script → Apps Script.
-- The outpatient receiver isn't built yet: patch + tests in
+- The outpatient receiver is already **live** (outpatient PR #30); contract
+  documented in
   [`docs/outpatient-setClinicalType.patch.md`](docs/outpatient-setClinicalType.patch.md)
-  (dep #6 in [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)). Apply it, set the
-  secret on both sides, and **redeploy both Apps Scripts**. Until then, saves stick
-  locally and warn `unconfigured` / `unreachable`.
+  (dep #6 in [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)). So the only remaining
+  work is on the therapists side: set the secret + redeploy the therapists Apps
+  Script. Until that's done, saves stick locally and warn `unconfigured`.

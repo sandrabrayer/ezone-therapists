@@ -1,11 +1,16 @@
 # Outpatient patch — `setClinicalType` cross-app WRITE endpoint
 
 **Target repo:** `sandrabrayer/ezone-outpatient` · **File:** `apps-script/Code.gs`
-**Status:** NOT YET APPLIED — external dependency of `ezone-therapists`.
+**Status:** ✅ **LIVE** — the receiver already exists on the outpatient side
+(outpatient PR #30) and is deployed. The reference code below is kept for the
+record; the contract it documents is what the live endpoint implements. The only
+remaining work is on the **therapists** side: set `CLINICAL_TYPE_SECRET` (same
+value as outpatient) as a Script Property and redeploy the therapists Apps Script.
 
 When ירדן saves an assignment in the therapists app, the patient's chosen
 **clinical treatment type** is pushed here so outpatient's per-patient billing
-rate follows the clinical plan. Same shared-secret, server-to-server model as
+rate follows the clinical plan (outpatient populates `clinicalTreatmentType` and
+derives `serviceType`). Same shared-secret, server-to-server model as
 `recordTreatmentGiven` / `flagStop`, on `doPost`.
 
 ## Contract

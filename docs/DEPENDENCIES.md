@@ -13,7 +13,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | (no UI consumer since the inpatient tab was removed) |
 | 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
 | 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
-| 6 | `setClinicalType` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-setClinicalType.patch.md`](outpatient-setClinicalType.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | On assignment save, pushes the patient's clinical treatment type so outpatient's per-patient billing rate follows the clinical plan |
+| 6 | `setClinicalType` (**WRITE**) | `ezone-outpatient` | **Receiver LIVE on the outpatient side** (outpatient PR #30, deployed). Remaining: set the matching `CLINICAL_TYPE_SECRET` Script Property on the **therapists** Apps Script + redeploy it. Contract documented in [`outpatient-setClinicalType.patch.md`](outpatient-setClinicalType.patch.md). | On assignment save, pushes the patient's clinical treatment type so outpatient's per-patient billing rate follows the clinical plan |
 
 ## Env vars on the therapists Railway service
 
@@ -61,8 +61,9 @@ above. Set on the therapists Apps Script:
   deployed, or it returns `no_match` / `multi_match` / `unknown_type`, the save
   still sticks and the UI **warns** that billing-type sync failed (and why) — never
   silently swallowed. Reuses `OUTPATIENT_SHEETS_URL`; **no new Node/Railway env
-  var** (the write goes Apps Script → Apps Script). Requires an Apps Script
-  redeploy on **both** sides once the receiver patch is applied.
+  var** (the write goes Apps Script → Apps Script). The outpatient receiver is
+  already **live** (outpatient PR #30), so once `CLINICAL_TYPE_SECRET` is set here
+  and the therapists Apps Script is redeployed, the push works end-to-end.
 
 ## Source-data follow-up (outpatient side)
 

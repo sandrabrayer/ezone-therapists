@@ -156,8 +156,10 @@ individual-billing types (פסיכודינמי, פסיכותרפי ממוקד ט
 picker — display only, the saved value stays the specific clinical name. Pure logic
 in [`public/clinical-sync.js`](public/clinical-sync.js) (mirrored in `Code.gs`).
 Config: set the `CLINICAL_TYPE_SECRET` Script Property to match outpatient's;
-reuses `OUTPATIENT_SHEETS_URL`; needs the outpatient receiver (dep #6) + a redeploy
-on both sides (see [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) and
+reuses `OUTPATIENT_SHEETS_URL`. The outpatient receiver is already **live**
+(outpatient PR #30), so once the secret is set here and the therapists Apps Script
+is redeployed, the push works end-to-end (see
+[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) and
 [`docs/outpatient-setClinicalType.patch.md`](docs/outpatient-setClinicalType.patch.md)).
 
 ## Phone — one enforced format
