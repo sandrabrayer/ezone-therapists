@@ -215,12 +215,15 @@
    * «המטופלים שלי» tab. A patient may have several parallel treatments (even with
    * different therapists), so callers pass the rows for ONE therapist and each
    * treatment row is bucketed independently:
-   *   performed     attendance 'occurred'
-   *   notPerformed  attendance 'missed' (scheduled but didn't happen)
+   *   performed     outcome 'happened' (or legacy attendance 'occurred')
+   *   notPerformed  outcome 'therapist_cancelled'/'patient_no_show' (or legacy
+   *                 attendance 'missed') — scheduled but didn't take place
    *   upcoming      not yet marked, scheduled date within the COMING WEEK
    *                 (today .. weekEnd inclusive)
    *   scheduled     not yet marked, everything else (overdue, or beyond the week)
-   * @param {Array} rows treatment rows ({attendance, scheduledDate, ...})
+   * The 3-state `outcome` (step 2) takes precedence; the legacy binary
+   * `attendance` is honored as a fallback so pre-outcome rows still bucket.
+   * @param {Array} rows treatment rows ({outcome, attendance, scheduledDate, ...})
    * @param {string} today   'YYYY-MM-DD'
    * @param {string} [weekEnd] 'YYYY-MM-DD' upper bound of "coming week" (e.g.
    *        today+7). Omit for no upper bound (any future date is "upcoming").
@@ -232,6 +235,11 @@
     weekEnd = String(weekEnd || '');
     (Array.isArray(rows) ? rows : []).forEach(function (r) {
       if (!r) return;
+      // The 3-state session outcome (step 2) is the authoritative marking;
+      // fall back to the legacy binary attendance for pre-outcome rows.
+      var outcome = String(r.outcome || '');
+      if (outcome === 'happened') { out.performed.push(r); return; }
+      if (outcome === 'therapist_cancelled' || outcome === 'patient_no_show') { out.notPerformed.push(r); return; }
       var att = String(r.attendance || '');
       if (att === 'occurred') { out.performed.push(r); return; }
       if (att === 'missed') { out.notPerformed.push(r); return; }
@@ -273,12 +281,14 @@
     return out;
   }
 
-  // A booking may be CANCELLED only while it hasn't been reported yet (attendance
-  // pending). A reported treatment must first be marked «לא התקיים» (which
-  // re-syncs given=false to outpatient) before it can be cancelled — keeps the
-  // outpatient pay records consistent.
+  // A booking may be CANCELLED only while it hasn't been marked yet — neither a
+  // 3-state session outcome (step 2) nor the legacy binary attendance set. Once
+  // an outcome/attendance exists the booking is a record of what happened, so it
+  // must be re-opened (outcome cleared / marked «לא התקיים») before cancelling —
+  // keeps the outpatient pay records consistent.
   function canCancelBooking(row) {
-    return String((row && row.attendance) || '') === '';
+    return String((row && row.attendance) || '') === '' &&
+           String((row && row.outcome) || '') === '';
   }
 
   return {

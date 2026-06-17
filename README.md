@@ -63,7 +63,10 @@ rejects anything else (`invalid_outcome`).
 This step is **storage-only**: marking an outcome does **no** pay computation and
 triggers **no** outpatient write-back. Wiring the outcome to therapist pay / the
 outpatient receiver is a **follow-up step**; until then the legacy binary
-`attendance` field + its write-back (below) are left in place, untouched.
+`attendance` field + its write-back (below) are left in place, untouched. The
+«המטופלים שלי» buckets do follow the outcome, though: `happened` → **שבוצעו**,
+`therapist_cancelled` / `patient_no_show` → **שנקבעו ולא בוצעו**, and a session
+with an outcome set can no longer be cancelled.
 
 ### Post-treatment report → outpatient write-back (legacy binary, pre-3-state)
 

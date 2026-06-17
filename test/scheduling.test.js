@@ -207,6 +207,36 @@ test('bucketMine: no weekEnd → any future date counts as upcoming', () => {
   assert.deepEqual(b.upcoming.map((r) => r.id), ['far']);
 });
 
+test('bucketMine: the 3-state outcome (step 2) buckets — happened→performed, cancels→notPerformed', () => {
+  const rows = [
+    { id: 'h', outcome: 'happened',            scheduledDate: '2026-06-05' },  // performed
+    { id: 't', outcome: 'therapist_cancelled', scheduledDate: '2026-06-05' },  // not performed
+    { id: 'p', outcome: 'patient_no_show',     scheduledDate: '2026-06-05' },  // not performed
+    { id: 'u', outcome: '',                    scheduledDate: TODAY }          // unmarked → upcoming
+  ];
+  const b = Scheduling.bucketMine(rows, TODAY, WEEK_END);
+  assert.deepEqual(b.performed.map((r) => r.id), ['h']);
+  assert.deepEqual(b.notPerformed.map((r) => r.id), ['t', 'p']);
+  assert.deepEqual(b.upcoming.map((r) => r.id), ['u']);
+});
+
+test('bucketMine: outcome takes precedence over legacy attendance', () => {
+  // A row carrying both fields buckets by the (newer) outcome, not attendance.
+  const b = Scheduling.bucketMine([
+    { id: 'o', outcome: 'patient_no_show', attendance: 'occurred', scheduledDate: '2026-06-05' }
+  ], TODAY, WEEK_END);
+  assert.deepEqual(b.notPerformed.map((r) => r.id), ['o']);
+  assert.equal(b.performed.length, 0);
+});
+
+test('canCancelBooking: a session with an outcome can no longer be cancelled', () => {
+  assert.equal(Scheduling.canCancelBooking({ outcome: 'happened' }), false);
+  assert.equal(Scheduling.canCancelBooking({ outcome: 'therapist_cancelled' }), false);
+  assert.equal(Scheduling.canCancelBooking({ outcome: 'patient_no_show' }), false);
+  // Unmarked on both the outcome and the legacy field → still cancellable.
+  assert.equal(Scheduling.canCancelBooking({ outcome: '', attendance: '' }), true);
+});
+
 test('multiple parallel treatments per patient — different therapists bucket independently', () => {
   // ONE patient (same phone) with two parallel treatments by two therapists.
   const all = [

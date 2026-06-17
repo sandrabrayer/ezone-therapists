@@ -55,15 +55,25 @@ The legacy `markAttendance` / `writeback.js` / `_syncSession` path is left
 and functions remain) so **step 3** can wire the outcome to pay and the
 outpatient receiver.
 
+- **`public/scheduling.js`** — `bucketMine` and `canCancelBooking` now recognize
+  the `outcome` as well as the legacy `attendance`, so marking an outcome is
+  reflected in the «המטופלים שלי» buckets immediately (still storage-only — no
+  pay, no write-back): `happened` → **שבוצעו**, `therapist_cancelled` /
+  `patient_no_show` → **שנקבעו ולא בוצעו**; the `outcome` takes precedence over
+  `attendance` when both are present. A session with an outcome set can no longer
+  be cancelled (same record-protection the legacy `attendance` had).
+
 ## Tests
 
 `test/outcome.test.js` (new): exactly three values accepted and **everything
 else rejected** (incl. `occurred`/`missed`/empty); the stamp carries all required
 fields; default ISO timestamp; `sessionId` falls back to row id; a session can be
 marked and re-marked (last write wins); storage-only (no `given`/`isPayment`/
-`rate` fields leak in); Hebrew labels. Full suite stays green
-(`npm test` — 147 tests). The existing schedule/assignment/writeback tests are
-unaffected.
+`rate` fields leak in); Hebrew labels. `test/scheduling.test.js` adds outcome
+bucketing (happened→performed, therapist_cancelled/patient_no_show→notPerformed,
+outcome precedence over attendance) and the outcome cancel-guard. Full suite
+stays green (`npm test` — 150 tests). The existing schedule/assignment/writeback
+tests are unaffected.
 
 ## Deploy / ops
 
