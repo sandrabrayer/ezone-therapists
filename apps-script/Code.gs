@@ -614,6 +614,7 @@ function _setSessionOutcome(payload) {
   if (!id) return { ok: false, error: 'missing_id' };
   var outcome = String(payload.outcome == null ? '' : payload.outcome);
   if (OUTCOME_VALUES.indexOf(outcome) === -1) return { ok: false, error: 'invalid_outcome' };
+  var result;
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -642,9 +643,11 @@ function _setSessionOutcome(payload) {
     var stampedAt = payload.outcomeAt || new Date().toISOString();
     setCol('outcome', outcome);
     setCol('outcomeAt', stampedAt);
-    // STORAGE-ONLY — no _syncSession / writeback here (step 3 wires pay).
-    return {
+    // The local stamp is now committed. Capture the self-describing row fields so
+    // the outpatient pay-sync push can run AFTER the lock releases (below).
+    result = {
       ok: true, id: id, outcome: outcome, outcomeAt: stampedAt,
+      sessionId: col('sessionId') || id,
       patientName: col('patientName'), patientPhone: col('patientPhone'),
       therapist: col('therapist'), treatmentType: col('treatmentType'),
       scheduledDate: col('scheduledDate')
@@ -652,6 +655,21 @@ function _setSessionOutcome(payload) {
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
+  // Push the outcome to outpatient recordSessionOutcome AFTER the local save and
+  // OUTSIDE the lock (no network round-trip held under lock). Fail-open: the
+  // outcome is saved regardless; we attach the sync result so the UI can warn
+  // when the pay-sync didn't land (never silently swallowed). Fires on all three
+  // outcomes — outpatient computes pay/status per outcome. `frequency` is not on
+  // the Schedule row; outpatient handles its absence (e.g. for ליווי).
+  result.outcomeSync = _postSetSessionOutcome({
+    sessionId: result.sessionId,
+    phone: result.patientPhone,
+    therapist: result.therapist,
+    clinicalTreatmentType: result.treatmentType,
+    date: result.scheduledDate,
+    outcome: result.outcome
+  });
+  return result;
 }
 
 /* ===== Outpatient write-back (TreatmentsGiven) =====
@@ -941,6 +959,76 @@ function _postSetClinicalType(phone, clinicalTreatmentType) {
     }
     // Surface the outpatient-supplied reason verbatim (no_match / multi_match /
     // unknown_type) so the user sees WHY; fall back to a generic non_ok.
+    var reason = (data && (data.reason || data.error)) ? String(data.reason || data.error) : 'non_ok';
+    return { ok: false, reason: reason };
+  } catch (e) {
+    return { ok: false, reason: 'unreachable' };
+  }
+}
+
+/* ===== Session-outcome push (SENDER) — iteration 18, step 3 =====
+ * On a successful outcome save (_setSessionOutcome), push the marked outcome to
+ * outpatient's recordSessionOutcome endpoint so it computes therapist pay /
+ * session status per outcome. Mirror of public/outcome-sync.js (buildPayload +
+ * interpretResponse). Same server-to-server pattern as _postSetClinicalType /
+ * _postFlagStop: UrlFetchApp + the OUTPATIENT_SHEETS_URL and a shared secret read
+ * from Script Properties (SESSION_OUTCOME_SECRET) — the secret NEVER reaches the
+ * browser.
+ *
+ * FAIL-OPEN-WITH-FLAG (like the clinical-type sender, NOT fail-closed like the
+ * stop flow): the outcome is already saved locally by the time we call this, so
+ * the push never throws and never blocks the save. It returns a structured
+ * outcome the caller attaches to the response (outcomeSync) so the UI can WARN
+ * when the pay-sync didn't land — the outcome stands locally either way; only the
+ * pay-sync is flagged.
+ *   { ok:true }                                              → synced silently
+ *   { ok:false, reason:'unknown_therapist' | 'unknown_type' |
+ *               'unauthorized' | 'unconfigured' |
+ *               'invalid_phone' | 'http_<code>' |
+ *               'non_ok' | 'unreachable' }                   → surfaced to user
+ *
+ * Fires on all THREE outcomes (happened / therapist_cancelled / patient_no_show)
+ * — outpatient computes pay/status per outcome. `frequency` is NOT sent (the
+ * Schedule row doesn't carry it; outpatient handles its absence, e.g. for ליווי).
+ * Idempotent by design: re-marking re-sends the same sessionId; outpatient
+ * upserts on it (no therapists-side dedupe).
+ */
+function _postSetSessionOutcome(o) {
+  o = o || {};
+  // Push the canonical key so it matches outpatient's phone matching.
+  var canon = _toCanonicalPhone(o.phone);
+  if (!canon) return { ok: false, reason: 'invalid_phone' };
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('SESSION_OUTCOME_SECRET');
+  if (!url || !secret) return { ok: false, reason: 'unconfigured' };
+  try {
+    // action + secret on the query string mirrors the existing outbound calls;
+    // the full object is ALSO sent in the JSON body per the recordSessionOutcome
+    // contract, so the receiver can read either. The secret stays server-to-
+    // server (never echoed to the browser).
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=recordSessionOutcome&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({
+        action: 'recordSessionOutcome',
+        secret: secret,
+        sessionId: String(o.sessionId == null ? '' : o.sessionId),
+        phone: canon,
+        therapist: String(o.therapist == null ? '' : o.therapist),
+        clinicalTreatmentType: String(o.clinicalTreatmentType == null ? '' : o.clinicalTreatmentType),
+        date: String(o.date == null ? '' : o.date),
+        outcome: String(o.outcome == null ? '' : o.outcome)
+      }),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, reason: 'http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (data && data.ok === true) return { ok: true };
+    // Surface the outpatient-supplied reason verbatim (unknown_therapist /
+    // unknown_type / unauthorized …) so the user sees WHY; fall back to non_ok.
     var reason = (data && (data.reason || data.error)) ? String(data.reason || data.error) : 'non_ok';
     return { ok: false, reason: reason };
   } catch (e) {

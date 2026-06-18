@@ -1,5 +1,33 @@
 # Changelog
 
+## Iteration 18 (step 3) — push the session outcome to outpatient pay
+
+On a successful outcome save, the marked **session outcome** is now pushed to the
+outpatient app's **`recordSessionOutcome`** endpoint, which computes therapist
+**pay / session status per outcome** and upserts by `sessionId`. New
+**`_postSetSessionOutcome`** in `apps-script/Code.gs` fires from
+`_setSessionOutcome` **after** the local stamp commits and **outside** the lock —
+same server-to-server pattern as `_postSetClinicalType` / `_postFlagStop`
+(`UrlFetchApp` → `OUTPATIENT_SHEETS_URL` + the **`SESSION_OUTCOME_SECRET`** Script
+Property; the secret **never reaches the browser**). Fires on **all three**
+outcomes (`happened` / `therapist_cancelled` / `patient_no_show`) with the
+canonical-phone payload `{ action, secret, sessionId, phone, therapist,
+clinicalTreatmentType, date, outcome }` (`frequency` is **not** sent — the
+Schedule row doesn't carry it; outpatient handles its absence, e.g. for ליווי).
+**Fail-open-with-flag** like the clinical-type push: the outcome **always saves
+locally**; the push result is attached as `outcomeSync` and a failure
+(`unknown_therapist` / `unknown_type` / `unauthorized` / `unconfigured` /
+`http_*` / `unreachable` / `non_ok`) surfaces a Hebrew warning toast — never
+swallowed; only the pay-sync is flagged. **Idempotent**: re-marking re-sends the
+same `sessionId`; outpatient upserts. New pure **`public/outcome-sync.js`**
+(`buildPayload` / `interpretResponse` / `warningFor`, mirror of `clinical-sync.js`)
++ `test/outcome-sync.test.js`; full suite green. **Needs the
+`SESSION_OUTCOME_SECRET` Script Property + a therapists Apps Script redeploy**; no
+new Railway env var (push is Apps Script → Apps Script). Receiver contract:
+[`docs/outpatient-recordSessionOutcome.patch.md`](docs/outpatient-recordSessionOutcome.patch.md).
+Full notes:
+[`CHANGELOG-iteration18-step3-session-outcome-push.md`](CHANGELOG-iteration18-step3-session-outcome-push.md).
+
 ## Iteration 18 (step 2) — three-state session outcome (storage-only)
 
 The therapist now marks each session instance with an explicit **3-state

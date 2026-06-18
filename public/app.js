@@ -224,6 +224,13 @@
   function clinicalSyncWarning(data) {
     return ClinicalSync.warningFor(data && data.clinicalSync);
   }
+  // Same shape for the session-outcome push: the outcome ALWAYS saves locally;
+  // the pay-sync to outpatient (recordSessionOutcome) is reported back as
+  // `outcomeSync`. OutcomeSync.warningFor maps a FAILED sync to a Hebrew reason so
+  // we WARN rather than silently swallow it (null = nothing pushed / synced OK).
+  function outcomeSyncWarning(data) {
+    return OutcomeSync.warningFor(data && data.outcomeSync);
+  }
   // Live read — never cached.
   async function apiDebtStatus() {
     var r = await fetch('/api/debt-status', { cache: 'no-store' });
@@ -1271,7 +1278,11 @@
       .then(function (res) {
         if (res && res.outcomeAt) row.outcomeAt = res.outcomeAt;
         render();
-        toast('נרשם: ' + Outcome.labelFor(value));
+        // The outcome ALWAYS saved locally. Flag (never swallow) when the
+        // outpatient pay-sync didn't land — the outcome stands either way.
+        var w = outcomeSyncWarning(res);
+        if (w) toast('נרשם: ' + Outcome.labelFor(value) + ' — אך ' + w, true);
+        else toast('נרשם: ' + Outcome.labelFor(value));
       })
       .catch(function (err) {
         row.outcome = prev; row.outcomeAt = prevAt; render();
