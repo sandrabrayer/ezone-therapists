@@ -546,7 +546,10 @@ function _markAttendance(payload) {
 
     // happened → authoritative debt re-check (the payment-driving action).
     if (attendance === 'occurred') {
-      var phone = String(grid[found][phoneIdx] || '');
+      // Raw grid read — recover the leading zero a numeric-stored cell dropped
+      // (mirror of _readAll/_matchPhone) so the debt-roster match doesn't fail and
+      // silently mis-gate a legitimate patient to 'flagged'/'unverified'.
+      var phone = _recoverStoredPhone(grid[found][phoneIdx]);
       var verification = _verifyPatientDebt(phone);   // allow|block|flag|unconfigured|unavailable
       if (verification === 'allow') {
         gateStatus = 'clear';
@@ -584,7 +587,9 @@ function _markAttendance(payload) {
         id: 'rep_' + id, treatmentId: id, approverId: appr.approverId || '',
         approverName: appr.approverName || '',
         patientName: String(grid[found][SCHEDULE_HEADERS.indexOf('patientName')] || ''),
-        patientPhone: String(grid[found][phoneIdx] || ''),
+        // Raw grid read — recover the dropped leading zero so the audit row keeps
+        // the canonical phone, not a mangled 9-digit number.
+        patientPhone: _recoverStoredPhone(grid[found][phoneIdx]),
         therapist: String(grid[found][SCHEDULE_HEADERS.indexOf('therapist')] || ''),
         note: appr.note || '', amountOwed: amountOwed, approvedAt: appr.approvedAt || new Date().toISOString()
       });
@@ -636,6 +641,12 @@ function _setSessionOutcome(payload) {
     if (found < 0) return { ok: false, error: 'not_found' };
 
     function col(name) { return String(grid[found][SCHEDULE_HEADERS.indexOf(name)] || ''); }
+    // Phone cells stored numeric (legacy rows pre-dating the '@' text-format pin)
+    // come back from this raw grid with their leading zero already dropped. A raw
+    // grid read does NOT pass through _readAll, so recover the zero here — exactly
+    // as _readAll/_matchPhone do — before the value feeds the canonical-key push
+    // (otherwise _toCanonicalPhone rightly rejects the 9-digit number).
+    function phoneCol(name) { return _recoverStoredPhone(grid[found][SCHEDULE_HEADERS.indexOf(name)]); }
     function setCol(name, val) {
       var idx = SCHEDULE_HEADERS.indexOf(name);
       if (idx > -1) sh.getRange(found + 2, idx + 1, 1, 1).setValues([[val]]);
@@ -648,7 +659,7 @@ function _setSessionOutcome(payload) {
     result = {
       ok: true, id: id, outcome: outcome, outcomeAt: stampedAt,
       sessionId: col('sessionId') || id,
-      patientName: col('patientName'), patientPhone: col('patientPhone'),
+      patientName: col('patientName'), patientPhone: phoneCol('patientPhone'),
       therapist: col('therapist'), treatmentType: col('treatmentType'),
       scheduledDate: col('scheduledDate')
     };

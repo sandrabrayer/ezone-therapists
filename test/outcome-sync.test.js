@@ -19,6 +19,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const OutcomeSync = require('../public/outcome-sync');
+const Phone = require('../public/phone');
 
 const OUTCOMES = ['happened', 'therapist_cancelled', 'patient_no_show'];
 
@@ -64,6 +65,44 @@ test('buildPayload: normalizes a fixable phone to the 10-digit leading-zero key'
 test('buildPayload: an un-canonicalizable phone is flagged, not sent', () => {
   const r = OutcomeSync.buildPayload(
     { sessionId: 's', phone: '12345', therapist: 'ת', date: 'd', outcome: 'happened' }, 's');
+  assert.deepEqual(r, { ok: false, reason: 'invalid_phone' });
+});
+
+// --- regression: numeric-stored Schedule phone (Sheets dropped the leading
+// zero on a legacy numeric cell) must recover-on-read BEFORE the push, exactly
+// as Code.gs _setSessionOutcome now does via _recoverStoredPhone. Without the
+// recovery the 9-digit number fails canonical validation → invalid_phone, which
+// is the bug this fix closes. Phone.recoverStored mirrors _recoverStoredPhone.
+
+test('outcome push: a numeric-stored 9-digit phone recovers, then builds a VALID payload', () => {
+  // The raw Schedule cell as Sheets hands it back: the number 523659865.
+  const rawCell = 523659865;
+  const recovered = Phone.recoverStored(rawCell);            // recovery-on-read
+  assert.equal(recovered, '0523659865', 'leading zero restored before the push');
+  const r = OutcomeSync.buildPayload({
+    sessionId: 's', phone: recovered, therapist: 'ת', date: 'd', outcome: 'happened'
+  }, 's');
+  assert.equal(r.ok, true, 'recovered phone is canonical → push fires');
+  assert.equal(r.payload.phone, '0523659865', 'canonical key sent to outpatient');
+});
+
+test('outcome push: WITHOUT recovery the same numeric phone is rejected (proves the bug)', () => {
+  // String(523659865) === '523659865' — the 9-digit, zero-already-dropped value
+  // that reached the push before this fix. The validator rightly rejects it.
+  const r = OutcomeSync.buildPayload({
+    sessionId: 's', phone: String(523659865), therapist: 'ת', date: 'd', outcome: 'happened'
+  }, 's');
+  assert.deepEqual(r, { ok: false, reason: 'invalid_phone' });
+});
+
+test('outcome push: recovery does NOT rescue genuinely invalid input (validator stays strict)', () => {
+  // A too-short / non-signature value is not a dropped-zero phone — it passes
+  // through recovery untouched and is still flagged, never sent.
+  const recovered = Phone.recoverStored('12345');
+  assert.equal(recovered, '12345', 'non-signature value untouched by recovery');
+  const r = OutcomeSync.buildPayload({
+    sessionId: 's', phone: recovered, therapist: 'ת', date: 'd', outcome: 'happened'
+  }, 's');
   assert.deepEqual(r, { ok: false, reason: 'invalid_phone' });
 });
 

@@ -210,7 +210,12 @@ every phone column to the `'@'` (plain-text) format so new saves keep the zero,
 and `Phone.recoverStored` (shared, mirrored in `Code.gs`, applied on read both
 server- and client-side) restores the zero on already-mangled 9-digit rows. This
 is **read-side recovery of corrupted data only** — typed input is still strictly
-validated.
+validated. `_readAll` recovers automatically, but **raw-grid reads**
+(`sh.getRange(...).getValues()` row scans in `_setSessionOutcome` and
+`_markAttendance`) bypass it, so each must call `_recoverStoredPhone` itself
+before the phone feeds a canonical-key push or debt-roster match — otherwise the
+strict validator (`_toCanonicalPhone`) rightly rejects the zero-less number and
+the push fails `invalid_phone`.
 
 **No duplicate patients.** Registering a *new* patient (`savePatient` with
 `mode:'create'`) whose phone already belongs to someone is rejected
