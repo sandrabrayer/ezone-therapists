@@ -663,6 +663,17 @@ function _setSessionOutcome(payload) {
       therapist: col('therapist'), treatmentType: col('treatmentType'),
       scheduledDate: col('scheduledDate')
     };
+    // ===== TEMP DIAGNOSTIC — REVERT. Surfaces the live runtime phone value so we
+    // can see WHY the push still fails invalid_phone. Reads only; changes no logic.
+    var _dbgPhoneIdx = SCHEDULE_HEADERS.indexOf('patientPhone');
+    var _dbgRaw = grid[found][_dbgPhoneIdx];
+    result._dbgRaw = String(_dbgRaw);              // the cell as text
+    result._dbgType = typeof _dbgRaw;              // number vs string (the key question)
+    result._dbgRecovered = _recoverStoredPhone(_dbgRaw);  // what phoneCol produces
+    result._dbgPhoneIdx = _dbgPhoneIdx;            // -1 ⇒ header/column mismatch
+    result._dbgHeaderLen = SCHEDULE_HEADERS.length;
+    result._dbgRowLen = grid[found].length;        // < headerLen ⇒ short/ragged row
+    // ===== END TEMP DIAGNOSTIC
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
