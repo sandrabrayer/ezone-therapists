@@ -348,15 +348,6 @@
   }
 
   // --- derived rosters ---------------------------------------------------
-  function planSessionsText(s) {
-    if (s == null || s === '') return '';
-    if (typeof s === 'object') {
-      try { return Object.keys(s).map(function (k) { return k + ': ' + s[k]; }).join(', '); }
-      catch (_) { return ''; }
-    }
-    return String(s);
-  }
-
   // Active outpatients come from the outpatient sibling roster (treatment plans
   // preferred, debt roster as a fallback/union), keyed by normalized phone, then
   // LEFT-JOINED with this app's local intake record. The dashboard's plan view
@@ -365,76 +356,13 @@
   // `activePatients` / `stoppedPatients` are thin filters over this so the heavy
   // cross-app join runs once per call site. A patient is stopped when discharged
   // in outpatient (plan status 'סיים טיפול') OR locally flagged (StopFlow).
+  // The merge itself lives in the framework-free, unit-tested Roster module.
   function buildPatientRoster() {
-    var byPhone = {};
-    var planStatusByPhone = {};
-    function add(name, phone, serviceType, sessions) {
-      var key = normPhone(phone);
-      if (!key) return;
-      if (!byPhone[key]) byPhone[key] = { name: name || '', phone: phone || '', serviceType: serviceType || '', sessions: sessions };
-      else {
-        if (!byPhone[key].name && name) byPhone[key].name = name;
-        if (!byPhone[key].serviceType && serviceType) byPhone[key].serviceType = serviceType;
-        if ((byPhone[key].sessions == null || byPhone[key].sessions === '') && sessions != null) byPhone[key].sessions = sessions;
-      }
-    }
-    (state.plans || []).forEach(function (p) {
-      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek);
-      var k = normPhone(p.phone);
-      if (k && p.status != null && planStatusByPhone[k] == null) planStatusByPhone[k] = p.status;
-    });
-    (state.debtRoster || []).forEach(function (c) { add(c.name, c.phone); });
-
-    // Locally-registered patients (Vered's intake) appear on the dashboard even
-    // when they are not yet in the outpatient roster — they are a base source,
-    // not only an overlay.
-    var localByPhone = {};
-    (state.patients || []).forEach(function (p) {
-      var key = normPhone(p.phone);
-      if (!key) return;
-      localByPhone[key] = p;
-      if (String(p.active) !== 'false') add(p.name, p.phone);
-    });
-
-    // A patient may have MULTIPLE active assignments (parallel treatments /
-    // therapists) — collect them all per phone.
-    var assignsByPhone = {};
-    (state.assignments || []).forEach(function (a) {
-      if (!a || String(a.active) === 'false') return;
-      var key = normPhone(a.patientPhone);
-      if (!key) return;
-      (assignsByPhone[key] = assignsByPhone[key] || []).push({
-        id: a.id, therapist: a.therapist || '', treatmentType: a.treatmentType || '',
-        frequencyPerWeek: a.frequencyPerWeek != null ? String(a.frequencyPerWeek) : '',
-        slots: a.slots || ''
-      });
-    });
-
-    return Object.keys(byPhone).map(function (key) {
-      var base = byPhone[key];
-      var local = localByPhone[key] || {};
-      var debt = debtEntryFor(base.phone);
-      var assigns = assignsByPhone[key] || [];
-      var planStatus = planStatusByPhone[key] || '';
-      return {
-        name: local.name || base.name,
-        phone: base.phone,
-        serviceType: base.serviceType,
-        rosterSessions: planSessionsText(base.sessions),
-        assignments: assigns,
-        therapists: assigns.map(function (a) { return a.therapist; }).filter(Boolean),
-        origin: local.origin || '',
-        stillAdmitted: String(local.stillAdmitted || '') === 'true',
-        admittedHouse: local.admittedHouse || '',
-        debtStatus: debt ? String(debt.debtStatus || '').toLowerCase() : '',
-        amountOwed: debt ? (Number(debt.amountOwed) || 0) : 0,
-        planStatus: planStatus,
-        stopped: StopFlow.isPatientStopped({ planStatus: planStatus, localStopped: local.stopped }),
-        stoppedBy: local.stoppedBy || '',
-        stoppedAt: local.stoppedAt || '',
-        stopNote: local.stopNote || '',
-        key: key
-      };
+    return Roster.build({
+      plans: state.plans,
+      debtRoster: state.debtRoster,
+      patients: state.patients,
+      assignments: state.assignments
     });
   }
   // Active = not stopped (the default working list everywhere). Stopped = the
@@ -478,12 +406,6 @@
       if (withTherapist && a.therapist) bits.unshift(a.therapist);
       return bits.join(' · ');
     }).join(' | ');
-  }
-  function debtEntryFor(phone) {
-    var key = normPhone(phone);
-    if (!key) return null;
-    var hits = (state.debtRoster || []).filter(function (c) { return normPhone(c.phone) === key; });
-    return hits.length === 1 ? hits[0] : null;
   }
   function patientByPhone(phone) {
     var key = normPhone(phone);
