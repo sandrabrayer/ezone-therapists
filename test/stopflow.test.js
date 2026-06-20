@@ -60,6 +60,52 @@ test('buildFlagStopPayload: blank optional fields default to empty strings', () 
   assert.deepEqual(r.payload, { phone: '0501234567', name: '', reportedBy: '', note: '' });
 });
 
+// --- buildResolveStopFlagPayload: the UNDO of flagStop ---------------------
+
+test('buildResolveStopFlagPayload: canonicalizes the phone and trims fields', () => {
+  const r = StopFlow.buildResolveStopFlagPayload({
+    phone: '052-365-9865', resolvedBy: '  כנרת  ', reason: ' חזר/ה לטיפול '
+  });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.payload, { phone: '0523659865', resolvedBy: 'כנרת', reason: 'חזר/ה לטיפול' });
+});
+
+test('buildResolveStopFlagPayload: +972 prefix becomes a leading zero', () => {
+  const r = StopFlow.buildResolveStopFlagPayload({ phone: '+972 52-365-9865' });
+  assert.equal(r.ok, true);
+  assert.equal(r.payload.phone, '0523659865');
+});
+
+test('buildResolveStopFlagPayload: a non-canonical phone is rejected (never sent)', () => {
+  assert.equal(StopFlow.buildResolveStopFlagPayload({ phone: '052365986' }).ok, false); // 9 digits
+  assert.equal(StopFlow.buildResolveStopFlagPayload({ phone: '' }).ok, false);
+  assert.equal(StopFlow.buildResolveStopFlagPayload({ phone: 'abc' }).ok, false);
+});
+
+test('buildResolveStopFlagPayload: blank optional fields default to empty strings', () => {
+  const r = StopFlow.buildResolveStopFlagPayload({ phone: '0501234567' });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.payload, { phone: '0501234567', resolvedBy: '', reason: '' });
+});
+
+// --- canRestore: only a LOCAL pending stop is reversible here ---------------
+
+test('canRestore: a locally-flagged (pending) stopped patient can be restored', () => {
+  assert.equal(StopFlow.canRestore({ stopped: true, planStatus: 'פעיל' }), true);
+  assert.equal(StopFlow.canRestore({ stopped: true, planStatus: '' }), true);
+});
+
+test('canRestore: a real outpatient discharge is NOT restorable from here', () => {
+  // Discharge ('סיים טיפול') is owned by outpatient even if also locally flagged.
+  assert.equal(StopFlow.canRestore({ stopped: true, planStatus: 'סיים טיפול' }), false);
+});
+
+test('canRestore: an active (not stopped) patient is not restorable', () => {
+  assert.equal(StopFlow.canRestore({ stopped: false, planStatus: 'פעיל' }), false);
+  assert.equal(StopFlow.canRestore({}), false);
+  assert.equal(StopFlow.canRestore(null), false);
+});
+
 // --- futureBookingsToCancel: today forward, unreported only ----------------
 
 const TODAY = '2026-06-14';

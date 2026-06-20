@@ -214,6 +214,8 @@
   function apiSyncPending() { return apiPost({ action: 'syncPending' }); }
   function apiSavePatient(patient, mode) { return apiPost({ action: 'savePatient', patient: patient, mode: mode || 'edit' }); }
   function apiMarkPatientStopped(body) { return apiPost(Object.assign({ action: 'markPatientStopped' }, body)); }
+  function apiRestorePatient(body) { return apiPost(Object.assign({ action: 'restorePatient' }, body)); }
+  function apiRemovePatient(body) { return apiPost(Object.assign({ action: 'removePatient' }, body)); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
 
@@ -512,10 +514,19 @@
     if (p.stoppedBy) meta.push('ע״י ' + p.stoppedBy);
     if (p.stoppedAt) meta.push(displayDate(p.stoppedAt));
     if (p.stopNote) meta.push(p.stopNote);
+    // Only a LOCAL pending stop request is reversible here (a real outpatient
+    // discharge is owned by outpatient). Delete is always offered on this list —
+    // the cleanup surface — guarded by a naming confirm in the handler.
+    var actions = '';
+    if (StopFlow.canRestore(p)) {
+      actions += '<button class="btn btn-primary btn-sm" data-restore-patient="' + escapeHtml(p.phone) + '">החזר לפעיל</button>';
+    }
+    actions += '<button class="btn btn-ghost btn-sm btn-danger" data-delete-patient="' + escapeHtml(p.phone) + '">מחק מטופל/ת</button>';
     return '<div class="assign-row stopped-row">' +
       '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
       '<span class="assign-type">' + escapeHtml(reason) + '</span>' +
       '<span class="assign-ther">' + escapeHtml(meta.join(' · ')) + '</span>' +
+      '<span class="assign-actions">' + actions + '</span>' +
       '</div>';
   }
 
@@ -1043,7 +1054,12 @@
     invalid_approver: 'מאשר/ת לא מורשה',
     invalid_gate_status: 'סטטוס שער לא תקין',
     invalid_phone: 'מספר טלפון לא תקין (נדרשות 10 ספרות, מתחיל ב-0)',
-    debt_block: 'נמצא חוב בבדיקה החוזרת — נדרש אישור רון/סנדרה כדי לדווח ביצוע'
+    debt_block: 'נמצא חוב בבדיקה החוזרת — נדרש אישור רון/סנדרה כדי לדווח ביצוע',
+    // Stop-flag UNDO (restore / delete) — fail-closed reasons from resolveStopFlag.
+    stop_flag_unconfigured: 'סנכרון בקשות ההפסקה אינו מוגדר בשרת — לא ניתן לבטל',
+    resolve_failed: 'לא ניתן לבטל את בקשת ההפסקה אצל ורד — נסו שוב',
+    resolve_rejected: 'בקשת ביטול ההפסקה נדחתה אצל ורד',
+    resolve_unreachable: 'מטופלי חוץ אינם זמינים כרגע — נסו שוב'
   };
   function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
 
@@ -1270,6 +1286,37 @@
     apiMarkPatientStopped({ phone: rec.phone, name: rec.name, reportedBy: state.therapist || 'עורך', note: note || '' })
       .then(function () { toast('נשלחה בקשת הפסקה לאישור ורד'); return loadAll(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); });
+  }
+
+  // The display name for a stopped/orphaned patient — looked up by phone from the
+  // stopped list (NOT patientByPhone, which only sees ACTIVE patients), falling
+  // back to the phone itself so an orphaned flag is still actionable.
+  function stoppedNameByPhone(phone) {
+    var key = normPhone(phone);
+    var hit = stoppedPatients().filter(function (p) { return p.key === key; })[0];
+    return (hit && hit.name) || phone;
+  }
+
+  // Undo a pending stop request → patient returns to active. Resolves the
+  // outpatient StopFlag first (fail-closed server-side), then clears the local
+  // stop flag. Works by PHONE, so an orphaned flag (no active match) still clears.
+  function restorePatient(phone) {
+    var name = stoppedNameByPhone(phone);
+    if (!window.confirm('להחזיר את ' + name + ' לרשימת הפעילים?\nבקשת ההפסקה תבוטל אצל ורד. הטיפולים שבוטלו לא ישוחזרו — יש לקבוע מחדש לפי הצורך.')) return;
+    apiRestorePatient({ phone: phone, reportedBy: state.therapist || 'עורך' })
+      .then(function () { toast('המטופל/ת הוחזר/ה לפעילים'); return loadAll(); })
+      .catch(function (err) { toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true); });
+  }
+
+  // Delete a patient entirely (test cleanup): removes the local record and
+  // resolves any outpatient StopFlag. Double-guarded (destructive). By PHONE, so
+  // an orphaned flag with no matching patient can still be cleaned up.
+  function removePatient(phone) {
+    var name = stoppedNameByPhone(phone);
+    if (!window.confirm('למחוק לצמיתות את ' + name + '?\nפעולה זו מסירה את רשומת המטופל/ת המקומית ומבטלת בקשת הפסקה אצל ורד. אין לבטל.')) return;
+    apiRemovePatient({ phone: phone, reportedBy: state.therapist || 'עורך' })
+      .then(function () { toast('המטופל/ת נמחק/ה'); return loadAll(); })
+      .catch(function (err) { toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true); });
   }
 
   // --- patient intake / edit modal (identity + origin) ------------------
@@ -1587,6 +1634,15 @@
     }
     on('#patientsList', 'click', onPatientListClick);  // Vered dashboard (no actions)
     on('#assignList', 'click', onPatientListClick);    // Vered שיבוץ (register/assign)
+
+    // Stopped / discharged list — restore (undo a pending stop) and delete (test
+    // cleanup). By phone, so an orphaned flag with no active match still works.
+    on('#stoppedList', 'click', function (e) {
+      var rp = e.target.closest('[data-restore-patient]');
+      if (rp) { restorePatient(rp.getAttribute('data-restore-patient')); return; }
+      var dp = e.target.closest('[data-delete-patient]');
+      if (dp) { removePatient(dp.getAttribute('data-delete-patient')); return; }
+    });
 
     // המטופלים שלי (therapist): schedule + report did-it-happen on their patients.
     on('#mineSearch', 'input', function (e) { state.mineSearch = e.target.value; renderMine(); });

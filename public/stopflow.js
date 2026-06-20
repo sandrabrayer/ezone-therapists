@@ -89,6 +89,43 @@
   }
 
   /**
+   * Build the `resolveStopFlag` POST body — the UNDO of `flagStop`. Same
+   * canonical-phone discipline as buildFlagStopPayload (a phone that can't be made
+   * canonical is rejected, never sent). `resolvedBy`/`reason` are trimmed strings.
+   * The outpatient receiver removes the StopFlag matching this phone, EVEN when no
+   * Client matches it (the orphaned-flag case), so a stuck flag can always clear.
+   * @param {{phone:*, resolvedBy?:*, reason?:*}} input
+   * @param {object} [phoneApi] injectable for tests (defaults to Phone)
+   * @returns {{ok:true, payload:object} | {ok:false, error:string}}
+   */
+  function buildResolveStopFlagPayload(input, phoneApi) {
+    input = input || {};
+    var P = phoneApi || Phone;
+    var pv = P.toCanonical(input.phone);
+    if (!pv.ok) return { ok: false, error: pv.error };
+    return {
+      ok: true,
+      payload: {
+        phone: pv.value,
+        resolvedBy: String(input.resolvedBy == null ? '' : input.resolvedBy).trim(),
+        reason: String(input.reason == null ? '' : input.reason).trim()
+      }
+    };
+  }
+
+  /**
+   * Can this stopped roster item be RESTORED to active from the therapists side?
+   * Only a LOCAL pending stop request is reversible here. A real outpatient
+   * DISCHARGE ('סיים טיפול') is owned by outpatient and is NOT undone from here —
+   * restoring that would require re-admitting the patient in outpatient.
+   * @param {{stopped?:*, planStatus?:*}} item a built roster item
+   * @returns {boolean}
+   */
+  function canRestore(item) {
+    return !!item && !!item.stopped && !isStoppedStatus(item.planStatus);
+  }
+
+  /**
    * The future, UNREPORTED bookings for one patient — the rows to cancel on stop.
    * Matches by normalized phone; "future" is today forward (`date >= today`);
    * already-reported rows (attendance set) and past rows are KEPT for the record.
@@ -146,6 +183,8 @@
     isStoppedStatus: isStoppedStatus,
     isPatientStopped: isPatientStopped,
     buildFlagStopPayload: buildFlagStopPayload,
+    buildResolveStopFlagPayload: buildResolveStopFlagPayload,
+    canRestore: canRestore,
     futureBookingsToCancel: futureBookingsToCancel,
     futureBookingIdsToCancel: futureBookingIdsToCancel,
     splitStopped: splitStopped

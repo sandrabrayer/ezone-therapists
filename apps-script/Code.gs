@@ -913,6 +913,34 @@ function _postFlagStop(body) {
   }
 }
 
+// POST resolveStopFlag to outpatient — the UNDO of flagStop. Removes the StopFlag
+// matching this phone (even an ORPHANED one with no Client match), so a stuck
+// flag always clears. Same server-to-server, fail-closed pattern + secret as
+// _postFlagStop. Idempotent: resolving a non-existent flag returns ok. Returns
+// { ok:true } or { ok:false, error }.
+function _postResolveStopFlag(body) {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('STOP_FLAG_SECRET');
+  if (!url || !secret) return { ok: false, error: 'stop_flag_unconfigured' };
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=resolveStopFlag&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, error: 'resolve_http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false) return { ok: false, error: (data && data.error) || 'resolve_rejected' };
+    return { ok: true, resolved: data.resolved };
+  } catch (e) {
+    return { ok: false, error: 'resolve_unreachable' };
+  }
+}
+
 /* ===== Clinical billing-type push (SENDER) =====
  * On assignment save, push the patient's clinical treatment type to outpatient
  * so its per-patient billing rate follows the clinical plan chosen here. Mirror
@@ -1145,6 +1173,109 @@ function _markPatientStopped(payload) {
   }
 }
 
+// Clear the LOCAL stop flag on the Patients row matching canonPhone (the inverse
+// of _markLocalPatientStopped). Phone matched tolerantly (recovers a dropped
+// zero). Returns true if a row was found and cleared. A patient with no local row
+// (an outpatient-only / orphaned flag) is simply a no-op here — the outpatient
+// resolve is what clears that case.
+function _clearLocalPatientStop(sh, canonPhone) {
+  var key = _matchPhone(canonPhone);
+  var phoneIdx = PATIENTS_HEADERS.indexOf('phone');
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return false;
+  var grid = sh.getRange(2, 1, lastRow - 1, PATIENTS_HEADERS.length).getValues();
+  var cleared = { stopped: '', stoppedBy: '', stoppedAt: '', stopNote: '' };
+  for (var i = 0; i < grid.length; i++) {
+    if (_matchPhone(grid[i][phoneIdx]) !== key) continue;
+    for (var h = 0; h < PATIENTS_HEADERS.length; h++) {
+      var col = PATIENTS_HEADERS[h];
+      if (cleared.hasOwnProperty(col)) sh.getRange(i + 2, h + 1, 1, 1).setValues([[cleared[col]]]);
+    }
+    return true;
+  }
+  return false;
+}
+
+// Delete the Patients row(s) matching canonPhone outright (test cleanup). Phone
+// matched tolerantly. Returns the number of rows removed. Bottom-up so row
+// indices stay valid.
+function _deleteLocalPatient(sh, canonPhone) {
+  var key = _matchPhone(canonPhone);
+  var phoneIdx = PATIENTS_HEADERS.indexOf('phone');
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 0;
+  var grid = sh.getRange(2, 1, lastRow - 1, PATIENTS_HEADERS.length).getValues();
+  var toDelete = [];
+  for (var i = 0; i < grid.length; i++) {
+    if (_matchPhone(grid[i][phoneIdx]) === key) toDelete.push(i + 2);
+  }
+  for (var j = toDelete.length - 1; j >= 0; j--) sh.deleteRow(toDelete[j]);
+  return toDelete.length;
+}
+
+/* ===== Undo a stop request — restore a patient to ACTIVE =====
+ * The inverse of _markPatientStopped. FAIL-CLOSED like the stop itself: resolve
+ * the outpatient StopFlag FIRST (server-to-server) and only on success clear the
+ * local flag — so the two sides never desync (a patient is never shown active
+ * here while Vered still holds a pending flag). Resolving is idempotent and
+ * orphan-safe: a flag with no Client match still clears by phone, and a patient
+ * with no outpatient flag (resolved:0) still returns ok. Does NOT resurrect the
+ * future bookings cancelled at stop time — the therapist re-schedules as needed. */
+function _restorePatient(payload) {
+  var p = payload || {};
+  var canon = _toCanonicalPhone(p.phone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+
+  // 1) Resolve (remove) the outpatient StopFlag FIRST. If it can't reach Vered,
+  //    change nothing locally.
+  var resolve = _postResolveStopFlag({
+    phone: canon,
+    resolvedBy: String(p.reportedBy == null ? '' : p.reportedBy).trim(),
+    reason: String(p.note == null ? '' : p.note).trim()
+  });
+  if (!resolve.ok) return { ok: false, error: resolve.error || 'resolve_failed' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
+    var cleared = _clearLocalPatientStop(pSh, canon);
+    return { ok: true, restored: true, phone: canon, clearedLocal: cleared, resolved: resolve.resolved };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+/* ===== Delete a patient entirely (test cleanup) =====
+ * Removes this app's local Patients record AND resolves any outpatient StopFlag
+ * for the phone (so no orphaned flag is left pointing at a deleted patient).
+ * FAIL-CLOSED on the resolve, same discipline as restore: if the StopFlag can't
+ * be cleared on Vered's side, the local record is NOT deleted. Assignments and
+ * past bookings are left as-is (remove them via removeAssignment / removeSchedule
+ * if needed). */
+function _removePatient(payload) {
+  var p = payload || {};
+  var canon = _toCanonicalPhone(p.phone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+
+  var resolve = _postResolveStopFlag({
+    phone: canon,
+    resolvedBy: String(p.reportedBy == null ? '' : p.reportedBy).trim(),
+    reason: String(p.note == null ? '' : p.note).trim() || 'patient_deleted'
+  });
+  if (!resolve.ok) return { ok: false, error: resolve.error || 'resolve_failed' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
+    var removed = _deleteLocalPatient(pSh, canon);
+    return { ok: true, removed: removed, phone: canon, resolved: resolve.resolved };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
 // Upsert one assignment (patient ↔ therapist ↔ plan), keyed by id. A patient can
 // have several active assignments — multiple parallel treatments/therapists.
 // Both the therapist and the plan (type + weekly frequency) stay editable.
@@ -1304,6 +1435,8 @@ function doPost(e) {
     if (action === 'syncPending') return _json(_syncPending());
     if (action === 'savePatient') return _json(_savePatient(payload));
     if (action === 'markPatientStopped') return _json(_markPatientStopped(payload));
+    if (action === 'restorePatient') return _json(_restorePatient(payload));
+    if (action === 'removePatient') return _json(_removePatient(payload));
     if (action === 'saveAssignment') return _json(_saveAssignment(payload));
     if (action === 'updateBooking') return _json(_updateBooking(payload));
     if (action === 'removeAssignment') {
