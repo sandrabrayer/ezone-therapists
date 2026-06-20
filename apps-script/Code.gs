@@ -95,11 +95,14 @@ var TREATMENT_TYPES_HEADERS = ['name', 'active', 'isGroup'];
  * any MISSING seed names appended (by name) so additions here reach live sheets
  * too. Retiring an entry sets active=false (the row stays), so a retired name is
  * still "present" and never re-added — only a hard row delete would resurrect a
- * seed name. (דליה appears once; activeNames also de-dupes by name.) */
+ * seed name. THERAPISTS_SEED is the FINAL 19-name FULL-name roster — the old SHORT
+ * names (עידו, דליה, חנן, מעיין, איתן, מרים, תמר, שחר, יסמין) were removed so a
+ * hard delete stays deleted. Mirror of public/therapist-migration.js
+ * FINAL_THERAPISTS — keep both in sync. */
 var THERAPISTS_SEED = [
-  'כנרת', 'דליה', 'הילה', 'עידו', 'חנן', 'מעיין', 'איתן',
-  'אלה', 'שירן', 'ד"ר שפרינץ', 'דנה', 'רמי', 'ד"ר נטליה',
-  'מרים', 'יסמין', 'תמר', 'שחר', 'יפעת'
+  'מעיין דלומי', 'תמר גנץ', 'אורן כביר', 'אביב מלכה', 'רמי', 'כנרת', 'הילה',
+  'עידו בוזגלו', 'אלה', 'שירן', 'דנה', 'יפעת', 'איתן דשה', 'דליה מלמד',
+  'נועה זיפמן', 'אסתר', 'ד״ר שפרינץ', 'ד״ר נטליה', 'ד״ר דנגור'
 ];
 var TREATMENT_TYPES_SEED = [
   { name: 'פרטני כללי', active: 'true', isGroup: 'false' },
@@ -1404,6 +1407,103 @@ function _removeSchedule(id) {
   }
 }
 
+/* ===== One-time therapist name migration (short → full) =====
+ * Mirror of public/therapist-migration.js (FINAL_THERAPISTS = THERAPISTS_SEED,
+ * SHORT_TO_FULL, migrateName, normalizeKey). Renames the therapist field on
+ * existing Assignment + Schedule rows from the old SHORT names to the FINAL full
+ * names, so pay/credit matching lines up with the new roster. ONLY the explicit
+ * mapping is applied — no mapping is invented; a name with no full equivalent is
+ * left as-is and reported. IDEMPOTENT: a full name (or any non-short name) is
+ * returned unchanged, so re-running rewrites nothing. Approvals (audit trail) is
+ * intentionally NOT migrated. */
+var _THERAPIST_SHORT_TO_FULL = {
+  'דליה': 'דליה מלמד',
+  'מעיין': 'מעיין דלומי',
+  'תמר': 'תמר גנץ',
+  'איתן': 'איתן דשה',
+  'עידו': 'עידו בוזגלו',
+  'נועה': 'נועה זיפמן'
+};
+function _migrateTherapistName(name) {
+  var t = String(name == null ? '' : name).trim();
+  return _THERAPIST_SHORT_TO_FULL.hasOwnProperty(t) ? _THERAPIST_SHORT_TO_FULL[t] : t;
+}
+// Punctuation-only key (drop gershayim/geresh + ASCII quotes, collapse spaces) so
+// ד״ר vs ד"ר count as the same name for roster membership.
+function _normalizeTherapistKey(name) {
+  return String(name == null ? '' : name).trim().replace(/[״׳"']/g, '').replace(/\s+/g, ' ');
+}
+function _rosterKeySet() {
+  var exact = {}, norm = {};
+  for (var i = 0; i < THERAPISTS_SEED.length; i++) {
+    exact[String(THERAPISTS_SEED[i]).trim()] = true;
+    norm[_normalizeTherapistKey(THERAPISTS_SEED[i])] = true;
+  }
+  return { exact: exact, norm: norm };
+}
+
+// Rewrite the `therapist` column of one sheet in place. Returns the per-row
+// changes plus the distinct post-migration names that are unknown / quote-variant.
+function _migrateTherapistColumn(sheetName, headers) {
+  var roster = _rosterKeySet();
+  var sh = _ensureSheet(sheetName, headers);
+  var thIdx = headers.indexOf('therapist');
+  var idIdx = headers.indexOf('id');
+  var lastRow = sh.getLastRow();
+  var out = { scanned: 0, migrated: 0, changes: [], unmapped: {}, punctuationVariants: {} };
+  if (thIdx < 0 || lastRow < 2) return out;
+  var grid = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  for (var i = 0; i < grid.length; i++) {
+    var from = String(grid[i][thIdx] == null ? '' : grid[i][thIdx]).trim();
+    if (!from) continue;
+    out.scanned++;
+    var to = _migrateTherapistName(from);
+    if (to !== from) {
+      sh.getRange(i + 2, thIdx + 1, 1, 1).setValues([[to]]);   // write back only changed cells
+      out.migrated++;
+      out.changes.push({ sheet: sheetName, id: idIdx > -1 ? String(grid[i][idIdx]) : '', from: from, to: to });
+    }
+    // Classify the POST-migration name for the report.
+    if (!roster.norm[_normalizeTherapistKey(to)]) out.unmapped[to] = (out.unmapped[to] || 0) + 1;
+    else if (!roster.exact[to]) out.punctuationVariants[to] = (out.punctuationVariants[to] || 0) + 1;
+  }
+  return out;
+}
+
+// The migration action — safe to run repeatedly (idempotent). Returns a full
+// report: what was renamed, and which therapist names are NOT in the final 19
+// (so a human decides), incl. ד״ר-quote variants surfaced separately.
+function _migrateTherapistNames() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var a = _migrateTherapistColumn('Assignments', ASSIGNMENTS_HEADERS);
+    var s = _migrateTherapistColumn('Schedule', SCHEDULE_HEADERS);
+    function keys(o1, o2) {
+      var m = {}; [o1, o2].forEach(function (o) { Object.keys(o).forEach(function (k) { m[k] = (m[k] || 0) + o[k]; }); });
+      return Object.keys(m).map(function (k) { return { name: k, rows: m[k] }; });
+    }
+    return {
+      ok: true,
+      assignments: { scanned: a.scanned, migrated: a.migrated },
+      schedule: { scanned: s.scanned, migrated: s.migrated },
+      changes: a.changes.concat(s.changes),
+      unmapped: keys(a.unmapped, s.unmapped),                       // unknown names — decide manually
+      punctuationVariants: keys(a.punctuationVariants, s.punctuationVariants)   // ד״ר vs ד"ר, left as-is
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+// Run this straight from the Apps Script editor (Run ▸ migrateTherapistNamesNow)
+// for a one-time, in-place migration; the full report is logged. Idempotent.
+function migrateTherapistNamesNow() {
+  var report = _migrateTherapistNames();
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 function _json(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
@@ -1447,6 +1547,7 @@ function doPost(e) {
       var id = payload.id || (payload.row && payload.row.id) || '';
       return _json(_removeSchedule(id));
     }
+    if (action === 'migrateTherapistNames') return _json(_migrateTherapistNames());
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });
