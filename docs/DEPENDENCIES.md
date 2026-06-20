@@ -14,6 +14,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
 | 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
 | 6 | `setClinicalType` (**WRITE**) | `ezone-outpatient` | **Receiver LIVE on the outpatient side** (outpatient PR #30, deployed). Remaining: set the matching `CLINICAL_TYPE_SECRET` Script Property on the **therapists** Apps Script + redeploy it. Contract documented in [`outpatient-setClinicalType.patch.md`](outpatient-setClinicalType.patch.md). | On assignment save, pushes the patient's clinical treatment type so outpatient's per-patient billing rate follows the clinical plan |
+| 7 | `resolveStopFlag` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-resolveStopFlag.patch.md`](outpatient-resolveStopFlag.patch.md). Apply + redeploy. **Reuses `STOP_FLAG_SECRET`** (no new secret). | «החזר לפעיל» (undo a stop request) + delete-patient — clears the StopFlag, incl. an **orphaned** one with no Client match |
 
 ## Env vars on the therapists Railway service
 
@@ -54,6 +55,12 @@ above. Set on the therapists Apps Script:
   `stop_flag_unconfigured` and changes nothing — no local stop flag, no booking
   cancellation — so a patient is never hidden until the request actually reaches
   Vered. Reuses `OUTPATIENT_SHEETS_URL`; no new Node env var (server-to-server).
+  **The same `STOP_FLAG_SECRET` also gates `resolveStopFlag` (dep #7)** — the UNDO
+  of `flagStop` used by «החזר לפעיל» (restore) and delete-patient. Both restore and
+  delete are **fail-closed on the resolve**: until the outpatient `resolveStopFlag`
+  receiver is deployed, they return an error and change nothing locally — no
+  half-states, no patient left active here while a flag still stands on Vered's
+  side.
 - `CLINICAL_TYPE_SECRET` — the **clinical billing-type push** (dep #6,
   `setClinicalType`); must match the value on the outpatient Apps Script.
   **Fail-open-with-flag** (NOT fail-closed like the stop flow): the assignment is
