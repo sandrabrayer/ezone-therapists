@@ -1,7 +1,7 @@
 # Cross-app dependencies
 
 `ezone-therapists` consumes three read-only projections from sibling apps and
-makes **three cross-app WRITEs** (deps #4, #5, #6). The browser never sees a secret —
+makes **five cross-app WRITEs** (deps #4–#8). The browser never sees a secret —
 reads are proxied by the Node server, and the writes originate server-to-server
 from the therapists Apps Script (which holds its own secret copies). All must be
 deployed on the sibling side for the corresponding feature to work end-to-end.
@@ -15,6 +15,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
 | 6 | `setClinicalType` (**WRITE**) | `ezone-outpatient` | **Receiver LIVE on the outpatient side** (outpatient PR #30, deployed). Remaining: set the matching `CLINICAL_TYPE_SECRET` Script Property on the **therapists** Apps Script + redeploy it. Contract documented in [`outpatient-setClinicalType.patch.md`](outpatient-setClinicalType.patch.md). | On assignment save, pushes the patient's clinical treatment type so outpatient's per-patient billing rate follows the clinical plan |
 | 7 | `resolveStopFlag` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-resolveStopFlag.patch.md`](outpatient-resolveStopFlag.patch.md). Apply + redeploy. **Reuses `STOP_FLAG_SECRET`** (no new secret). | «החזר לפעיל» (undo a stop request) + delete-patient — clears the StopFlag, incl. an **orphaned** one with no Client match |
+| 8 | `deactivateClient` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-deactivateClient.patch.md`](outpatient-deactivateClient.patch.md). Apply (incl. excluding inactive Clients from `getTreatmentPlans`/`getDebtStatus`) + redeploy. **NEW secret `DEACTIVATE_CLIENT_SECRET`** on both Apps Scripts. Ship as a separate PR into `claude/youthful-volta-laarnk`. | Delete-patient PROPAGATION — deactivates the matching outpatient Client so a patient deleted here leaves the roster union (no re-appear via `getTreatmentPlans`/`getDebtStatus`) |
 
 ## Env vars on the therapists Railway service
 
@@ -71,6 +72,17 @@ above. Set on the therapists Apps Script:
   var** (the write goes Apps Script → Apps Script). The outpatient receiver is
   already **live** (outpatient PR #30), so once `CLINICAL_TYPE_SECRET` is set here
   and the therapists Apps Script is redeployed, the push works end-to-end.
+- `DEACTIVATE_CLIENT_SECRET` — the **patient-delete propagation** (dep #8,
+  `deactivateClient`); must match the value on the outpatient Apps Script. A
+  **dedicated, NEW** secret — deliberately NOT reused from `STOP_FLAG_SECRET`
+  (deactivating a Client is more destructive than clearing a stop flag, so least-
+  authority keeps the domains separate). **Fail-closed** like the stop/restore
+  flow: until it's set (and the outpatient `deactivateClient` receiver deployed),
+  deleting a patient returns `deactivate_unconfigured` / `deactivate_unreachable`
+  and changes **nothing locally** — the patient is never removed here while still
+  active on Vered's side. Orphan-safe: a phone matching no Client returns
+  `deactivated:0` and the local delete proceeds. Reuses `OUTPATIENT_SHEETS_URL`;
+  **no new Node/Railway env var** (Apps Script → Apps Script).
 
 ## Source-data follow-up (outpatient side)
 

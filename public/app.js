@@ -1059,7 +1059,13 @@
     stop_flag_unconfigured: 'סנכרון בקשות ההפסקה אינו מוגדר בשרת — לא ניתן לבטל',
     resolve_failed: 'לא ניתן לבטל את בקשת ההפסקה אצל ורד — נסו שוב',
     resolve_rejected: 'בקשת ביטול ההפסקה נדחתה אצל ורד',
-    resolve_unreachable: 'מטופלי חוץ אינם זמינים כרגע — נסו שוב'
+    resolve_unreachable: 'מטופלי חוץ אינם זמינים כרגע — נסו שוב',
+    // Delete propagation — fail-closed reasons from deactivateClient. The local
+    // record is NOT removed until the outpatient client is deactivated.
+    deactivate_unconfigured: 'סנכרון מחיקת המטופל אינו מוגדר בשרת — לא ניתן למחוק',
+    deactivate_failed: 'לא ניתן להשבית את המטופל/ת במטופלי חוץ — נסו שוב',
+    deactivate_rejected: 'מחיקת המטופל/ת נדחתה אצל ורד',
+    deactivate_unreachable: 'מטופלי חוץ אינם זמינים כרגע — נסו שוב'
   };
   function saveErrorText(code) { return SAVE_ERROR_TEXT[code] || code || 'נדחה'; }
 
@@ -1313,7 +1319,7 @@
   // an orphaned flag with no matching patient can still be cleaned up.
   function removePatient(phone) {
     var name = stoppedNameByPhone(phone);
-    if (!window.confirm('למחוק לצמיתות את ' + name + '?\nפעולה זו מסירה את רשומת המטופל/ת המקומית ומבטלת בקשת הפסקה אצל ורד. אין לבטל.')) return;
+    if (!window.confirm('למחוק לצמיתות את ' + name + '?\nפעולה זו מסירה את רשומת המטופל/ת המקומית, מבטלת בקשת הפסקה ומשביתה את המטופל/ת במטופלי חוץ. אין לבטל.')) return;
     apiRemovePatient({ phone: phone, reportedBy: state.therapist || 'עורך' })
       .then(function () { toast('המטופל/ת נמחק/ה'); return loadAll(); })
       .catch(function (err) { toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true); });

@@ -1,5 +1,33 @@
 # Changelog
 
+## Cross-app data integrity — canonical assignment phone + delete propagation
+
+Two integrity fixes keeping the therapists and outpatient apps in sync.
+**(a)** `_saveAssignment` (`apps-script/Code.gs`) now canonicalizes `patientPhone`
+exactly like `_savePatient` — reject empty (`missing_phone`), then
+`_toCanonicalPhone` (reject non-canonical as `invalid_phone`), and **store the
+canonical value**. Previously it stored the raw trimmed phone, so an assignment
+could key by a different phone than its patient and the roster union
+(`public/roster.js`) split one patient into two — the **רון מנחם** bug.
+**(b)** Deleting a patient (`_removePatient`) now **propagates** to outpatient:
+new **`_postDeactivateClient`** sends a server-to-server `deactivateClient` POST
+(canonical phone + the **dedicated, new** `DEACTIVATE_CLIENT_SECRET`, never reused
+from `STOP_FLAG_SECRET`; the secret never reaches the browser). It runs
+**fail-closed before** the local row delete, so a patient is never removed here
+while still active on Vered's side, and is **orphan-safe** (no matching Client →
+`deactivated:0`, local delete proceeds). We **deactivate, not hard-delete** — it's
+reversible, preserves outpatient billing/session history, and `getTreatmentPlans`
+already filters by status, so the deactivated Client drops out of the roster union
+instead of re-appearing. New pure **`public/delete-sync.js`** (`buildPayload` /
+`interpretResponse`, mirrored by `_postDeactivateClient`) + `test/delete-sync.test.js`
+(+18, suite **213/0**). Receiver contract (dep #8) ships as a **separate outpatient
+PR** into `claude/youthful-volta-laarnk`:
+[`docs/outpatient-deactivateClient.patch.md`](docs/outpatient-deactivateClient.patch.md).
+**Needs the `DEACTIVATE_CLIENT_SECRET` Script Property on both Apps Scripts + a
+therapists Apps Script redeploy**; no new Railway env var (Apps Script → Apps
+Script). Full notes:
+[`CHANGELOG-cross-app-data-integrity.md`](CHANGELOG-cross-app-data-integrity.md).
+
 ## Iteration 18 (step 3) — push the session outcome to outpatient pay
 
 On a successful outcome save, the marked **session outcome** is now pushed to the
