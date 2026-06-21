@@ -1,17 +1,20 @@
 :root {
-  --bg:        #16263d;  --bg-elev: #1d3252;  --panel: #243a5c;  --panel-2: #2d456a;
-  --border:    #3c557d;  --text: #ffffff;     --text-soft: #eef5fc;  --muted: #b9c8de;
-  --accent:    #38bdf8;  --accent-2: #7dd3fc; --accent-deep: #0284c7;
+  --bg:        #150d1f;  --bg-elev: #1e1430;  --panel: #2a1c42;  --panel-2: #34244f;
+  --border:    #5a3d7a;  --text: #ffffff;     --text-soft: #f3ebfa;  --muted: #c9b8dd;
+  --accent:    #a855f7;  --accent-2: #c77dff; --accent-deep: #7c3aed;
+  --pink:      #ec4899;
   --red:       #ff7676;  --amber: #f2c355;
-  --shadow:    0 10px 26px rgba(0,0,0,0.4);
+  --shadow:    0 10px 26px rgba(0,0,0,0.45);
 
-  /* CYAN/SKY accent keeps this app visually distinct from the indigo dashboard
-     app. ITERATION 3 lightened the navy base from near-black to a comfortable
-     slate-blue (the iteration-2 navy was too dark to use comfortably); the dark
-     RTL theme and component structure are otherwise unchanged. The component CSS
-     below references --green / --green-2 / --green-deep (carried over verbatim);
-     those legacy names are aliased to the cyan accent so everything renders
-     sky-blue. The .chip-paid/partial/unpaid semantic colors are left untouched. */
+  /* PURPLE/PINK is this app's dominant color — each E-ZONE app has its own
+     signature accent (outpatient = green, dashboard = indigo, therapists =
+     purple/pink) over the SAME shared structure (cards, panels, badges, layout).
+     Violet primary (--accent) with a pink highlight (--pink) on a deep aubergine
+     base. The component CSS below references --green / --green-2 / --green-deep
+     (carried over verbatim from the shared house stylesheet); those legacy names
+     are aliased to the violet accent so every component renders purple without
+     touching the shared markup. The .chip-paid/partial/unpaid semantic payment
+     colors are intentionally left untouched. */
   --green:      var(--accent);
   --green-2:    var(--accent-2);
   --green-deep: var(--accent-deep);
@@ -22,7 +25,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #1f4063 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #2e1a47 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -64,7 +67,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 .btn:hover { background: var(--panel-2); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #04212e; font-weight: 600; }
+.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #1a0820; font-weight: 600; }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { background: transparent; }
 .btn-danger { background: transparent; border-color: #6b2a2a; color: #ff9b9b; }
@@ -73,7 +76,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #1f4063, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #2e1a47, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -240,7 +243,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 .status-badge {
   font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
 }
-.status-active { background: #0c2c3f; color: var(--green-2); border-color: var(--green-deep); }
+.status-active { background: var(--panel-2); color: var(--green-2); border-color: var(--green-deep); }
 .status-pause { background: #3a310f; color: var(--amber); border-color: #5a4818; }
 .status-done { background: #3a0f10; color: #ef8484; border-color: #5a1818; }
 
@@ -423,13 +426,13 @@ button.month-pay-btn {
 button.month-pay-btn:hover { filter: brightness(0.94); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12) inset; }
 button.month-pay-btn:active { filter: brightness(0.88); }
 
-.next-bill { color: #004085; font-weight: 600; }
+.next-bill { color: var(--green-2); font-weight: 600; }
 
 .form-section-title {
   font-size: 0.82rem;
   font-weight: 700;
-  color: #1a2e4a;
-  border-top: 1px solid #e5e7eb;
+  color: var(--text-soft);
+  border-top: 1px solid var(--border);
   padding-top: 10px;
   margin-top: 4px;
   letter-spacing: 0.02em;
@@ -438,16 +441,16 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .retention-section-title {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #9fcfcf;
+  color: var(--accent-2);
   padding: 18px 4px 8px;
-  border-bottom: 2px solid #2a3f5a;
+  border-bottom: 2px solid var(--border);
   margin-bottom: 12px;
   letter-spacing: 0.03em;
 }
 
 .ret-card {
-  background: #1a2e4a;
-  border: 1px solid #2a3f5a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 18px;
   margin-bottom: 10px;
@@ -485,11 +488,11 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   display: flex;
   gap: 10px;
   font-size: 0.85rem;
-  color: #c5d5e8;
+  color: var(--text-soft);
 }
 
 .ret-label {
-  color: #7a9bbf
+  color: var(--muted);
   min-width: 100px;
   font-weight: 600;
   flex-shrink: 0;
@@ -516,7 +519,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   flex-direction: row !important;
   gap: 12px;
   padding: 4px 0;
-  border-bottom: 1px solid #1e3a56;
+  border-bottom: 1px solid var(--border);
 }.modal {
   overflow-y: auto !important;
 }
@@ -671,7 +674,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   border: 1px solid var(--border);
   flex-shrink: 0;
 }
-.charge-status-paid    { background: #0c2c3f; color: var(--green-2); border-color: var(--green-deep); }
+.charge-status-paid    { background: var(--panel-2); color: var(--green-2); border-color: var(--green-deep); }
 
 /* ===== Iteration 2 — scheduling UI ===== */
 .btn-sm { padding: 4px 10px; font-size: 0.82rem; }
@@ -702,7 +705,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    The chosen outcome is highlighted; its color matches the outcome chip:
    happened = ok, therapist-cancelled = warn, patient-no-show = bad. */
 .outcome-picker { flex-wrap: wrap; }
-.outcome-btn.is-active { color: #04212e; font-weight: 600; border-color: transparent; }
+.outcome-btn.is-active { color: #1a0820; font-weight: 600; border-color: transparent; }
 .outcome-btn.outcome-happened.is-active            { background: #d4edda; color: #155724; border-color: #155724; }
 .outcome-btn.outcome-therapist_cancelled.is-active { background: #fff3cd; color: #856404; border-color: #856404; }
 .outcome-btn.outcome-patient_no_show.is-active     { background: #f8d7da; color: #721c24; border-color: #721c24; }
@@ -762,4 +765,4 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 
 /* «קבוע» tag on a recurring occurrence in the weekly view */
 .recurring-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-inline-start: 6px;
-  background: rgba(99, 102, 241, 0.18); color: #c7d2fe; vertical-align: middle; }
+  background: rgba(168, 85, 247, 0.18); color: var(--accent-2); vertical-align: middle; }
