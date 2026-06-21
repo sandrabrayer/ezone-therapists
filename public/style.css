@@ -775,6 +775,14 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .assign-row-pending { border-right-color: var(--amber); }
 
+/* Soft monthly-package-cap warning in the schedule review (does not block). */
+.cap-warn {
+  margin: 6px 0 2px; padding: 8px 10px; border-radius: 8px;
+  background: rgba(242, 195, 85, 0.12);
+  border: 1px solid rgba(242, 195, 85, 0.45);
+  color: var(--amber); font-size: 12.5px; line-height: 1.5;
+}
+
 /* Treatment plan — quiet secondary line, full width, no longer competing. */
 .assign-type {
   grid-area: type;
