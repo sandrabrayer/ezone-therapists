@@ -55,6 +55,22 @@
   var SERVICE_RELABELS = { 'מרכז יום': 'ליווי יומי בקהילה' };
   function displayServiceType(v) {
     var s = String(v == null ? '' : v).trim();
+    // Some legacy/sibling records store the treatment type as a JSON blob mapping
+    // service name -> session count, e.g. {"פרטני":1} or {"מרכז יום":3,"טיפול משפחתי":1}.
+    // Rendering that raw is the cramped/unclear plan text. Unpack it to clean,
+    // relabeled service names (the count is shown separately as frequency), so the
+    // display stays readable without touching the stored data.
+    if (s.charAt(0) === '{') {
+      try {
+        var obj = JSON.parse(s);
+        var names = Object.keys(obj).map(function (k) {
+          var name = SERVICE_RELABELS[k.trim()] || k.trim();
+          var n = obj[k];
+          return (n && Number(n) > 1) ? name + ' ' + n + '×' : name;
+        });
+        if (names.length) return names.join(' + ');
+      } catch (e) { /* not valid JSON — fall through to the plain relabel */ }
+    }
     return SERVICE_RELABELS[s] || s;
   }
 
