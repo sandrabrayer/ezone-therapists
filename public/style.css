@@ -730,15 +730,60 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* ===== Iteration 4 — workflow filter, assign list, my-treatments ===== */
 .filter-sel { max-width: 200px; flex: 0 1 auto; }
 
-/* compact assign list on the שיבוץ tab */
+/* שיבוץ tab — one clear card per patient (was a cramped single-line flex) */
 .assign-row {
-  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "head    actions"
+    "ther    actions"
+    "type    type";
+  gap: 4px 12px; align-items: center;
+  padding: 14px 16px; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-right: 4px solid var(--accent);
+  border-radius: 12px;
 }
-.assign-name { font-weight: 600; min-width: 140px; }
-.assign-ther { color: var(--muted); min-width: 110px; }
-.assign-type { color: var(--text-soft); min-width: 120px; }
-.assign-actions { display: inline-flex; gap: 8px; margin-inline-start: auto; }
+.assign-row.stopped-row { border-right-color: var(--amber); opacity: 0.85; }
+
+/* Patient name — the anchor. Big, bold, bright. */
+.assign-name {
+  grid-area: head;
+  font-weight: 800; font-size: 19px; color: var(--text);
+  letter-spacing: 0.2px;
+}
+
+/* Therapist — its own line, labeled, in the accent color so the assignment
+   is unmistakable. Rendered as a pill via the «מטפל:» prefix in the markup. */
+.assign-ther {
+  grid-area: ther;
+  font-size: 14px; font-weight: 700; color: var(--accent-2);
+}
+.assign-ther .assign-ther-label {
+  color: var(--muted); font-weight: 600; font-size: 12px;
+  margin-inline-end: 6px;
+}
+.assign-ther em { color: var(--muted); font-style: normal; font-weight: 600; }
+
+/* Treatment plan — quiet secondary line, full width, no longer competing. */
+.assign-type {
+  grid-area: type;
+  color: var(--muted); font-size: 12.5px; line-height: 1.5;
+  padding-top: 6px; margin-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.assign-actions {
+  grid-area: actions;
+  display: inline-flex; gap: 8px; align-items: center;
+}
+@media (max-width: 640px) {
+  .assign-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: "head" "ther" "type" "actions";
+  }
+  .assign-actions { margin-top: 8px; }
+}
 
 /* tab 3 — my treatments */
 .mine-picker { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
