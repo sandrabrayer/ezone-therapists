@@ -630,7 +630,7 @@
       var thers = p.therapists.length ? escapeHtml(p.therapists.join(', ')) : '<em>לא שויך</em>';
       return '<div class="assign-row">' +
         '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
-        '<span class="assign-ther">' + thers + '</span>' +
+        '<span class="assign-ther"><span class="assign-ther-label">מטפל</span>' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
         // Vered's actions: patient details + therapist/plan assignment.
         // Scheduling is the THERAPIST's action — it lives in «המטופלים שלי».
