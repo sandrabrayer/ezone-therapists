@@ -67,7 +67,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 .btn:hover { background: var(--panel-2); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #2e0a1c; font-weight: 600; }
+.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #ffffff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { background: transparent; }
 .btn-danger { background: transparent; border-color: #6b2a2a; color: #ff9b9b; }
@@ -705,7 +705,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    The chosen outcome is highlighted; its color matches the outcome chip:
    happened = ok, therapist-cancelled = warn, patient-no-show = bad. */
 .outcome-picker { flex-wrap: wrap; }
-.outcome-btn.is-active { color: #2e0a1c; font-weight: 600; border-color: transparent; }
+.outcome-btn.is-active { color: #ffffff; font-weight: 700; border-color: transparent; }
 .outcome-btn.outcome-happened.is-active            { background: #d4edda; color: #155724; border-color: #155724; }
 .outcome-btn.outcome-therapist_cancelled.is-active { background: #fff3cd; color: #856404; border-color: #856404; }
 .outcome-btn.outcome-patient_no_show.is-active     { background: #f8d7da; color: #721c24; border-color: #721c24; }
@@ -765,6 +765,16 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .assign-ther em { color: var(--muted); font-style: normal; font-weight: 600; }
 
+/* Not-yet-assigned patient: amber «טרם שובץ» tag + amber accent bar, so the
+   row reads as an action item Yarden should pick up (the «שבץ מטפל» button). */
+.assign-pending {
+  font-style: normal; font-weight: 700; color: var(--amber);
+  background: rgba(242, 195, 85, 0.14);
+  border: 1px solid rgba(242, 195, 85, 0.4);
+  padding: 1px 9px; border-radius: 999px; font-size: 12px;
+}
+.assign-row-pending { border-right-color: var(--amber); }
+
 /* Treatment plan — quiet secondary line, full width, no longer competing. */
 .assign-type {
   grid-area: type;
@@ -789,6 +799,15 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .mine-picker { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .mine-picker select { min-width: 200px; }
 .mine-row .att-btns { display: inline-flex; gap: 6px; }
+
+/* The outcome/status chip (e.g. «המטפל ביטל / לא הגיע») is long; in the fixed
+   mine-row grid it was clipping. Let the chip wrap as a clean rounded block and
+   give its column enough room so the full status is always readable. */
+.mine-row .chip {
+  display: inline-block; white-space: normal; line-height: 1.35;
+  text-align: center; max-width: 100%;
+}
+.mine-row > div:nth-child(5) { min-width: 120px; }
 
 /* stopped / discharged patients — read-only, visually muted */
 .stopped-row { opacity: 0.7; }
