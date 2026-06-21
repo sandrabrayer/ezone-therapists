@@ -1,20 +1,20 @@
 :root {
-  --bg:        #150d1f;  --bg-elev: #1e1430;  --panel: #2a1c42;  --panel-2: #34244f;
-  --border:    #5a3d7a;  --text: #ffffff;     --text-soft: #f3ebfa;  --muted: #c9b8dd;
-  --accent:    #a855f7;  --accent-2: #c77dff; --accent-deep: #7c3aed;
-  --pink:      #ec4899;
+  --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
+  --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
+  --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
+  --purple:    #a855f7;
   --red:       #ff7676;  --amber: #f2c355;
   --shadow:    0 10px 26px rgba(0,0,0,0.45);
 
-  /* PURPLE/PINK is this app's dominant color — each E-ZONE app has its own
-     signature accent (outpatient = green, dashboard = indigo, therapists =
-     purple/pink) over the SAME shared structure (cards, panels, badges, layout).
-     Violet primary (--accent) with a pink highlight (--pink) on a deep aubergine
-     base. The component CSS below references --green / --green-2 / --green-deep
-     (carried over verbatim from the shared house stylesheet); those legacy names
-     are aliased to the violet accent so every component renders purple without
-     touching the shared markup. The .chip-paid/partial/unpaid semantic payment
-     colors are intentionally left untouched. */
+  /* FUCHSIA is this app's dominant color — each E-ZONE app has its own signature
+     accent (outpatient = green, dashboard = indigo, therapists = fuchsia/pink)
+     over the SAME shared structure (cards, panels, badges, layout). Pink-magenta
+     primary (--accent #ec4899) leads, with violet (--purple) kept as the deep
+     secondary tone, on a dark plum base. The component CSS below references
+     --green / --green-2 / --green-deep (carried over verbatim from the shared
+     house stylesheet); those legacy names are aliased to the fuchsia accent so
+     every component renders pink without touching the shared markup. The
+     .chip-paid/partial/unpaid semantic payment colors are left untouched. */
   --green:      var(--accent);
   --green-2:    var(--accent-2);
   --green-deep: var(--accent-deep);
@@ -25,7 +25,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #2e1a47 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #3a1530 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -67,7 +67,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 .btn:hover { background: var(--panel-2); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #1a0820; font-weight: 600; }
+.btn-primary { background: linear-gradient(180deg, var(--green-2), var(--green)); border-color: var(--green); color: #2e0a1c; font-weight: 600; }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { background: transparent; }
 .btn-danger { background: transparent; border-color: #6b2a2a; color: #ff9b9b; }
@@ -76,7 +76,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #2e1a47, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #3a1530, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -705,7 +705,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    The chosen outcome is highlighted; its color matches the outcome chip:
    happened = ok, therapist-cancelled = warn, patient-no-show = bad. */
 .outcome-picker { flex-wrap: wrap; }
-.outcome-btn.is-active { color: #1a0820; font-weight: 600; border-color: transparent; }
+.outcome-btn.is-active { color: #2e0a1c; font-weight: 600; border-color: transparent; }
 .outcome-btn.outcome-happened.is-active            { background: #d4edda; color: #155724; border-color: #155724; }
 .outcome-btn.outcome-therapist_cancelled.is-active { background: #fff3cd; color: #856404; border-color: #856404; }
 .outcome-btn.outcome-patient_no_show.is-active     { background: #f8d7da; color: #721c24; border-color: #721c24; }
@@ -765,4 +765,4 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 
 /* «קבוע» tag on a recurring occurrence in the weekly view */
 .recurring-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-inline-start: 6px;
-  background: rgba(168, 85, 247, 0.18); color: var(--accent-2); vertical-align: middle; }
+  background: rgba(236, 72, 153, 0.18); color: var(--accent-2); vertical-align: middle; }
