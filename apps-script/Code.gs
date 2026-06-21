@@ -36,6 +36,11 @@
  *                                did-it-happen WRITE-BACK to outpatient. Until set
  *                                (and the outpatient endpoint deployed), marks are
  *                                saved locally and left syncStatus='pending'.
+ *       DEACTIVATE_CLIENT_SECRET = the shared deactivateClient secret — on patient
+ *                                delete here, DEACTIVATES the matching outpatient
+ *                                Client so it leaves the roster union. FAIL-CLOSED:
+ *                                until set (and the outpatient receiver deployed),
+ *                                deleting a patient changes nothing locally.
  *  4. Deploy → New deployment → Web app (Execute as: Me; Access: Anyone w/ link).
  *  5. Copy the /exec URL and set it as SHEETS_URL in the Node server env.
  */
@@ -944,6 +949,58 @@ function _postResolveStopFlag(body) {
   }
 }
 
+/* ===== Cross-app patient delete propagation (SENDER) =====
+ * When a patient is deleted here (_removePatient), the matching outpatient Client
+ * must stop appearing in the roster union — otherwise getTreatmentPlans /
+ * getDebtStatus keep returning them and roster.js re-adds the "deleted" patient
+ * (a base source, not just an overlay). We DEACTIVATE rather than hard-delete on
+ * the outpatient side: it is reversible and preserves billing/session history,
+ * and getTreatmentPlans already filters by status — so a deactivated Client drops
+ * out of the active roster without losing the record.
+ *
+ * Server-to-server like _postFlagStop / _postResolveStopFlag: UrlFetchApp + the
+ * OUTPATIENT_SHEETS_URL and a dedicated shared secret (DEACTIVATE_CLIENT_SECRET,
+ * its OWN secret — deactivating a client is more destructive than clearing a stop
+ * flag, so least-authority keeps it off the stop-flag secret). The secret NEVER
+ * reaches the browser.
+ *
+ * FAIL-CLOSED on transport/config/auth (returns ok:false → the caller aborts the
+ * local delete), but ORPHAN-SAFE: a phone matching no Client comes back
+ * { ok:true, deactivated:0 } (idempotent, nothing to crash on), so deleting a
+ * patient who was never an outpatient still succeeds and removes the local row.
+ * Canonical phone is sent so it matches outpatient's phone matching.
+ */
+function _postDeactivateClient(body) {
+  var canon = _toCanonicalPhone(body && body.phone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('DEACTIVATE_CLIENT_SECRET');
+  if (!url || !secret) return { ok: false, error: 'deactivate_unconfigured' };
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=deactivateClient&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({
+        action: 'deactivateClient',
+        secret: secret,
+        phone: canon,
+        deactivatedBy: String(body && body.deactivatedBy == null ? '' : body.deactivatedBy).trim(),
+        reason: String(body && body.reason == null ? '' : body.reason).trim() || 'patient_deleted'
+      }),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, error: 'deactivate_http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false) return { ok: false, error: (data && data.error) || 'deactivate_rejected' };
+    return { ok: true, deactivated: data.deactivated };
+  } catch (e) {
+    return { ok: false, error: 'deactivate_unreachable' };
+  }
+}
+
 /* ===== Clinical billing-type push (SENDER) =====
  * On assignment save, push the patient's clinical treatment type to outpatient
  * so its per-patient billing rate follows the clinical plan chosen here. Mirror
@@ -1250,12 +1307,16 @@ function _restorePatient(payload) {
 }
 
 /* ===== Delete a patient entirely (test cleanup) =====
- * Removes this app's local Patients record AND resolves any outpatient StopFlag
- * for the phone (so no orphaned flag is left pointing at a deleted patient).
- * FAIL-CLOSED on the resolve, same discipline as restore: if the StopFlag can't
- * be cleared on Vered's side, the local record is NOT deleted. Assignments and
- * past bookings are left as-is (remove them via removeAssignment / removeSchedule
- * if needed). */
+ * Removes this app's local Patients record AND (1) resolves any outpatient StopFlag
+ * for the phone (so no orphaned flag is left pointing at a deleted patient) and
+ * (2) DEACTIVATES the matching outpatient Client, so getTreatmentPlans /
+ * getDebtStatus stop returning them and the roster union (roster.js) can't re-add
+ * the deleted patient as a base source. FAIL-CLOSED on BOTH cross-app calls, same
+ * discipline as restore: if either can't reach Vered's side, the local record is
+ * NOT deleted (no half-state). Both are orphan-safe — a phone matching no flag /
+ * no Client still succeeds (resolved:0 / deactivated:0). Assignments and past
+ * bookings are left as-is (remove them via removeAssignment / removeSchedule if
+ * needed). */
 function _removePatient(payload) {
   var p = payload || {};
   var canon = _toCanonicalPhone(p.phone);
@@ -1268,12 +1329,25 @@ function _removePatient(payload) {
   });
   if (!resolve.ok) return { ok: false, error: resolve.error || 'resolve_failed' };
 
+  // Propagate the delete to outpatient: DEACTIVATE the matching Client so it drops
+  // out of the roster union (getTreatmentPlans / getDebtStatus) and roster.js can't
+  // re-add the deleted patient. FAIL-CLOSED, same discipline as the resolve above —
+  // if outpatient can't be reached/authed, change NOTHING locally (no half-state
+  // where the patient is gone here but still active on Vered's side). Orphan-safe:
+  // no matching Client returns ok with deactivated:0, so the local delete proceeds.
+  var deactivate = _postDeactivateClient({
+    phone: canon,
+    deactivatedBy: String(p.reportedBy == null ? '' : p.reportedBy).trim(),
+    reason: String(p.note == null ? '' : p.note).trim() || 'patient_deleted'
+  });
+  if (!deactivate.ok) return { ok: false, error: deactivate.error || 'deactivate_failed' };
+
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
     var removed = _deleteLocalPatient(pSh, canon);
-    return { ok: true, removed: removed, phone: canon, resolved: resolve.resolved };
+    return { ok: true, removed: removed, phone: canon, resolved: resolve.resolved, deactivated: deactivate.deactivated };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -1286,8 +1360,14 @@ function _saveAssignment(payload) {
   var a = payload && payload.assignment;
   if (!a || typeof a !== 'object') return { ok: false, error: 'missing_assignment' };
   if (!a.id) return { ok: false, error: 'missing_id' };
-  var phone = String(a.patientPhone == null ? '' : a.patientPhone).trim();
-  if (!phone) return { ok: false, error: 'missing_phone' };
+  // Canonicalize the phone exactly like _savePatient: an assignment row must key
+  // by the SAME canonical phone as the patient it links to, or the roster union
+  // (roster.js, normalized by phone) silently splits one patient into two — the
+  // רון מנחם bug. Reject empty (missing_phone) then non-canonical (invalid_phone);
+  // never store a raw/non-canonical patientPhone.
+  if (String(a.patientPhone == null ? '' : a.patientPhone).trim() === '') return { ok: false, error: 'missing_phone' };
+  var phone = _toCanonicalPhone(a.patientPhone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
   var rec, res;
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
