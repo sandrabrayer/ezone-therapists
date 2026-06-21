@@ -458,7 +458,7 @@
     var parts = [];
     parts.push('<div class="p-name">' + escapeHtml(p.name) + badges + '</div>');
     parts.push('<div><span class="p-label">טלפון</span><span class="p-val">' + escapeHtml(p.phone) + '</span></div>');
-    var thers = p.therapists.length ? escapeHtml(p.therapists.join(', ')) : '<em>לא שויך</em>';
+    var thers = p.therapists.length ? escapeHtml(p.therapists.join(', ')) : '<em class="assign-pending">טרם שובץ</em>';
     parts.push('<div><span class="p-label">מטפל/ת אחראי/ת</span><span class="p-val">' + thers + '</span></div>');
     var plan = assignmentSummary(p, false);
     parts.push('<div class="wide"><span class="p-label">תוכנית טיפול</span><span class="p-val">' + (plan ? escapeHtml(plan) : '—') + '</span></div>');
@@ -627,8 +627,14 @@
       return byTher && matchName(p.name, state.workflowSearch);
     }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
     var rows = list.map(function (p) {
-      var thers = p.therapists.length ? escapeHtml(p.therapists.join(', ')) : '<em>לא שויך</em>';
-      return '<div class="assign-row">' +
+      var unassigned = !p.therapists.length;
+      var thers = unassigned ? '<em class="assign-pending">טרם שובץ</em>' : escapeHtml(p.therapists.join(', '));
+      // Unassigned patients get a prominent «שבץ מטפל» call-to-action so Yarden can
+      // assign right here; already-assigned patients get the quieter «עריכה».
+      var assignBtn = unassigned
+        ? '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שבץ מטפל</button>'
+        : '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>';
+      return '<div class="assign-row' + (unassigned ? ' assign-row-pending' : '') + '">' +
         '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
         '<span class="assign-ther"><span class="assign-ther-label">מטפל</span>' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
@@ -636,7 +642,7 @@
         // Scheduling is the THERAPIST's action — it lives in «המטופלים שלי».
         '<span class="assign-actions">' +
           '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
-          '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>' +
+          assignBtn +
           '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
         '</span>' +
         '</div>';
