@@ -936,7 +936,7 @@ function _postResolveStopFlag(body) {
       'action=resolveStopFlag&secret=' + encodeURIComponent(secret);
     var resp = UrlFetchApp.fetch(full, {
       method: 'post', contentType: 'application/json',
-      payload: JSON.stringify(body),
+     payload: JSON.stringify(Object.assign({ action: 'resolveStopFlag', secret: secret }, body || {})),
       muteHttpExceptions: true, followRedirects: true
     });
     var code = resp.getResponseCode();
