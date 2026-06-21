@@ -926,8 +926,35 @@
     };
   }
 
+  // Monthly package-cap status for ONE patient + the session's treatment type,
+  // for the month of the booking. Uses the existing plan (state.assignments) and
+  // bookings (state.schedule), both keyed by normalized phone. A therapist-
+  // cancelled session does NOT consume quota (mirrors the credits rule), so it is
+  // excluded from usage. Returns the Quota.checkAdd shape, or null when we lack
+  // the data to judge (no plan rows for this patient → don't warn spuriously).
+  function quotaStatusFor(phone, treatmentType, scheduledDate) {
+    if (!window.Quota) return null;
+    var key = normPhone(phone);
+    var assignments = (state.assignments || []).filter(function (a) {
+      return normPhone(a.patientPhone) === key;
+    });
+    // No plan at all for this patient → we can't define a cap; skip the warning.
+    if (!assignments.length) return null;
+    var bookings = (state.schedule || []).filter(function (r) {
+      return normPhone(r.patientPhone) === key;
+    });
+    return Quota.checkAdd({
+      assignments: assignments,
+      bookings: bookings,
+      month: Quota.monthKey(scheduledDate),
+      treatmentType: treatmentType,
+      countsBooking: function (b) { return b.outcome !== 'therapist_cancelled'; }
+    });
+  }
+
   function renderGateResults() {
     var g = $('#gateResults');
+    var session = readSession();
     var rowsHtml = pendingPatients.map(function (pp, i) {
       var d = pp.gate.decision;
       var status, body = '';
@@ -943,9 +970,19 @@
         status = '<span class="chip chip-unpaid">לבירור</span>';
         body = '<div class="gate-flag">' + (FLAG_TEXT[pp.gate.reason] || 'דרוש בירור ידני.') + '</div>';
       }
+      // Soft package-cap warning (does NOT block). If this booking would push the
+      // patient past their monthly quota for this treatment type, warn Yarden;
+      // she can still proceed — the over-cap session is flagged for Vered (step 3).
+      var q = quotaStatusFor(pp.phone, session.treatmentType, session.scheduledDate);
+      var capWarn = '';
+      if (q && q.willExceed) {
+        capWarn = '<div class="cap-warn">⚠️ מעבר לחבילה החודשית — ' +
+          escapeHtml(svc(session.treatmentType)) + ': נוצלו ' + q.used + ' מתוך ' + q.quota +
+          ' החודש. דרוש אישור ורד לטיפול נוסף; ניתן לשמור והבקשה תועבר לאישור.</div>';
+      }
       return '<div class="gate-patient">' +
         '<div class="gate-pname">' + escapeHtml(pp.name) + ' <span class="muted">' + escapeHtml(pp.phone) + '</span> ' + status + '</div>' +
-        body + '</div>';
+        capWarn + body + '</div>';
     }).join('');
     var anyBlock = pendingPatients.some(function (pp) { return pp.gate.decision === 'block'; });
     g.hidden = false;
