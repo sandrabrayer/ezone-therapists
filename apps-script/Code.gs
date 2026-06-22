@@ -1001,7 +1001,47 @@ function _postDeactivateClient(body) {
   }
 }
 
-/* ===== Clinical billing-type push (SENDER) =====
+/* ===== Over-package extra-session request (SENDER) =====
+ * When Yarden schedules beyond a patient's monthly package (soft-warn), the
+ * therapists app records an approval request on the outpatient side so Vered
+ * sees it and can approve. Server-to-server, same secured shared-secret pattern
+ * as _postDeactivateClient: action + secret carried in the JSON body. */
+function _postRequestExtraSession(body) {
+  var canon = _toCanonicalPhone(body && body.phone);
+  if (!canon) return { ok: false, error: 'invalid_phone' };
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OUTPATIENT_SHEETS_URL');
+  var secret = props.getProperty('EXTRA_SESSION_SECRET');
+  if (!url || !secret) return { ok: false, error: 'extra_session_unconfigured' };
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') +
+      'action=requestExtraSession&secret=' + encodeURIComponent(secret);
+    var resp = UrlFetchApp.fetch(full, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({
+        action: 'requestExtraSession',
+        secret: secret,
+        phone: canon,
+        patientName: String(body && body.patientName == null ? '' : body.patientName).trim(),
+        treatmentType: String(body && body.treatmentType == null ? '' : body.treatmentType).trim(),
+        therapist: String(body && body.therapist == null ? '' : body.therapist).trim(),
+        monthKey: String(body && body.monthKey == null ? '' : body.monthKey).trim(),
+        quota: Number(body && body.quota) || 0,
+        used: Number(body && body.used) || 0,
+        requestedBy: String(body && body.requestedBy == null ? '' : body.requestedBy).trim(),
+        note: String(body && body.note == null ? '' : body.note).trim()
+      }),
+      muteHttpExceptions: true, followRedirects: true
+    });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) return { ok: false, error: 'extra_session_http_' + code };
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false) return { ok: false, error: (data && data.error) || 'extra_session_rejected' };
+    return { ok: true, requestId: data.requestId };
+  } catch (e) {
+    return { ok: false, error: 'extra_session_unreachable' };
+  }
+}
  * On assignment save, push the patient's clinical treatment type to outpatient
  * so its per-patient billing rate follows the clinical plan chosen here. Mirror
  * of public/clinical-sync.js (buildPayload + interpretResponse). Same server-to-
@@ -1628,6 +1668,7 @@ function doPost(e) {
       return _json(_removeSchedule(id));
     }
     if (action === 'migrateTherapistNames') return _json(_migrateTherapistNames());
+    if (action === 'requestExtraSession') return _json(_postRequestExtraSession(payload));
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });
