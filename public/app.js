@@ -1063,6 +1063,21 @@
     }
     if (!patients.length) { toast('אין מטופלים לשמירה', true); return; }
 
+    // Capture who is OVER the monthly package for this session's type — these
+    // become extra-session approval requests to Vered after the save succeeds.
+    var overCap = [];
+    patients.forEach(function (p) {
+      var q = quotaStatusFor(p.phone, session.treatmentType, session.scheduledDate);
+      if (q && q.willExceed) {
+        overCap.push({
+          phone: p.phone, patientName: p.name,
+          treatmentType: session.treatmentType, therapist: session.therapist,
+          monthKey: Quota.monthKey(session.scheduledDate),
+          quota: q.quota, used: q.used, requestedBy: session.therapist
+        });
+      }
+    });
+
     var rows = Scheduling.buildSessionRows(session, patients, {
       sessionId: 's_' + uid(), idFn: function () { return uid(); }, now: today()
     });
@@ -1080,6 +1095,14 @@
           toast('נשמר לבירור — לא ניתן לאמת חוב כרגע');
         } else {
           toast('הטיפול נקבע');
+        }
+        // Fire extra-session approval requests for over-cap patients. Non-fatal:
+        // the booking is already saved; a failed request just won't reach Vered.
+        if (overCap.length) {
+          overCap.forEach(function (req) {
+            apiPost(Object.assign({ action: 'requestExtraSession' }, req)).catch(function () {});
+          });
+          toast('בקשת אישור לטיפול נוסף נשלחה לוורד', false);
         }
         return loadAll();
       })
