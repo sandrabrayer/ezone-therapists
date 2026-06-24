@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>E-ZONE Therapists</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Shared password gate (shown on open only when APP_PASSWORD is set; never persisted). -->
+  <div id="gateScreen" class="pin-screen" hidden>
+    <div class="pin-card">
+      <div class="brand">E-ZONE Therapists</div>
+      <div class="pin-sub">הזינו סיסמה</div>
+      <input id="gateInput" type="password" placeholder="סיסמה" autocomplete="off" />
+      <div id="gateError" class="pin-error" hidden>סיסמה שגויה</div>
+      <button type="button" id="gateSubmit" class="btn btn-primary">כניסה</button>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="logo">E-ZONE <span>Therapists</span></div>
+      <nav class="tabs">
+        <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
+        <button class="tab" data-view="workflow">שיבוץ מטפלים</button>
+        <button class="tab" data-view="mine">המטופלים שלי</button>
+      </nav>
+      <div class="topbar-right">
+        <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Dashboard: active patients + their treatment plan -->
+      <section id="view-dashboard" class="view active">
+        <div class="toolbar">
+          <input id="dashboardSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+        </div>
+        <div id="alertBanner" class="wide card-banner card-banner-stop" hidden></div>
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">מטופלים פעילים</div><div id="kpiPatients" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">שויכו למטפל/ת</div><div id="kpiAssigned" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiAlerts" class="kpi-value">0</div></div>
+        </div>
+        <div id="dashboardNotice" class="billing-empty" hidden></div>
+        <div class="panel">
+          <div class="panel-title">מטופלים ותוכנית טיפול</div>
+          <div id="patientsList" class="billing-list"></div>
+        </div>
+        <div id="stoppedSection" class="panel" hidden>
+          <div class="panel-title">מטופלים שביקשו לסיים טיפול</div>
+          <div id="stoppedList" class="billing-list"></div>
+        </div>
+      </section>
+
+      <!-- Workflow: assign + schedule + did-it-happen -->
+      <section id="view-workflow" class="view">
+        <div class="toolbar">
+          <input id="workflowSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <select id="workflowTherapistFilter" class="search filter-sel" title="סינון לפי מטפל/ת"><option value="">כל המטפלים (סינון)</option></select>
+          <button id="newPatientBtn" class="btn btn-primary">+ רישום מטופל חדש</button>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">טיפולים שנקבעו</div><div id="kpiScheduled" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">טיפולים קרובים</div><div id="kpiUpcoming" class="kpi-value">0</div></div>
+          <div class="kpi"><div class="kpi-label">התראות חוב</div><div id="kpiScheduleAlerts" class="kpi-value">0</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">מטופלים לשיבוץ ולקביעת טיפול</div>
+          <div id="assignList" class="billing-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">טיפולים שנקבעו — קביעה וסימון ביצוע</div>
+          <div id="scheduleList" class="billing-list"></div>
+        </div>
+      </section>
+
+      <!-- My patients: therapist schedules + reports on their own patients -->
+      <section id="view-mine" class="view">
+        <div class="toolbar">
+          <label class="mine-picker">שם המטפל/ת:
+            <select id="mineTherapist"><option value="">— בחר/י את שמך —</option></select>
+          </label>
+          <input id="mineSearch" class="search" placeholder="חיפוש לפי שם מטופל…" />
+          <button id="mineScheduleBtn" class="btn btn-primary">+ קביעת טיפול</button>
+        </div>
+        <div id="mineEmpty" class="billing-empty">בחר/י את שמך כדי לראות את המטופלים והטיפולים שלך.</div>
+        <div id="syncBanner" class="wide card-banner card-banner-warn" hidden></div>
+        <div class="panel" id="myPatientsPanel">
+          <div class="panel-title">המטופלים שלי — קביעת ימים, שעות ומיקום</div>
+          <div id="myPatientsList" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineScheduledPanel" hidden>
+          <div class="panel-title">טיפולים שנקבעו</div>
+          <div id="mineScheduled" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineUpcomingPanel" hidden>
+          <div class="panel-title">טיפולים קרובים</div>
+          <div id="mineUpcoming" class="billing-list"></div>
+        </div>
+        <div class="panel" id="minePerformedPanel" hidden>
+          <div class="panel-title">טיפולים שבוצעו</div>
+          <div id="minePerformed" class="billing-list"></div>
+        </div>
+        <div class="panel" id="mineNotPerformedPanel" hidden>
+          <div class="panel-title">טיפולים שנקבעו ולא בוצעו</div>
+          <div id="mineNotPerformed" class="billing-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- Post-treatment report — happened / didn't (reason), with debt gate -->
+    <div id="reportModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-title">דיווח טיפול — <span id="reportPatient"></span></div>
+        <div id="reportBody" class="form-grid"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+          <button type="button" class="btn btn-primary" id="reportSave">שמירה</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit an existing booking (day / time / location) -->
+    <div id="bookingModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-title">עריכת טיפול — <span id="bookingPatient"></span></div>
+        <form id="bookingForm" class="form-grid">
+          <label>תאריך<input name="scheduledDate" type="date" required /></label>
+          <label>שעה<select name="time" id="bookingTime"><option value="">—</option></select></label>
+          <label>מיקום
+            <select name="location" id="bookingLocation"><option value="">—</option></select>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+            <button type="submit" class="btn btn-primary" id="bookingSave">שמירה</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Schedule a treatment (with inline per-patient debt gate + approval) -->
+    <div id="scheduleModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title">קביעת טיפול</div>
+        <form id="scheduleForm" class="form-grid">
+          <label>מטפל/ת
+            <select name="therapist" id="scheduleTherapist" required>
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>סוג טיפול
+            <select name="treatmentType" id="scheduleType" required>
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>מיקום
+            <select name="location" id="scheduleLocation" required>
+              <option value="">—</option>
+            </select>
+          </label>
+          <label>תאריך<input name="scheduledDate" type="date" required /></label>
+          <label>שעה<select name="time" id="scheduleTime"><option value="">—</option></select></label>
+
+          <!-- Patients (single, or several for a group session) -->
+          <div class="wide">
+            <div class="form-section-title">
+              <span id="patientsSectionTitle">מטופל/ת</span>
+              <button type="button" id="addPatientRowBtn" class="btn btn-ghost btn-sm" hidden>+ הוסף מטופל/ת לקבוצה</button>
+            </div>
+            <div id="patientRows"></div>
+          </div>
+
+          <!-- Per-patient gate results (revealed after "בדוק ושמור") -->
+          <div id="gateResults" class="wide" hidden></div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+            <button type="submit" class="btn btn-primary" id="scheduleSubmit">בדוק ושמור</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- New / edit patient (Vered's intake record + main treatment plan) -->
+    <div id="patientModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title" id="patientModalTitle">רישום מטופל חדש</div>
+        <form id="patientForm" class="form-grid">
+          <div class="form-section-title wide">זהות</div>
+          <label class="wide">שם מטופל/ת
+            <input name="name" list="rosterNames" autocomplete="off" required />
+          </label>
+          <datalist id="rosterNames"></datalist>
+          <label>טלפון (10 ספרות, לדוגמה 0501234567)
+            <input name="phone" inputmode="tel" placeholder="0501234567" required />
+          </label>
+
+          <div id="initialAssignmentSection" class="wide form-grid">
+            <div class="form-section-title wide">שיבוץ ראשוני (ניתן להוסיף/לערוך בלשונית «שיבוץ מטפלים»)</div>
+            <label>מטפל/ת אחראי/ת
+              <select name="assignedTherapist" id="patientTherapist">
+                <option value="">— לא שויך —</option>
+              </select>
+            </label>
+            <label>סוג טיפול
+              <select name="mainTreatmentType" id="patientType">
+                <option value="">—</option>
+              </select>
+            </label>
+            <label>תדירות בשבוע
+              <select name="frequencyPerWeek">
+                <option value="">—</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="form-section-title wide">מקור הגעה</div>
+          <label class="wide">מאיפה הגיע/ה
+            <input name="origin" list="originSuggestions" autocomplete="off" placeholder="מאיפה הופנה/הגיע המטופל/ת" />
+          </label>
+          <datalist id="originSuggestions"></datalist>
+          <label class="wide checkbox-row">
+            <input type="checkbox" name="stillAdmitted" id="stillAdmitted" />
+            עדיין מאושפז/ת
+          </label>
+          <div id="admittedDetails" class="wide form-grid" hidden>
+            <label>באיזה בית
+              <select name="admittedHouse" id="admittedHouse">
+                <option value="">—</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-close>ביטול</button>
+            <button type="submit" class="btn btn-primary" id="patientSubmit">שמור</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Manage a patient's assignments (multiple therapists/plans) -->
+    <div id="assignmentsModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title">שיבוץ מטפלים ותוכניות טיפול — <span id="assignmentsPatientName"></span></div>
+        <div class="muted" style="margin-bottom:8px">ניתן לשבץ כמה מטפלים/טיפולים במקביל לאותו מטופל/ת.</div>
+        <div id="assignmentRows"></div>
+        <button type="button" id="addAssignmentRowBtn" class="btn btn-ghost btn-sm">+ הוסף שיבוץ</button>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>סגירה</button>
+          <button type="button" class="btn btn-primary" id="assignmentsSave">שמירה</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="access.js?v=__BUILD__"></script>
+  <script src="phone.js?v=__BUILD__"></script>
+  <script src="debt-gate.js?v=__BUILD__"></script>
+  <script src="approval.js?v=__BUILD__"></script>
+  <script src="scheduling.js?v=__BUILD__"></script>
+  <script src="debt-alert.js?v=__BUILD__"></script>
+  <script src="writeback.js?v=__BUILD__"></script>
+  <script src="outcome.js?v=__BUILD__"></script>
+  <script src="stopflow.js?v=__BUILD__"></script>
+  <script src="recurring.js?v=__BUILD__"></script>
+  <script src="clinical-sync.js?v=__BUILD__"></script>
+  <script src="outcome-sync.js?v=__BUILD__"></script>
+  <script src="roster.js?v=__BUILD__"></script>
+  <script src="quota.js?v=__BUILD__"></script>
+  <script src="app.js?v=__BUILD__" defer></script>
+</body>
+</html>
