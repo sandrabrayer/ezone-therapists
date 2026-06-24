@@ -1,5 +1,31 @@
 # Changelog
 
+## Iteration 19 — lock שיבוץ + scheduling to Vered's approved outpatient plan (per treatment type)
+
+The therapists app is now **fully READ-ONLY on the treatment plan**. The
+**approved outpatient plan** (`getTreatmentPlans` → `state.plans`) is the
+**single source of truth** for a patient's **treatment types** and their
+**per-type weekly frequency**. A plan can hold **several types** (the `sessions`
+JSON-blob **keys ARE the types**, e.g. `{"מרכז יום":3,"טיפול משפחתי":1}`), each
+with its own frequency and its own therapist — so the plan is projected as a
+**LIST of `{treatmentType, frequencyPerWeek}`** and the שיבוץ modal renders **one
+locked row per type** (read-only type+freq, editable therapist + weekly slots, no
+free add/remove). Neither the שיבוץ modal nor the "המטופלים שלי" `+ קביעת טיפול`
+flow lets a user pick or edit type/frequency; both flows **BLOCK** (never fail
+open) when there is no single approved plan to read (no match / ambiguous
+multi-match / zero types → "אין תוכנית טיפול מאושרת…"; plans endpoint down → "לא
+ניתן לאמת…"). New pure **`public/plan.js`** (`forPhone` → per-type array /
+`typesFromSessions` — keys are types, **not summed** / `blockMessage` /
+`assignmentPayload` — type+freq **forced** from one plan-type entry) +
+`test/plan.test.js` (**+20**). `saveAssignments` saves one payload per type;
+scheduling locks to the **specific** plan type the therapist is working and
+`handleScheduleSubmit` validates the session type is one of the patient's plan
+types. The "המטופלים שלי" patient filter is **preserved exactly**. **`public/` +
+tests only** — `_saveAssignment` already persists the payload's
+`treatmentType`/`frequencyPerWeek`, so **no Apps Script change/redeploy**;
+deploys via Railway on commit. Full notes:
+[`CHANGELOG-iteration19-lock-plan.md`](CHANGELOG-iteration19-lock-plan.md).
+
 ## Cross-app data integrity — canonical assignment phone + delete propagation
 
 Two integrity fixes keeping the therapists and outpatient apps in sync.
