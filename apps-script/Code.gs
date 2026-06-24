@@ -1045,6 +1045,7 @@ function _postRequestExtraSession(body) {
     return { ok: false, error: 'extra_session_unreachable' };
   }
 }
+/*
  * On assignment save, push the patient's clinical treatment type to outpatient
  * so its per-patient billing rate follows the clinical plan chosen here. Mirror
  * of public/clinical-sync.js (buildPayload + interpretResponse). Same server-to-
