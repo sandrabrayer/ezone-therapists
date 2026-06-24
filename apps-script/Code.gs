@@ -1045,6 +1045,7 @@ function _postRequestExtraSession(body) {
     return { ok: false, error: 'extra_session_unreachable' };
   }
 }
+
 /*
  * On assignment save, push the patient's clinical treatment type to outpatient
  * so its per-patient billing rate follows the clinical plan chosen here. Mirror
@@ -1639,6 +1640,8 @@ function migrateTherapistNamesNow() {
   Logger.log(JSON.stringify(report, null, 2));
   return report;
 }
+
+// Normalized-key set of the final roster (THERAPISTS_SEED), for membership tests.
 function _finalRosterNormSet() {
   var s = {};
   for (var i = 0; i < THERAPISTS_SEED.length; i++) {
@@ -1647,40 +1650,46 @@ function _finalRosterNormSet() {
   return s;
 }
 
+// One-time roster cleanup. REBUILDS the Therapists sheet to EXACTLY the final
+// THERAPISTS_SEED (29): wipes every existing data row, then writes the seed back
+// with active=true. This collapses short/full duplicates and drops removed people
+// in one deterministic pass (the earlier keep-filter left short+full dupes behind,
+// ballooning the count). Run from the editor: Run ▸ cleanupTherapistRosterNow.
+// Idempotent. NOTE: this resets any manual active=false retirement to active —
+// intended here, since the seed is the authoritative active list.
 function cleanupTherapistRosterNow() {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
     var lastRow = sh.getLastRow();
-    var keepNorm = _finalRosterNormSet();
-    var removed = [];
 
+    var before = [];
     if (lastRow >= 2) {
-      var grid = sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).getValues();
-      for (var i = grid.length - 1; i >= 0; i--) {
-        var nm = String(grid[i][0] == null ? '' : grid[i][0]).trim();
-        if (!nm) continue;
-        var mapped = _migrateTherapistName(nm);
-        if (!keepNorm[_normalizeTherapistKey(mapped)]) {
-          sh.deleteRow(i + 2);
-          removed.push(nm);
-        }
+      var g = sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).getValues();
+      for (var i = 0; i < g.length; i++) {
+        var nm = String(g[i][0] == null ? '' : g[i][0]).trim();
+        if (nm) before.push(nm);
       }
+      // Wipe ALL existing data rows (row 2 downward). Header row stays.
+      sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).clearContent();
     }
 
-    var seeded = _ensureSeededList('Therapists', THERAPISTS_HEADERS,
-      THERAPISTS_SEED.map(function (n) { return { name: n, active: 'true' }; }));
+    // Write back exactly the final roster — full names, active=true, no duplicates.
+    var rows = THERAPISTS_SEED.map(function (n) { return [n, 'true']; });
+    sh.getRange(2, 1, rows.length, THERAPISTS_HEADERS.length).setValues(rows);
 
-    var present = _readAll(seeded, THERAPISTS_HEADERS)
-      .map(function (r) { return String(r.name || '').trim(); })
-      .filter(Boolean);
+    var keepNorm = _finalRosterNormSet();
+    var removed = before.filter(function (nm) {
+      return !keepNorm[_normalizeTherapistKey(_migrateTherapistName(nm))];
+    });
 
     var report = {
       ok: true,
+      beforeCount: before.length,
       removed: removed,
-      finalCount: present.length,
-      finalRoster: present
+      finalCount: rows.length,
+      finalRoster: THERAPISTS_SEED.slice()
     };
     Logger.log(JSON.stringify(report, null, 2));
     return report;
@@ -1688,6 +1697,7 @@ function cleanupTherapistRosterNow() {
     try { lock.releaseLock(); } catch (_) {}
   }
 }
+
 function _json(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
