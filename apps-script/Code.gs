@@ -105,9 +105,12 @@ var TREATMENT_TYPES_HEADERS = ['name', 'active', 'isGroup'];
  * hard delete stays deleted. Mirror of public/therapist-migration.js
  * FINAL_THERAPISTS — keep both in sync. */
 var THERAPISTS_SEED = [
-  'מעיין דלומי', 'תמר גנץ', 'אורן כביר', 'אביב מלכה', 'רמי', 'כנרת', 'הילה',
-  'עידו בוזגלו', 'אלה', 'שירן', 'דנה', 'יפעת', 'איתן דשה', 'דליה מלמד',
-  'נועה זיפמן', 'אסתר', 'ד״ר שפרינץ', 'ד״ר נטליה', 'ד״ר דנגור'
+  'ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה',
+  'ד"ר מאקה קוורשוילי', 'עידו בוזגלו', 'רנטה בינו', 'חנן וויל', 'אורן סלמניק',
+  'אייל הר גיל', 'אלה שפירא', 'דליה מלמד', 'דנה דרוקר', 'הילה תבור', 'ליאת חגבי',
+  'מעיין דלומי', 'רמי רום', 'תמר גנץ', 'מורן בנטל', 'כנרת זיידן',
+  'יפעת רומנו', 'איתן דשא', 'יעל קינן', 'רעות חוגה', 'דניאל סייג', 'יניב הוד',
+  'נדיה מוסיירי', 'נרי אופק', 'שירן כהן'
 ];
 var TREATMENT_TYPES_SEED = [
   { name: 'פרטני כללי', active: 'true', isGroup: 'false' },
@@ -1537,12 +1540,24 @@ function _removeSchedule(id) {
  * returned unchanged, so re-running rewrites nothing. Approvals (audit trail) is
  * intentionally NOT migrated. */
 var _THERAPIST_SHORT_TO_FULL = {
+  'רמי': 'רמי רום',
+  'כנרת': 'כנרת זיידן',
+  'הילה': 'הילה תבור',
+  'אלה': 'אלה שפירא',
+  'שירן': 'שירן כהן',
+  'דנה': 'דנה דרוקר',
+  'יפעת': 'יפעת רומנו',
+  'איתן דשה': 'איתן דשא',
   'דליה': 'דליה מלמד',
   'מעיין': 'מעיין דלומי',
   'תמר': 'תמר גנץ',
-  'איתן': 'איתן דשה',
   'עידו': 'עידו בוזגלו',
-  'נועה': 'נועה זיפמן'
+  'ד״ר שפרינץ': 'ד"ר מיכאל שפרינץ',
+  'ד"ר שפרינץ': 'ד"ר מיכאל שפרינץ',
+  'ד״ר נטליה': 'ד"ר נטליה סדוגין',
+  'ד"ר נטליה': 'ד"ר נטליה סדוגין',
+  'ד״ר דנגור': 'ד"ר יצחק דנגור',
+  'ד"ר דנגור': 'ד"ר יצחק דנגור'
 };
 function _migrateTherapistName(name) {
   var t = String(name == null ? '' : name).trim();
@@ -1623,7 +1638,55 @@ function migrateTherapistNamesNow() {
   Logger.log(JSON.stringify(report, null, 2));
   return report;
 }
+function _finalRosterNormSet() {
+  var s = {};
+  for (var i = 0; i < THERAPISTS_SEED.length; i++) {
+    s[_normalizeTherapistKey(THERAPISTS_SEED[i])] = true;
+  }
+  return s;
+}
 
+function cleanupTherapistRosterNow() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
+    var lastRow = sh.getLastRow();
+    var keepNorm = _finalRosterNormSet();
+    var removed = [];
+
+    if (lastRow >= 2) {
+      var grid = sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).getValues();
+      for (var i = grid.length - 1; i >= 0; i--) {
+        var nm = String(grid[i][0] == null ? '' : grid[i][0]).trim();
+        if (!nm) continue;
+        var mapped = _migrateTherapistName(nm);
+        if (!keepNorm[_normalizeTherapistKey(mapped)]) {
+          sh.deleteRow(i + 2);
+          removed.push(nm);
+        }
+      }
+    }
+
+    var seeded = _ensureSeededList('Therapists', THERAPISTS_HEADERS,
+      THERAPISTS_SEED.map(function (n) { return { name: n, active: 'true' }; }));
+
+    var present = _readAll(seeded, THERAPISTS_HEADERS)
+      .map(function (r) { return String(r.name || '').trim(); })
+      .filter(Boolean);
+
+    var report = {
+      ok: true,
+      removed: removed,
+      finalCount: present.length,
+      finalRoster: present
+    };
+    Logger.log(JSON.stringify(report, null, 2));
+    return report;
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
 function _json(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
