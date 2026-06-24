@@ -9,13 +9,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const TM = require('../public/therapist-migration');
 
-// --- seed replacement: the final 19, no old short names --------------------
+// --- seed replacement: the final 29, no old short names --------------------
 
-test('FINAL_THERAPISTS is exactly the 19-name full roster', () => {
-  assert.equal(TM.FINAL_THERAPISTS.length, 19);
-  ['מעיין דלומי', 'תמר גנץ', 'אורן כביר', 'אביב מלכה', 'רמי', 'כנרת', 'הילה',
-   'עידו בוזגלו', 'אלה', 'שירן', 'דנה', 'יפעת', 'איתן דשה', 'דליה מלמד',
-   'נועה זיפמן', 'אסתר', 'ד״ר שפרינץ', 'ד״ר נטליה', 'ד״ר דנגור']
+test('FINAL_THERAPISTS is exactly the 29-name full roster', () => {
+  assert.equal(TM.FINAL_THERAPISTS.length, 29);
+  ['ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה',
+   'ד"ר מאקה קוורשוילי', 'עידו בוזגלו', 'רנטה בינו', 'חנן וויל', 'אורן סלמניק',
+   'אייל הר גיל', 'אלה שפירא', 'דליה מלמד', 'דנה דרוקר', 'הילה תבור', 'ליאת חגבי',
+   'מעיין דלומי', 'רמי רום', 'תמר גנץ', 'מורן בנטל', 'כנרת זיידן',
+   'יפעת רומנו', 'איתן דשא', 'יעל קינן', 'רעות חוגה', 'דניאל סייג', 'יניב הוד',
+   'נדיה מוסיירי', 'נרי אופק', 'שירן כהן']
     .forEach((n) => assert.ok(TM.FINAL_THERAPISTS.includes(n), 'roster must include ' + n));
 });
 
@@ -30,9 +33,18 @@ test('migrateName: each mapped short name becomes its full name', () => {
   assert.equal(TM.migrateName('דליה'), 'דליה מלמד');
   assert.equal(TM.migrateName('מעיין'), 'מעיין דלומי');
   assert.equal(TM.migrateName('תמר'), 'תמר גנץ');
-  assert.equal(TM.migrateName('איתן'), 'איתן דשה');
+  assert.equal(TM.migrateName('איתן דשה'), 'איתן דשא');
   assert.equal(TM.migrateName('עידו'), 'עידו בוזגלו');
-  assert.equal(TM.migrateName('נועה'), 'נועה זיפמן');
+  assert.equal(TM.migrateName('רמי'), 'רמי רום');
+  assert.equal(TM.migrateName('כנרת'), 'כנרת זיידן');
+  assert.equal(TM.migrateName('הילה'), 'הילה תבור');
+  assert.equal(TM.migrateName('אלה'), 'אלה שפירא');
+  assert.equal(TM.migrateName('שירן'), 'שירן כהן');
+  assert.equal(TM.migrateName('דנה'), 'דנה דרוקר');
+  assert.equal(TM.migrateName('יפעת'), 'יפעת רומנו');
+  assert.equal(TM.migrateName('ד"ר שפרינץ'), 'ד"ר מיכאל שפרינץ');
+  assert.equal(TM.migrateName('ד"ר נטליה'), 'ד"ר נטליה סדוגין');
+  assert.equal(TM.migrateName('ד"ר דנגור'), 'ד"ר יצחק דנגור');
 });
 
 test('migrateName: trims surrounding whitespace before mapping', () => {
@@ -45,8 +57,8 @@ test('migrateName: an unmapped / dropped name is left untouched (never invented)
 
 test('migrateName: a name already full (or not a short key) is unchanged', () => {
   assert.equal(TM.migrateName('דליה מלמד'), 'דליה מלמד');   // not double-mapped
-  assert.equal(TM.migrateName('כנרת'), 'כנרת');             // full short, stays
-  assert.equal(TM.migrateName('ד״ר נטליה'), 'ד״ר נטליה');
+  assert.equal(TM.migrateName('רנטה בינו'), 'רנטה בינו');   // full name, not a key, stays
+  assert.equal(TM.migrateName('חנן וויל'), 'חנן וויל');     // full name, not a key, stays
   assert.equal(TM.migrateName(''), '');
 });
 
@@ -63,7 +75,7 @@ test('planMigration is idempotent: a second pass over the migrated names changes
   const first = TM.planMigration(names);
   const migrated = names.map(TM.migrateName);
   const second = TM.planMigration(migrated);
-  assert.equal(first.changes.length, 2);          // דליה, עידו
+  assert.equal(first.changes.length, 3);          // דליה, עידו, כנרת
   assert.equal(second.changes.length, 0);         // nothing left to rewrite
 });
 
@@ -74,7 +86,8 @@ test('planMigration: reports per-row changes and the distinct unmapped names', (
   const r = TM.planMigration(names);
   assert.deepEqual(r.changes, [
     { index: 0, from: 'עידו', to: 'עידו בוזגלו' },
-    { index: 1, from: 'דליה', to: 'דליה מלמד' }
+    { index: 1, from: 'דליה', to: 'דליה מלמד' },
+    { index: 3, from: 'כנרת', to: 'כנרת זיידן' }
   ]);
   // unmapped = post-migration names not in the roster, de-duped (חנן once, מרים once)
   assert.deepEqual(r.unmapped.sort(), ['חנן', 'מרים'].sort());
@@ -88,12 +101,12 @@ test('planMigration: a roster name (full or unchanged short) is NOT flagged unma
 
 // --- punctuation variants: ד״ר (gershayim) vs ד"ר (ASCII) ------------------
 
-test('a ד"ר ASCII-quote name matches the roster (normalized) and is flagged a variant, not unmapped', () => {
-  const r = TM.planMigration(['ד"ר נטליה']);    // straight ASCII quote vs roster gershayim
+test('a ד״ר gershayim-quote name matches the roster (normalized) and is flagged a variant, not unmapped', () => {
+  const r = TM.planMigration(['ד״ר ילנה']);    // gershayim quote vs roster ASCII; not a rename key
   assert.deepEqual(r.unmapped, [], 'must NOT be treated as unknown');
-  assert.deepEqual(r.punctuationVariants, ['ד"ר נטליה']);
-  assert.equal(TM.isInRosterNormalized('ד"ר נטליה'), true);
-  assert.equal(TM.isInRosterExact('ד"ר נטליה'), false);
+  assert.deepEqual(r.punctuationVariants, ['ד״ר ילנה']);
+  assert.equal(TM.isInRosterNormalized('ד״ר ילנה'), true);
+  assert.equal(TM.isInRosterExact('ד״ר ילנה'), false);
 });
 
 // --- mirror guard: apps-script/Code.gs must match this module --------------

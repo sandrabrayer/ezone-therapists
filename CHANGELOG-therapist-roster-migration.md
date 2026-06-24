@@ -94,3 +94,26 @@ The action returns:
    `unmapped` / `punctuationVariants` report.
 3. **Delete any leftover short-name rows** still in the Therapists sheet — they
    will not re-seed. No new secret / Railway var.
+
+## Update (2026-06-24) — sync the JS mirror to the final 29-name roster
+
+`apps-script/Code.gs` was updated to the **final 29-name** full-name roster and a
+corrected rename map, but `public/therapist-migration.js` still held the earlier
+19-name short-name roster and old map. The mirror-guard drift tests (#12, #13)
+caught the lag and failed.
+
+- **`public/therapist-migration.js`** — `FINAL_THERAPISTS` now equals
+  `THERAPISTS_SEED` exactly (29 full names): ד"ר מיכאל שפרינץ, ד"ר יצחק דנגור,
+  ד"ר נטליה סדוגין, ד"ר ילנה, ד"ר מאקה קוורשוילי, עידו בוזגלו, רנטה בינו, חנן וויל,
+  אורן סלמניק, אייל הר גיל, אלה שפירא, דליה מלמד, דנה דרוקר, הילה תבור, ליאת חגבי,
+  מעיין דלומי, רמי רום, תמר גנץ, מורן בנטל, כנרת זיידן, יפעת רומנו, איתן דשא,
+  יעל קינן, רעות חוגה, דניאל סייג, יניב הוד, נדיה מוסיירי, נרי אופק, שירן כהן.
+  `SHORT_TO_FULL` now equals `_THERAPIST_SHORT_TO_FULL` exactly — including the
+  ד"ר entries with the **ASCII `"`** quote convention (both gershayim and ASCII
+  key variants), so the exact-match drift test passes.
+- **`test/therapist-migration.test.js`** — the data-driven expectations (roster
+  size, each mapping, idempotency counts, the change/unmapped report, and the
+  punctuation-variant example) were updated to the new roster/map. The mirror
+  guards (#12, #13) now pass. Full file **13/13**; full suite **206/208** (the
+  two remaining failures — `gate.test.js`, `sheets-secret-forwarding.test.js` —
+  are pre-existing and unrelated).
