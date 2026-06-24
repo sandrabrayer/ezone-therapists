@@ -11,20 +11,26 @@
  * This module is the pure, testable projection of that rule, extracted from the
  * app.js IIFE so `test/plan.test.js` can guard it (mirrors roster.js/recurring.js).
  *
- *  - forPhone({phone, plans, plansOk}) → { serviceType, frequency } | null
- *        The ONE plan row matching `phone`. Returns null — "cannot verify, must
- *        BLOCK" — when there is no single approved plan to read: no match, an
- *        ambiguous multi-match, or plans unavailable (!plansOk). NEVER fails open.
- *  - freqFromSessions(sessions) → number
- *        The numeric weekly frequency from a plan's `sessions`. A JSON-blob
- *        type→count map is SUMMED across all types (a multi-type plan keeps every
- *        weekly session — it is not collapsed to one type); a scalar is taken as-is.
+ *  - forPhone({phone, plans, plansOk}) → Array<{ treatmentType, frequencyPerWeek }> | null
+ *        The per-type projection of the ONE plan row matching `phone`: one entry
+ *        per treatment type, each with its own weekly frequency (a patient's
+ *        approved plan can hold SEVERAL types, each assignable to a different
+ *        therapist). Returns null — "cannot verify, must BLOCK" — when there is no
+ *        single approved plan to read: no match, an ambiguous multi-match, plans
+ *        unavailable (!plansOk), OR a matched plan that yields zero types. NEVER
+ *        fails open.
+ *  - typesFromSessions(sessions, serviceType) → Array<{ treatmentType, frequencyPerWeek }>
+ *        The per-type breakdown of a plan's `sessions`. A JSON-blob type→count map
+ *        (object or "{...}" string) → one entry per key (the KEYS are the treatment
+ *        types). A scalar `sessions` + a `serviceType` → a single entry for that
+ *        type. Empty / unparseable → [].
  *  - blockMessage(plan, plansOk) → string | null
  *        The Hebrew block copy for a null plan: "no approved plan" when plans are
  *        available (Vered must define one), "cannot verify" when plans are down.
- *  - assignmentPayload({...}) → assignment row with treatmentType + frequencyPerWeek
- *        FORCED from the plan (the function takes no type/freq input at all, so a
- *        saved row can never carry a user-entered type/frequency).
+ *  - assignmentPayload({entry, ...}) → assignment row with treatmentType +
+ *        frequencyPerWeek FORCED from the given plan-type `entry` (the function
+ *        takes no type/freq input of its own, so a saved row can never carry a
+ *        user-entered type/frequency).
  *
  * Framework-free so it runs in the browser (global `Plan`) AND under `node --test`.
  */
@@ -45,16 +51,18 @@
   var MSG_CANNOT_VERIFY = 'לא ניתן לאמת את תוכנית הטיפול כעת (מטופלי חוץ אינם זמינים) — נסו שוב מאוחר יותר';
 
   /**
-   * Numeric weekly frequency from a plan's `sessions`.
-   *   - JSON-blob map (object, or "{...}" string), type→count: SUM all counts so a
-   *     multi-type plan keeps every weekly session (never collapse to one type).
-   *   - plain scalar ("2" / 2): taken as the count.
-   *   - empty / unparseable: 0.
+   * The per-type breakdown of a plan's `sessions`.
+   *   - JSON-blob map (object, or "{...}" string), type→count: ONE entry per key —
+   *     the keys ARE the treatment types, each with its own frequency. A multi-type
+   *     plan therefore yields multiple entries (never collapsed/summed into one).
+   *   - plain scalar ("2" / 2) + a serviceType: a single entry for that type.
+   *   - empty / unparseable / scalar-without-serviceType: [].
    * @param {*} sessions
-   * @returns {number}
+   * @param {*} [serviceType] used only for the scalar fallback's type name
+   * @returns {Array<{treatmentType:string, frequencyPerWeek:number}>}
    */
-  function freqFromSessions(sessions) {
-    if (sessions == null || sessions === '') return 0;
+  function typesFromSessions(sessions, serviceType) {
+    if (sessions == null || sessions === '') return [];
     var obj = null;
     if (typeof sessions === 'object') {
       obj = sessions;
@@ -64,26 +72,31 @@
         try { obj = JSON.parse(s); } catch (_) { obj = null; }
       } else {
         var scalar = parseInt(s, 10);
-        return (isFinite(scalar) && scalar > 0) ? scalar : 0;
+        var svcName = String(serviceType == null ? '' : serviceType).trim();
+        if (isFinite(scalar) && scalar > 0 && svcName) {
+          return [{ treatmentType: svcName, frequencyPerWeek: scalar }];
+        }
+        return [];
       }
     }
     if (obj && typeof obj === 'object') {
-      var total = 0;
+      var out = [];
       Object.keys(obj).forEach(function (k) {
+        var name = String(k).trim();
         var c = Number(obj[k]);
-        if (isFinite(c) && c > 0) total += c;
+        if (name && isFinite(c) && c > 0) out.push({ treatmentType: name, frequencyPerWeek: c });
       });
-      return total;
+      return out;
     }
-    return 0;
+    return [];
   }
 
   /**
-   * The approved plan projection for one phone, or null when it cannot be verified.
-   * Matches against the RAW plans list (not the deduped roster) so an ambiguous
-   * multi-match is detectable and a no-match never silently passes.
+   * The per-type approved-plan projection for one phone, or null when it cannot be
+   * verified. Matches against the RAW plans list (not the deduped roster) so an
+   * ambiguous multi-match is detectable and a no-match never silently passes.
    * @param {object} input { phone, plans, plansOk }
-   * @returns {{serviceType:string, frequency:number}|null}
+   * @returns {Array<{treatmentType:string, frequencyPerWeek:number}>|null}
    */
   function forPhone(input) {
     input = input || {};
@@ -95,17 +108,16 @@
     });
     if (hits.length !== 1) return null;              // no-match OR ambiguous multi-match
     var p = hits[0];
-    return {
-      serviceType: p.serviceType || '',
-      frequency: freqFromSessions(p.sessions != null ? p.sessions : p.sessionsPerWeek)
-    };
+    var types = typesFromSessions(p.sessions != null ? p.sessions : p.sessionsPerWeek, p.serviceType);
+    if (!types.length) return null;                  // a plan with zero types → treated as no plan
+    return types;
   }
 
   /**
    * The block message for a (possibly null) plan, or null when the plan is present
    * (no block). Distinguishes "no approved plan" (plans available) from "cannot
    * verify" (plans endpoint down) — never fails open in either case.
-   * @param {object|null} plan  result of forPhone
+   * @param {Array|null} plan  result of forPhone (non-empty array, or null)
    * @param {boolean} plansOk   state.plansOk
    * @returns {string|null}
    */
@@ -116,20 +128,21 @@
 
   /**
    * Build an assignment payload whose treatmentType + frequencyPerWeek are FORCED
-   * from the approved plan. The function deliberately accepts NO type/frequency
-   * argument, so a saved assignment can never carry a user-entered value.
-   * @param {object} input { plan, id, patientPhone, therapist, slots, updatedBy }
+   * from ONE approved plan-type `entry`. The function deliberately accepts NO
+   * type/frequency argument of its own, so a saved assignment can never carry a
+   * user-entered value.
+   * @param {object} input { entry, id, patientPhone, therapist, slots, updatedBy }
    * @returns {object}
    */
   function assignmentPayload(input) {
     input = input || {};
-    var plan = input.plan || {};
+    var entry = input.entry || {};
     return {
       id: input.id,
       patientPhone: input.patientPhone,
       therapist: input.therapist,
-      treatmentType: plan.serviceType || '',
-      frequencyPerWeek: (plan.frequency != null && plan.frequency !== 0) ? String(plan.frequency) : '',
+      treatmentType: entry.treatmentType || '',
+      frequencyPerWeek: (entry.frequencyPerWeek != null && entry.frequencyPerWeek !== 0) ? String(entry.frequencyPerWeek) : '',
       slots: input.slots || '',
       updatedBy: input.updatedBy
     };
@@ -138,7 +151,7 @@
   return {
     MSG_NO_PLAN: MSG_NO_PLAN,
     MSG_CANNOT_VERIFY: MSG_CANNOT_VERIFY,
-    freqFromSessions: freqFromSessions,
+    typesFromSessions: typesFromSessions,
     forPhone: forPhone,
     blockMessage: blockMessage,
     assignmentPayload: assignmentPayload

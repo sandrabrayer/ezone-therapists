@@ -2,12 +2,16 @@
 
 /**
  * Unit tests for public/plan.js — the APPROVED outpatient plan is the single
- * source of truth for a patient's treatment type + weekly frequency, and this
- * app is READ-ONLY on it. These guard:
- *   - forPhone: match / no-match / ambiguous multi-match / JSON-blob multi-type / !plansOk
- *   - freqFromSessions: blob (single + multi-type SUM) / scalar / empty
+ * source of truth for a patient's treatment types + per-type weekly frequency,
+ * and this app is READ-ONLY on it. A plan can hold SEVERAL treatment types, each
+ * with its own frequency and (potentially) its own therapist — so the projection
+ * is a LIST of {treatmentType, frequencyPerWeek}, NOT one summed row. These guard:
+ *   - forPhone: match / no-match / ambiguous multi-match / single + multi-type /
+ *     scalar+serviceType fallback / zero-types / !plansOk → null
+ *   - typesFromSessions: blob (single + multi-type, per-type counts) / scalar / empty
  *   - blockMessage: the no-approved-plan block (both flows) vs cannot-verify vs none
- *   - assignmentPayload: type+freq are FORCED from the plan, never from user input
+ *   - assignmentPayload: type+freq are FORCED from ONE plan-type entry, never input
+ *   - a 2-type plan yields 2 independently-assignable rows (different therapists)
  * Run with:  npm test
  */
 const test = require('node:test');
@@ -21,19 +25,27 @@ function planClient(over) {
   }, over || {});
 }
 
-// --- forPhone: the projection -----------------------------------------------
+// --- forPhone: the per-type projection --------------------------------------
 
-test('forPhone: a single matching plan projects { serviceType, frequency }', () => {
+test('forPhone: a single-type plan → one entry { treatmentType, frequencyPerWeek }', () => {
   const r = Plan.forPhone({ phone: '0501234567', plans: [planClient()], plansOk: true });
-  assert.deepEqual(r, { serviceType: 'פרטני', frequency: 1 });
+  assert.deepEqual(r, [{ treatmentType: 'פרטני', frequencyPerWeek: 1 }]);
+});
+
+test('forPhone: a MULTI-type plan → one entry per type with its own count (not summed)', () => {
+  const plans = [planClient({ serviceType: 'מרכז יום', sessions: '{"מרכז יום":3,"טיפול משפחתי":1}' })];
+  const r = Plan.forPhone({ phone: '0501234567', plans, plansOk: true });
+  assert.equal(r.length, 2);
+  assert.deepEqual(r, [
+    { treatmentType: 'מרכז יום', frequencyPerWeek: 3 },
+    { treatmentType: 'טיפול משפחתי', frequencyPerWeek: 1 }
+  ]);
 });
 
 test('forPhone: matches tolerantly across phone formatting (dashes / +972)', () => {
   const plans = [planClient({ phone: '052-365-9865', serviceType: 'משפחתי', sessions: '{"משפחתי":2}' })];
-  const r = Plan.forPhone({ phone: '0523659865', plans, plansOk: true });
-  assert.deepEqual(r, { serviceType: 'משפחתי', frequency: 2 });
-  const r2 = Plan.forPhone({ phone: '+972 52-365-9865', plans, plansOk: true });
-  assert.deepEqual(r2, { serviceType: 'משפחתי', frequency: 2 });
+  assert.deepEqual(Plan.forPhone({ phone: '0523659865', plans, plansOk: true }), [{ treatmentType: 'משפחתי', frequencyPerWeek: 2 }]);
+  assert.deepEqual(Plan.forPhone({ phone: '+972 52-365-9865', plans, plansOk: true }), [{ treatmentType: 'משפחתי', frequencyPerWeek: 2 }]);
 });
 
 test('forPhone: NO match → null (caller must block, never fail open)', () => {
@@ -48,11 +60,14 @@ test('forPhone: ambiguous multi-match (2+ plan rows, same phone) → null', () =
   assert.equal(Plan.forPhone({ phone: '0501234567', plans, plansOk: true }), null);
 });
 
-test('forPhone: JSON-blob multi-type → frequency is the SUM across types (not collapsed)', () => {
-  const plans = [planClient({ serviceType: 'מרכז יום', sessions: '{"מרכז יום":3,"טיפול משפחתי":1}' })];
-  const r = Plan.forPhone({ phone: '0501234567', plans, plansOk: true });
-  assert.equal(r.serviceType, 'מרכז יום');
-  assert.equal(r.frequency, 4, 'multi-type weekly sessions are summed: 3 + 1');
+test('forPhone: scalar sessions + a serviceType → single entry for that type', () => {
+  const plans = [planClient({ serviceType: 'פרטני', sessions: '2' })];
+  assert.deepEqual(Plan.forPhone({ phone: '0501234567', plans, plansOk: true }), [{ treatmentType: 'פרטני', frequencyPerWeek: 2 }]);
+});
+
+test('forPhone: a plan that yields ZERO types → null (treated as no plan)', () => {
+  assert.equal(Plan.forPhone({ phone: '0501234567', plans: [planClient({ sessions: '' })], plansOk: true }), null);
+  assert.equal(Plan.forPhone({ phone: '0501234567', plans: [planClient({ sessions: '2', serviceType: '' })], plansOk: true }), null);
 });
 
 test('forPhone: !plansOk (plans endpoint down) → null even if a row would match', () => {
@@ -64,28 +79,34 @@ test('forPhone: blank phone or empty plans → null', () => {
   assert.equal(Plan.forPhone({ phone: '0501234567', plans: [], plansOk: true }), null);
 });
 
-// --- freqFromSessions -------------------------------------------------------
+// --- typesFromSessions ------------------------------------------------------
 
-test('freqFromSessions: single-type blob → its count', () => {
-  assert.equal(Plan.freqFromSessions('{"פרטני":1}'), 1);
-  assert.equal(Plan.freqFromSessions('{"מרכז יום":3}'), 3);
+test('typesFromSessions: single-type blob → one entry', () => {
+  assert.deepEqual(Plan.typesFromSessions('{"פרטני":1}'), [{ treatmentType: 'פרטני', frequencyPerWeek: 1 }]);
 });
 
-test('freqFromSessions: multi-type blob → sum of counts', () => {
-  assert.equal(Plan.freqFromSessions('{"מרכז יום":3,"טיפול משפחתי":1}'), 4);
-  assert.equal(Plan.freqFromSessions({ a: 2, b: 2, c: 1 }), 5);   // object form
+test('typesFromSessions: multi-type blob → N entries (the KEYS are the types)', () => {
+  assert.deepEqual(Plan.typesFromSessions('{"מרכז יום":3,"טיפול משפחתי":1}'), [
+    { treatmentType: 'מרכז יום', frequencyPerWeek: 3 },
+    { treatmentType: 'טיפול משפחתי', frequencyPerWeek: 1 }
+  ]);
+  assert.deepEqual(Plan.typesFromSessions({ a: 2, b: 1 }), [
+    { treatmentType: 'a', frequencyPerWeek: 2 },
+    { treatmentType: 'b', frequencyPerWeek: 1 }
+  ]);
 });
 
-test('freqFromSessions: scalar (string or number) → that number', () => {
-  assert.equal(Plan.freqFromSessions('2'), 2);
-  assert.equal(Plan.freqFromSessions(3), 3);
+test('typesFromSessions: scalar + serviceType → single entry; scalar without serviceType → []', () => {
+  assert.deepEqual(Plan.typesFromSessions('3', 'פרטני'), [{ treatmentType: 'פרטני', frequencyPerWeek: 3 }]);
+  assert.deepEqual(Plan.typesFromSessions(3, 'משפחתי'), [{ treatmentType: 'משפחתי', frequencyPerWeek: 3 }]);
+  assert.deepEqual(Plan.typesFromSessions('3', ''), []);
 });
 
-test('freqFromSessions: empty / null / garbage → 0', () => {
-  assert.equal(Plan.freqFromSessions(''), 0);
-  assert.equal(Plan.freqFromSessions(null), 0);
-  assert.equal(Plan.freqFromSessions('not-a-number'), 0);
-  assert.equal(Plan.freqFromSessions('{bad json'), 0);
+test('typesFromSessions: empty / null / garbage → []', () => {
+  assert.deepEqual(Plan.typesFromSessions(''), []);
+  assert.deepEqual(Plan.typesFromSessions(null), []);
+  assert.deepEqual(Plan.typesFromSessions('not-a-number'), []);
+  assert.deepEqual(Plan.typesFromSessions('{bad json'), []);
 });
 
 // --- blockMessage: the no-approved-plan block in BOTH flows -----------------
@@ -100,37 +121,62 @@ test('blockMessage: null plan + !plansOk → "cannot verify, try later"', () => 
   assert.match(Plan.MSG_CANNOT_VERIFY, /לא ניתן לאמת/);
 });
 
-test('blockMessage: a present plan → null (no block)', () => {
-  assert.equal(Plan.blockMessage({ serviceType: 'פרטני', frequency: 1 }, true), null);
+test('blockMessage: a present (non-empty) plan → null (no block)', () => {
+  assert.equal(Plan.blockMessage([{ treatmentType: 'פרטני', frequencyPerWeek: 1 }], true), null);
 });
 
-// --- assignmentPayload: type + freq FORCED from the plan --------------------
+// --- assignmentPayload: type + freq FORCED from ONE plan-type entry ----------
 
-test('assignmentPayload: treatmentType + frequencyPerWeek come from the plan only', () => {
-  const plan = { serviceType: 'מרכז יום', frequency: 4 };
+test('assignmentPayload: treatmentType + frequencyPerWeek come from the entry only', () => {
   const row = Plan.assignmentPayload({
-    plan, id: 'a1', patientPhone: '0501234567', therapist: 'דנה',
+    entry: { treatmentType: 'מרכז יום', frequencyPerWeek: 3 },
+    id: 'a1', patientPhone: '0501234567', therapist: 'דנה',
     slots: '[{"weekday":1,"time":"10:00","location":"rehab"}]', updatedBy: 'דנה'
   });
   assert.equal(row.treatmentType, 'מרכז יום');
-  assert.equal(row.frequencyPerWeek, '4');
+  assert.equal(row.frequencyPerWeek, '3');
   assert.equal(row.therapist, 'דנה');
   assert.equal(row.patientPhone, '0501234567');
 });
 
 test('assignmentPayload: takes NO type/freq input — a stray field cannot leak in', () => {
-  const plan = { serviceType: 'פרטני', frequency: 1 };
-  // Even if a caller passes treatmentType/frequencyPerWeek, the function ignores
-  // them (its signature only reads `plan`): the saved row stays plan-sourced.
   const row = Plan.assignmentPayload({
-    plan, id: 'a1', patientPhone: '0501234567', therapist: 'רון',
-    treatmentType: 'קבוצה', frequencyPerWeek: '7'
+    entry: { treatmentType: 'פרטני', frequencyPerWeek: 1 },
+    id: 'a1', patientPhone: '0501234567', therapist: 'רון',
+    treatmentType: 'קבוצה', frequencyPerWeek: '7'    // ignored — not read by the function
   });
   assert.equal(row.treatmentType, 'פרטני');
   assert.equal(row.frequencyPerWeek, '1');
 });
 
-test('assignmentPayload: a zero-frequency plan yields an empty frequencyPerWeek', () => {
-  const row = Plan.assignmentPayload({ plan: { serviceType: 'פרטני', frequency: 0 }, id: 'a1', therapist: 'רון' });
+test('assignmentPayload: a zero-frequency entry yields an empty frequencyPerWeek', () => {
+  const row = Plan.assignmentPayload({ entry: { treatmentType: 'פרטני', frequencyPerWeek: 0 }, id: 'a1', therapist: 'רון' });
   assert.equal(row.frequencyPerWeek, '');
+});
+
+// --- a 2-type plan → 2 independently-assignable rows ------------------------
+
+test('a 2-type plan produces 2 assignable rows with independent therapists + per-type freq', () => {
+  // Mirrors what the שיבוץ modal does: forPhone → per-type entries; each type is
+  // matched to its own assignment (by treatmentType) and saved via assignmentPayload.
+  const plans = [planClient({ serviceType: 'מרכז יום', sessions: '{"מרכז יום":3,"טיפול משפחתי":1}' })];
+  const types = Plan.forPhone({ phone: '0501234567', plans, plansOk: true });
+  assert.equal(types.length, 2);
+
+  // Two existing assignments, one per type, each held by a DIFFERENT therapist.
+  const existing = [
+    { id: 'a1', treatmentType: 'מרכז יום', therapist: 'דנה' },
+    { id: 'a2', treatmentType: 'טיפול משפחתי', therapist: 'רון' }
+  ];
+  const payloads = types.map((t) => {
+    const match = existing.filter((a) => a.treatmentType === t.treatmentType)[0] || {};
+    return Plan.assignmentPayload({
+      entry: t, id: match.id, patientPhone: '0501234567', therapist: match.therapist
+    });
+  });
+
+  assert.deepEqual(payloads.map((p) => p.treatmentType), ['מרכז יום', 'טיפול משפחתי']);
+  assert.deepEqual(payloads.map((p) => p.frequencyPerWeek), ['3', '1']);
+  assert.deepEqual(payloads.map((p) => p.therapist), ['דנה', 'רון']);   // independent per type
+  assert.deepEqual(payloads.map((p) => p.id), ['a1', 'a2']);
 });

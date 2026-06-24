@@ -95,17 +95,22 @@ therapists (stored one row per assignment in the `Assignments` sheet). Editing a
 existing patient from the dashboard updates identity + origin; assignments are
 managed in שיבוץ.
 
-**Treatment type + weekly frequency are LOCKED to the approved outpatient plan.**
-The plan (`getTreatmentPlans` → `state.plans` → `Roster.build`, projected by
-`public/plan.js`) is the **single source of truth** for both — the שיבוץ
-assignments modal and the "המטופלים שלי" `+ קביעת טיפול` flow show them
-**read-only** (`svc()`-relabeled) and Yarden/the therapist edit only the
-therapist + weekly slots (שיבוץ) or the day/time/location (scheduling). Both flows
-**BLOCK** (never fail open) when there is no single approved plan to read — no
-match / ambiguous multi-match (*"אין תוכנית טיפול מאושרת — על ורד להגדיר תחילה
-תוכנית במערכת הקליטה"*) or the plans endpoint is down (*"לא ניתן לאמת…"*). For a
-multi-type plan the weekly frequency is the **sum** of the per-type session counts
-(the multi-type case is preserved, not collapsed). See
+**Treatment types + per-type weekly frequency are LOCKED to the approved
+outpatient plan.** The plan (`getTreatmentPlans` → `state.plans`, projected by
+`public/plan.js`) is the **single source of truth**. A plan can hold **several
+treatment types** — the `sessions` JSON-blob **keys ARE the types**
+(e.g. `{"מרכז יום":3,"טיפול משפחתי":1}` = two types), each with its **own weekly
+frequency** and assignable to a **different therapist**. The plan is projected as a
+**list of `{treatmentType, frequencyPerWeek}`**, and the שיבוץ assignments modal
+renders **one locked row per type**: type + frequency **read-only**
+(`svc()`-relabeled), an editable therapist, and a weekly-slot editor sized to that
+type's frequency — **no free add/remove** (the rows are exactly the plan's types).
+When a therapist schedules (`+ קביעת טיפול`), the type is locked to the **specific**
+plan type they are working (read-only) and they enter only day/time/location. Both
+flows **BLOCK** (never fail open) when there is no single approved plan to read — no
+match / ambiguous multi-match / a plan with zero types (*"אין תוכנית טיפול מאושרת —
+על ורד להגדיר תחילה תוכנית במערכת הקליטה"*) or the plans endpoint is down (*"לא ניתן
+לאמת…"*). See
 [`CHANGELOG-iteration19-lock-plan.md`](CHANGELOG-iteration19-lock-plan.md).
 
 ## Scheduling, lists & groups
