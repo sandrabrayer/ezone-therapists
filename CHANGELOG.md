@@ -1,5 +1,26 @@
 # Changelog
 
+## Iteration 19 — lock שיבוץ + scheduling to Vered's approved outpatient plan
+
+The therapists app is now **fully READ-ONLY on the treatment plan**. The
+**approved outpatient plan** (`getTreatmentPlans` → `state.plans` →
+`Roster.build`) is the **single source of truth** for a patient's **treatment
+type** and **weekly frequency** — neither the שיבוץ assignment modal nor the
+"המטופלים שלי" `+ קביעת טיפול` flow lets a user pick or edit those values; they
+are projected from the plan and locked, and both flows **BLOCK** (never fail
+open) when there is no single approved plan to read (no match / ambiguous
+multi-match → "אין תוכנית טיפול מאושרת…"; plans endpoint down → "לא ניתן לאמת…").
+New pure **`public/plan.js`** (`forPhone` / `freqFromSessions` — a JSON-blob
+`type→count` map is **summed**, multi-type preserved / `blockMessage` /
+`assignmentPayload` — type+freq **forced** from the plan) + `test/plan.test.js`
+(**+17**). `assignmentRowHtml` drops the type/freq `<select>`s for a read-only
+display; `saveAssignments` and `handleScheduleSubmit` source type+freq from the
+plan. The "המטופלים שלי" patient filter is **preserved exactly**. **`public/` +
+tests only** — `_saveAssignment` already persists the payload's
+`treatmentType`/`frequencyPerWeek`, so **no Apps Script change/redeploy**;
+deploys via Railway on commit. Full notes:
+[`CHANGELOG-iteration19-lock-plan.md`](CHANGELOG-iteration19-lock-plan.md).
+
 ## Cross-app data integrity — canonical assignment phone + delete propagation
 
 Two integrity fixes keeping the therapists and outpatient apps in sync.

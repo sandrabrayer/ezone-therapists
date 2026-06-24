@@ -90,11 +90,23 @@ treatment-plan tab is merged into the dashboard.
 Vered registers a new patient in one form: identity (name + canonical phone),
 origin (where they came from / still admitted + which house), and an **optional
 initial assignment** (therapist + treatment type + weekly frequency). The patient
-then flows to **שיבוץ מטפלים**, where assignments are fully editable — a patient
-can hold several parallel treatments/therapists, and both the plan (type +
-frequency) and the therapist are editable after being set (stored one row per
-assignment in the `Assignments` sheet). Editing an existing patient from the
-dashboard updates identity + origin; assignments are managed in שיבוץ.
+then flows to **שיבוץ מטפלים**, where a patient can hold several parallel
+therapists (stored one row per assignment in the `Assignments` sheet). Editing an
+existing patient from the dashboard updates identity + origin; assignments are
+managed in שיבוץ.
+
+**Treatment type + weekly frequency are LOCKED to the approved outpatient plan.**
+The plan (`getTreatmentPlans` → `state.plans` → `Roster.build`, projected by
+`public/plan.js`) is the **single source of truth** for both — the שיבוץ
+assignments modal and the "המטופלים שלי" `+ קביעת טיפול` flow show them
+**read-only** (`svc()`-relabeled) and Yarden/the therapist edit only the
+therapist + weekly slots (שיבוץ) or the day/time/location (scheduling). Both flows
+**BLOCK** (never fail open) when there is no single approved plan to read — no
+match / ambiguous multi-match (*"אין תוכנית טיפול מאושרת — על ורד להגדיר תחילה
+תוכנית במערכת הקליטה"*) or the plans endpoint is down (*"לא ניתן לאמת…"*). For a
+multi-type plan the weekly frequency is the **sum** of the per-type session counts
+(the multi-type case is preserved, not collapsed). See
+[`CHANGELOG-iteration19-lock-plan.md`](CHANGELOG-iteration19-lock-plan.md).
 
 ## Scheduling, lists & groups
 

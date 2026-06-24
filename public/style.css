@@ -826,6 +826,11 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .assignment-head .a-therapist { flex: 2; min-width: 120px; }
 .assignment-head .a-type { flex: 2; min-width: 130px; }
 .assignment-head .a-freq { flex: 0 0 90px; }
+/* type+freq are LOCKED to the approved plan — shown read-only, not as inputs */
+.a-plan-lock { flex: 3; display: flex; gap: 8px; align-items: baseline; min-width: 150px; }
+.a-plan-lock .a-type-lock { font-weight: 600; }
+.a-plan-lock .a-freq-lock { font-size: 0.85rem; opacity: 0.8; }
+.assignment-block { padding: 8px 0; }
 
 /* weekly recurring pattern editor (one slot row per weekly session) */
 .a-slots-label { font-size: 12px; opacity: 0.75; margin: 6px 0 4px; }

@@ -24,6 +24,7 @@
   var DebtAlert = window.DebtAlert;
   var Writeback = window.Writeback;
   var Access = window.Access;
+  var Plan = window.Plan;
 
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
@@ -412,6 +413,20 @@
   function patientByPhone(phone) {
     var key = normPhone(phone);
     return activePatients().filter(function (p) { return p.key === key; })[0] || null;
+  }
+
+  // The approved outpatient plan (getTreatmentPlans → state.plans) is the ONLY
+  // authority for a patient's treatment type + weekly frequency. This app is
+  // READ-ONLY on it. planForPhone returns { serviceType, frequency } for the one
+  // matching plan, or null when it cannot be verified (no match / ambiguous
+  // multi-match / plans endpoint down) — callers must BLOCK on null, never fail open.
+  function planForPhone(phone) {
+    return Plan.forPhone({ phone: phone, plans: state.plans, plansOk: state.plansOk });
+  }
+  // The Hebrew block copy for a null plan, distinguishing "no approved plan"
+  // (plans available — Vered must define one) from "cannot verify" (plans down).
+  function planBlockMessage(plan) {
+    return Plan.blockMessage(plan, state.plansOk);
   }
 
   // --- render ------------------------------------------------------------
@@ -890,6 +905,15 @@
 
   function openScheduleModal(prefillPatient) {
     if (!ensureTherapist()) return;
+    // Per-patient «+ קביעת טיפול»: the treatment type+freq are LOCKED to the
+    // patient's approved plan. BLOCK opening when there is no plan to verify
+    // (never let a therapist schedule against an unverified/absent plan).
+    var lockedPlan = null;
+    if (prefillPatient && prefillPatient.phone) {
+      lockedPlan = planForPhone(prefillPatient.phone);
+      var blockMsg = planBlockMessage(lockedPlan);
+      if (blockMsg) { toast(blockMsg, true); return; }
+    }
     var form = $('#scheduleForm');
     form.reset();
     resetGateResults();
@@ -902,7 +926,24 @@
     var th = $('#scheduleTherapist');
     th.value = state.therapist || (prefillPatient && prefillPatient.therapist) || '';
     th.disabled = true;
-    if (prefillPatient && prefillPatient.treatmentType) $('#scheduleType').value = resolveTypeOption(prefillPatient.treatmentType);
+    // Lock the treatment type to the plan and show its frequency read-only. The
+    // disabled select is excluded from FormData; readSession re-derives the type
+    // from the plan. The generic toolbar button has no patient yet → type stays
+    // editable, but handleScheduleSubmit still enforces the plan per patient.
+    var sty = $('#scheduleType');
+    var note = $('#schedulePlanLock');
+    if (lockedPlan) {
+      sty.value = resolveTypeOption(lockedPlan.serviceType);
+      sty.disabled = true;
+      if (note) {
+        note.hidden = false;
+        note.textContent = 'תוכנית מאושרת: ' + svc(lockedPlan.serviceType) +
+          (lockedPlan.frequency ? ' · ' + lockedPlan.frequency + '× בשבוע' : '');
+      }
+    } else {
+      sty.disabled = false;
+      if (note) { note.hidden = true; note.textContent = ''; }
+    }
     updateGroupUi();
     $('#scheduleModal').hidden = false;
   }
@@ -916,7 +957,7 @@
 
   function readSession() {
     var fd = new FormData($('#scheduleForm'));
-    return {
+    var session = {
       // A therapist always schedules as themselves (the select is locked).
       therapist: state.therapist || (fd.get('therapist') || '').trim(),
       treatmentType: (fd.get('treatmentType') || '').trim(),
@@ -924,6 +965,15 @@
       scheduledDate: fd.get('scheduledDate') || '',
       time: fd.get('time') || ''
     };
+    // The treatment type is LOCKED to the approved plan — never trusted from the
+    // (disabled, cosmetic) type field. Derive it from the first patient's plan so
+    // both gate phases agree; a missing plan is caught/blocked in handleScheduleSubmit.
+    var first = patientRowsData()[0];
+    if (first) {
+      var plan = planForPhone(first.phone);
+      if (plan) session.treatmentType = plan.serviceType;
+    }
+    return session;
   }
 
   // Monthly package-cap status for ONE patient + the session's treatment type,
@@ -1003,13 +1053,10 @@
       return finalizeSchedule(session);
     }
 
-    // Phase 1 — validate session + patients, then run the gate per patient.
-    var sv = Scheduling.validateSession(session);
-    if (!sv.ok) { toast(sv.error, true); return; }
+    // Phase 1 — resolve patients first (we need canonical phones to read each
+    // plan), then enforce the plan, then validate the session + run the gate.
     var rawPatients = patientRowsData();
     if (!rawPatients.length) { toast('יש להזין מטופל/ת אחד לפחות', true); return; }
-    var isGroup = Scheduling.isGroupType(session.treatmentType, state.treatmentTypes);
-    if (!isGroup && rawPatients.length > 1) { toast('סוג טיפול זה מאפשר מטופל/ת אחד בלבד', true); return; }
 
     var patients = [];
     for (var i = 0; i < rawPatients.length; i++) {
@@ -1019,6 +1066,23 @@
       if (!pv.ok) { toast(rp.name + ': ' + pv.error, true); return; }
       patients.push({ name: rp.name, phone: pv.value });
     }
+
+    // PLAN LOCK — the treatment type comes ONLY from the approved plan, and EVERY
+    // patient must have a verifiable plan, else BLOCK (never fail open). This also
+    // covers the generic toolbar entry where the type select was left editable.
+    var lockedType = null;
+    for (var j = 0; j < patients.length; j++) {
+      var plan = planForPhone(patients[j].phone);
+      var blockMsg = planBlockMessage(plan);
+      if (blockMsg) { toast(patients[j].name + ': ' + blockMsg, true); return; }
+      if (lockedType == null) lockedType = plan.serviceType;
+    }
+    session.treatmentType = lockedType;        // server-authoritative type from the plan
+
+    var sv = Scheduling.validateSession(session);
+    if (!sv.ok) { toast(sv.error, true); return; }
+    var isGroup = Scheduling.isGroupType(session.treatmentType, state.treatmentTypes);
+    if (!isGroup && rawPatients.length > 1) { toast('סוג טיפול זה מאפשר מטופל/ת אחד בלבד', true); return; }
 
     sub.disabled = true;
     sub.textContent = 'בודק חוב…';
@@ -1493,7 +1557,7 @@
   }
 
   // --- assignments modal (multiple therapists/plans per patient) --------
-  var assignmentsCtx = { phone: '', removed: [] };
+  var assignmentsCtx = { phone: '', removed: [], plan: null };
   // Times-per-week options: blank default + 1..7. Reused by the modal and the
   // intake form so both offer the same fixed, valid range (no free-form number).
   function freqOptions(selected) {
@@ -1521,10 +1585,13 @@
       '<select class="s-location">' + locationOptions(slot.location || '') + '</select>' +
       '</div>';
   }
-  // N slot rows: prefer stored slots, else N empty rows to match the frequency.
+  // N slot rows prefilled from stored slots. The frequency is LOCKED to the
+  // approved plan, so when `freq` is given it WINS (exactly `freq` rows, padded
+  // from / truncated to the stored slots); only when no freq is known do we fall
+  // back to the stored slot count.
   function slotsEditorHtml(slots, freq) {
     var arr = Recurring.parseSlots(slots);
-    var n = arr.length || (parseInt(freq, 10) || 0);
+    var n = (parseInt(freq, 10) || 0) || arr.length;
     var html = '';
     for (var i = 0; i < n; i++) html += slotRowHtml(arr[i] || {});
     return html;
@@ -1538,72 +1605,106 @@
       };
     });
   }
-  // Rebuild a row's slot editor to match its chosen frequency, preserving values.
+  // Rebuild a row's slot editor to match the LOCKED plan frequency (no longer the
+  // removed .a-freq select), preserving any values the therapist already entered.
   function syncSlotEditor(rowEl) {
-    var n = parseInt(rowEl.querySelector('.a-freq').value, 10) || 0;
+    var plan = assignmentsCtx.plan;
+    var n = plan ? (parseInt(plan.frequency, 10) || 0) : 0;
     var container = rowEl.querySelector('.a-slots');
     var existing = readSlotRows(container);
     var html = '';
     for (var i = 0; i < n; i++) html += slotRowHtml(existing[i] || {});
     container.innerHTML = html;
   }
-  function assignmentRowHtml(a) {
+  // Yarden edits ONLY the therapist and the weekly slots. The treatment type +
+  // frequency are LOCKED to the approved plan and shown READ-ONLY (no select).
+  function assignmentRowHtml(a, plan) {
     a = a || {};
+    plan = plan || { serviceType: '', frequency: 0 };
+    var freqText = plan.frequency ? (plan.frequency + '× בשבוע') : '—';
     return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '">' +
       '<div class="assignment-head">' +
         '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
-        '<select class="a-type">' + typeOptionList(resolveTypeOption(a.treatmentType || '')) + '</select>' +
-        '<select class="a-freq">' + freqOptions(a.frequencyPerWeek) + '</select>' +
+        '<span class="a-plan-lock" title="נקבע בתוכנית הטיפול המאושרת (קריאה בלבד)">' +
+          '<span class="a-type-lock">' + escapeHtml(svc(plan.serviceType) || '—') + '</span>' +
+          '<span class="a-freq-lock">' + escapeHtml(freqText) + '</span>' +
+        '</span>' +
         '<button type="button" class="btn btn-ghost btn-sm remove-assignment" title="הסר">✕</button>' +
       '</div>' +
       '<div class="a-slots-label">מועדים שבועיים קבועים:</div>' +
-      '<div class="a-slots">' + slotsEditorHtml(a.slots, a.frequencyPerWeek) + '</div>' +
+      '<div class="a-slots">' + slotsEditorHtml(a.slots, plan.frequency) + '</div>' +
       '</div>';
   }
   function openAssignmentsModal(phone) {
     var p = patientByPhone(phone);
     if (!p) { toast('מטופל/ת לא נמצא', true); return; }
-    assignmentsCtx = { phone: p.phone, removed: [] };
+    // The plan is the SINGLE authority for type+freq; resolve it once per patient.
+    var plan = planForPhone(p.phone);
+    assignmentsCtx = { phone: p.phone, removed: [], plan: plan };
     $('#assignmentsPatientName').textContent = p.name;
-    var rows = p.assignments.length ? p.assignments.map(assignmentRowHtml) : [assignmentRowHtml({})];
+    var save = $('#assignmentsSave');
+    var addBtn = $('#addAssignmentRowBtn');
+    // BLOCK (never fail open) when there is no single approved plan to read.
+    var blockMsg = planBlockMessage(plan);
+    if (blockMsg) {
+      $('#assignmentRows').innerHTML = '<div class="gate-flag assignment-block">' + escapeHtml(blockMsg) + '</div>';
+      if (save) save.disabled = true;
+      if (addBtn) addBtn.hidden = true;
+      $('#assignmentsModal').hidden = false;
+      return;
+    }
+    if (save) save.disabled = false;
+    if (addBtn) addBtn.hidden = false;
+    var rows = p.assignments.length
+      ? p.assignments.map(function (a) { return assignmentRowHtml(a, plan); })
+      : [assignmentRowHtml({}, plan)];
     $('#assignmentRows').innerHTML = rows.join('');
     $('#assignmentsModal').hidden = false;
   }
   function closeAssignmentsModal() { $('#assignmentsModal').hidden = true; }
   function addAssignmentRow() {
     var div = document.createElement('div');
-    div.innerHTML = assignmentRowHtml({});
+    div.innerHTML = assignmentRowHtml({}, assignmentsCtx.plan);
     $('#assignmentRows').appendChild(div.firstChild);
   }
   function saveAssignments() {
     var btn = $('#assignmentsSave');
     if (btn.disabled) return;
     var phone = assignmentsCtx.phone;
+    // The plan is the ONLY authority for type+freq. Re-check on save (defensive —
+    // the modal already blocked on open) so a stale/disappeared plan never saves.
+    var plan = assignmentsCtx.plan;
+    var blockMsg = planBlockMessage(plan);
+    if (blockMsg) { toast(blockMsg, true); return; }
+    var planFreq = String(plan.frequency || '');
     var rows = $$('#assignmentRows .assignment-row');
     var toSave = [];
     var keptIds = {};
     for (var i = 0; i < rows.length; i++) {
       var el = rows[i];
       var ther = (el.querySelector('.a-therapist').value || '').trim();
-      var type = (el.querySelector('.a-type').value || '').trim();
-      var freq = (el.querySelector('.a-freq').value || '').trim();
-      if (!ther && !type) continue;                       // blank row -> skip
-      if (!ther) { toast('יש לבחור מטפל/ת לכל שיבוץ', true); return; }
       // Weekly recurring pattern (optional): all-or-nothing — either no slots, or
-      // exactly `freq` complete slots {weekday,time,location}.
-      var slotsJson = '';
+      // exactly `planFreq` complete slots {weekday,time,location}.
       var filled = readSlotRows(el.querySelector('.a-slots')).filter(function (s) {
         return s.weekday !== '' || s.time || s.location;
       });
+      if (!ther && !filled.length) continue;              // blank row -> skip
+      if (!ther) { toast('יש לבחור מטפל/ת לכל שיבוץ', true); return; }
+      var slotsJson = '';
       if (filled.length) {
-        if (!freq) { toast(ther + ': יש לבחור תדירות בשבוע לפני הגדרת מועדים', true); return; }
-        var v = Recurring.validateSlots(filled, freq);
+        if (!planFreq) { toast(ther + ': אין תדירות בתוכנית הטיפול — לא ניתן להגדיר מועדים', true); return; }
+        var v = Recurring.validateSlots(filled, planFreq);
         if (!v.ok) { toast(ther + ': ' + v.error, true); return; }
         slotsJson = JSON.stringify(v.slots);
       }
       var aid = el.getAttribute('data-aid') || '';
       if (aid) keptIds[aid] = true;
-      toSave.push({ id: aid || uid(), patientPhone: phone, therapist: ther, treatmentType: type, frequencyPerWeek: freq, slots: slotsJson, updatedBy: state.therapist || 'עורך' });
+      // treatmentType + frequencyPerWeek are FORCED from the plan, never from any
+      // input (assignmentPayload takes no type/freq argument by design).
+      toSave.push(Plan.assignmentPayload({
+        plan: plan, id: aid || uid(), patientPhone: phone, therapist: ther,
+        slots: slotsJson, updatedBy: state.therapist || 'עורך'
+      }));
     }
     // Existing assignments whose row was deleted -> remove.
     var existing = (patientByPhone(phone) || { assignments: [] }).assignments;
