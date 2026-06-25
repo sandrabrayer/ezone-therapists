@@ -1,5 +1,28 @@
 # Changelog
 
+## Schedule modal — restrict to assigned patients + lock the plan type
+
+Closes a generic-toolbar bypass in «קביעת טיפול». Opened from `#mineScheduleBtn`,
+the modal let a therapist autocomplete over the **whole** roster. Now the schedule
+patient pickers (`.patient-name-dl`) offer **only patients assigned to the
+therapist** (`p.therapists.indexOf(state.therapist)!==-1`, the `renderMine` rule)
+— individual **and** group — with a submit-time check that blocks an unassigned
+patient (incl. inside a group) via «ניתן לקבוע טיפול רק למטופל/ת המשויך/ת אליך»; a
+therapist with none sees «אין לך מטופלים משויכים» + disabled submit. The
+schedule-modal treatment-type lock is now **assignment-based**
+(`planLockState`/`refreshTypeLock` over `Scheduling.assignedTypesForPatient`): one
+type → read-only; several → pick among only those; none → blocked (never fail
+open). This **supersedes the earlier schedule-side `scheduleLockedType`** only —
+the **שיבוץ assignment-modal plan lock is untouched** (`planForPhone`,
+`Plan.assignmentPayload`, the read-only `a-type-lock`/`a-freq-lock` rows from
+iteration 19 all remain). `readSession` reads the type from the live select so a
+locked/disabled control still submits; group sessions keep a selectable shared
+type. New pure `public/scheduling.js` helpers (`assignedToTherapist`,
+`assignedTypesForPatient`, `planLockState`, `validateScheduledPatients`) +
+`test/scheduling.test.js` (+8). **Frontend-only — no backend/secret/redeploy.**
+Suite **241/0**. Full notes:
+[`CHANGELOG-schedule-assigned-restriction.md`](CHANGELOG-schedule-assigned-restriction.md).
+
 ## Iteration 19 — lock שיבוץ + scheduling to Vered's approved outpatient plan (per treatment type)
 
 The therapists app is now **fully READ-ONLY on the treatment plan**. The

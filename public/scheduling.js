@@ -154,6 +154,81 @@
     return s === ATTENDANCE.PENDING || s === ATTENDANCE.OCCURRED || s === ATTENDANCE.MISSED;
   }
 
+  /* ===== Therapist-scoped scheduling restriction =====
+   * A therapist may only ever schedule patients ASSIGNED TO THEM — for individual
+   * AND group sessions alike (no exception for groups). For an INDIVIDUAL session
+   * the treatment type is additionally locked to that patient's approved plan
+   * (never the global type list). These pure helpers mirror the app.js wiring and
+   * are unit-tested in test/scheduling.test.js. */
+
+  // Patients (from a built roster) assigned to `therapist` — i.e. that therapist
+  // is one of the patient's assignment therapists. Empty therapist → none.
+  function assignedToTherapist(roster, therapist) {
+    if (!therapist) return [];
+    return (Array.isArray(roster) ? roster : []).filter(function (p) {
+      return p && Array.isArray(p.therapists) && p.therapists.indexOf(therapist) !== -1;
+    });
+  }
+
+  // The DISTINCT, non-empty treatment types this therapist is assigned to deliver
+  // for `patient` — drawn ONLY from that patient's assignments where the therapist
+  // matches (so a plan owned by a different therapist is never offered here).
+  function assignedTypesForPatient(patient, therapist) {
+    var out = [], seen = {};
+    var assigns = (patient && patient.assignments) || [];
+    for (var i = 0; i < assigns.length; i++) {
+      var a = assigns[i];
+      if (a && a.therapist === therapist) {
+        var t = String(a.treatmentType == null ? '' : a.treatmentType).trim();
+        if (t && !seen[t]) { seen[t] = 1; out.push(t); }
+      }
+    }
+    return out;
+  }
+
+  // Plan-lock state for the INDIVIDUAL (single-patient) path, given the patient's
+  // assigned types:
+  //   'blocked' — no approved plan type (NEVER fail open: scheduling is blocked)
+  //   'locked'  — exactly one type → read-only, set to it
+  //   'choose'  — several types → pick among ONLY these (never the global list)
+  function planLockState(types) {
+    var list = Array.isArray(types) ? types : [];
+    if (!list.length) return { mode: 'blocked', types: [] };
+    if (list.length === 1) return { mode: 'locked', types: list.slice() };
+    return { mode: 'choose', types: list.slice() };
+  }
+
+  // Validate the patients entered into the schedule form. `patients` are
+  // [{name, key}] (key = normalized phone match key); `assigned` is the roster
+  // subset from assignedToTherapist (each with .key, .name, .assignments).
+  //  - EVERY entered patient must be in the assigned set (individual AND group).
+  //  - For an INDIVIDUAL session, the chosen treatmentType must match one of that
+  //    patient's approved plan types (relabel-aware); no plan → blocked.
+  // Returns { ok:true } or { ok:false, error } (first failure wins).
+  function validateScheduledPatients(patients, assigned, opts) {
+    opts = opts || {};
+    var therapist = opts.therapist;
+    var isGroup = !!opts.isGroup;
+    var type = String(opts.treatmentType == null ? '' : opts.treatmentType).trim();
+    var byKey = {};
+    (assigned || []).forEach(function (p) { if (p && p.key) byKey[p.key] = p; });
+    var list = Array.isArray(patients) ? patients : [];
+    for (var i = 0; i < list.length; i++) {
+      var ap = byKey[list[i] && list[i].key];
+      if (!ap) return { ok: false, error: 'ניתן לקבוע טיפול רק למטופל/ת המשויך/ת אליך' };
+      if (!isGroup) {
+        var types = assignedTypesForPatient(ap, therapist);
+        if (!types.length) return { ok: false, error: ap.name + ': אין תכנית טיפול מאושרת — לא ניתן לקבוע' };
+        var want = displayServiceType(type);
+        var have = types.map(displayServiceType);
+        if (!type || have.indexOf(want) === -1) {
+          return { ok: false, error: ap.name + ': סוג הטיפול אינו תואם את תכנית הטיפול' };
+        }
+      }
+    }
+    return { ok: true };
+  }
+
   /**
    * Build the persisted rows for a session: one per patient, all sharing
    * `sessionId`. Each patient supplies its own gate fields (decided per patient,
@@ -318,6 +393,10 @@
     gateStatusForDecision: gateStatusForDecision,
     timeSlots: timeSlots,
     canCancelBooking: canCancelBooking,
+    assignedToTherapist: assignedToTherapist,
+    assignedTypesForPatient: assignedTypesForPatient,
+    planLockState: planLockState,
+    validateScheduledPatients: validateScheduledPatients,
     validateSession: validateSession,
     validateAttendance: validateAttendance,
     buildSessionRows: buildSessionRows,
