@@ -1387,12 +1387,18 @@ function _removePatient(payload) {
   });
   if (!deactivate.ok) return { ok: false, error: deactivate.error || 'deactivate_failed' };
 
-  var lock = LockService.getScriptLock();
+ var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
     var removed = _deleteLocalPatient(pSh, canon);
-    return { ok: true, removed: removed, phone: canon, resolved: resolve.resolved, deactivated: deactivate.deactivated };
+    // Cancel the deleted patient's FUTURE, unreported bookings (same rule as the
+    // stop flow): reported/past sessions are KEPT for the pay record; only
+    // today-or-later unreported rows are removed. Without this, a deleted patient
+    // keeps showing scheduled treatments (the מריסה נשרי case).
+    var schSh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+    var cancelled = _cancelFutureBookings(schSh, canon);
+    return { ok: true, removed: removed, cancelled: cancelled, phone: canon, resolved: resolve.resolved, deactivated: deactivate.deactivated };
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
