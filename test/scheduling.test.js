@@ -288,3 +288,92 @@ test('canCancelBooking: only an unreported booking can be cancelled', () => {
   assert.equal(Scheduling.canCancelBooking({ attendance: 'missed' }), false);
   assert.equal(Scheduling.canCancelBooking(null), true);   // nothing reported
 });
+
+// === Therapist-scoped scheduling restriction (assigned-only + plan lock) =====
+// A therapist may only schedule patients assigned to them (individual AND group);
+// for an individual session the type is locked to that patient's approved plan.
+
+function rosterFixture() {
+  return [
+    { name: 'רון מנחם', key: '0501111111',
+      therapists: ['דנה'], assignments: [{ therapist: 'דנה', treatmentType: 'פסיכודינמי' }] },
+    { name: 'יעל כהן', key: '0502222222',
+      therapists: ['דנה', 'רמי'], assignments: [
+        { therapist: 'דנה', treatmentType: 'פסיכודינמי' },
+        { therapist: 'דנה', treatmentType: 'עיסוי טיפולי' },
+        { therapist: 'רמי', treatmentType: 'קבוצה' }
+      ] },
+    { name: 'משה לוי', key: '0503333333',
+      therapists: ['רמי'], assignments: [{ therapist: 'רמי', treatmentType: 'קבוצה' }] },
+    { name: 'נועה ללא תכנית', key: '0504444444',
+      therapists: ['דנה'], assignments: [{ therapist: 'דנה', treatmentType: '' }] }
+  ];
+}
+
+test('assignedToTherapist: only patients assigned to that therapist (group + individual alike)', () => {
+  const r = rosterFixture();
+  const mine = Scheduling.assignedToTherapist(r, 'דנה').map(p => p.name);
+  assert.deepEqual(mine.sort(), ['יעל כהן', 'נועה ללא תכנית', 'רון מנחם'].sort());
+  assert.equal(Scheduling.assignedToTherapist(r, 'דנה').every(p => p.name !== 'משה לוי'), true);
+  assert.deepEqual(Scheduling.assignedToTherapist(r, '').length, 0);  // no therapist → none
+});
+
+test('assignedTypesForPatient: distinct types from THIS therapist only', () => {
+  const yael = rosterFixture()[1];
+  assert.deepEqual(Scheduling.assignedTypesForPatient(yael, 'דנה'), ['פסיכודינמי', 'עיסוי טיפולי']);
+  assert.deepEqual(Scheduling.assignedTypesForPatient(yael, 'רמי'), ['קבוצה']);  // not דנה's types
+  assert.deepEqual(Scheduling.assignedTypesForPatient(rosterFixture()[3], 'דנה'), []);  // blank type → none
+});
+
+test('planLockState: blocked / locked / choose by plan-type count', () => {
+  assert.deepEqual(Scheduling.planLockState([]), { mode: 'blocked', types: [] });
+  assert.deepEqual(Scheduling.planLockState(['פסיכודינמי']), { mode: 'locked', types: ['פסיכודינמי'] });
+  assert.equal(Scheduling.planLockState(['פסיכודינמי', 'עיסוי טיפולי']).mode, 'choose');
+});
+
+test('validateScheduledPatients: blocks a patient NOT assigned to the therapist (individual)', () => {
+  const r = Scheduling.validateScheduledPatients(
+    [{ name: 'משה לוי', key: '0503333333' }], Scheduling.assignedToTherapist(rosterFixture(), 'דנה'),
+    { therapist: 'דנה', isGroup: false, treatmentType: 'קבוצה' });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /רק למטופל\/ת המשויך/);
+});
+
+test('validateScheduledPatients: blocks an unassigned patient INSIDE a group too', () => {
+  const r = Scheduling.validateScheduledPatients(
+    [{ name: 'יעל כהן', key: '0502222222' }, { name: 'משה לוי', key: '0503333333' }],
+    Scheduling.assignedToTherapist(rosterFixture(), 'דנה'),
+    { therapist: 'דנה', isGroup: true, treatmentType: 'קבוצה' });
+  assert.equal(r.ok, false);                 // משה is רמי's, not דנה's — rejected even in a group
+  assert.match(r.error, /רק למטופל\/ת המשויך/);
+});
+
+test('validateScheduledPatients: individual type must match the patient plan; group is exempt', () => {
+  const assigned = Scheduling.assignedToTherapist(rosterFixture(), 'דנה');
+  // individual, type IN plan → ok
+  assert.equal(Scheduling.validateScheduledPatients(
+    [{ name: 'רון מנחם', key: '0501111111' }], assigned,
+    { therapist: 'דנה', isGroup: false, treatmentType: 'פסיכודינמי' }).ok, true);
+  // individual, type NOT in plan → blocked
+  assert.equal(Scheduling.validateScheduledPatients(
+    [{ name: 'רון מנחם', key: '0501111111' }], assigned,
+    { therapist: 'דנה', isGroup: false, treatmentType: 'עיסוי טיפולי' }).ok, false);
+  // no approved plan → blocked (never fail open)
+  assert.match(Scheduling.validateScheduledPatients(
+    [{ name: 'נועה ללא תכנית', key: '0504444444' }], assigned,
+    { therapist: 'דנה', isGroup: false, treatmentType: 'פסיכודינמי' }).error, /אין תכנית/);
+});
+
+test('validateScheduledPatients: legacy מרכז יום matches its relabel ליווי יומי בקהילה', () => {
+  const assigned = [{ name: 'דני', key: '0505555555',
+    therapists: ['דנה'], assignments: [{ therapist: 'דנה', treatmentType: 'מרכז יום' }] }];
+  assert.equal(Scheduling.validateScheduledPatients(
+    [{ name: 'דני', key: '0505555555' }], assigned,
+    { therapist: 'דנה', isGroup: false, treatmentType: 'ליווי יומי בקהילה' }).ok, true);
+});
+
+test('validateScheduledPatients: an all-assigned individual passes', () => {
+  assert.equal(Scheduling.validateScheduledPatients(
+    [{ name: 'יעל כהן', key: '0502222222' }], Scheduling.assignedToTherapist(rosterFixture(), 'דנה'),
+    { therapist: 'דנה', isGroup: false, treatmentType: 'פסיכודינמי' }).ok, true);
+});
