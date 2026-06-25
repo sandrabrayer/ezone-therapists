@@ -157,6 +157,7 @@
             <select name="treatmentType" id="scheduleType" required>
               <option value="">—</option>
             </select>
+            <small id="schedulePlanLock" class="form-hint" hidden></small>
           </label>
           <label>מיקום
             <select name="location" id="scheduleLocation" required>
@@ -172,6 +173,7 @@
               <span id="patientsSectionTitle">מטופל/ת</span>
               <button type="button" id="addPatientRowBtn" class="btn btn-ghost btn-sm" hidden>+ הוסף מטופל/ת לקבוצה</button>
             </div>
+            <div id="scheduleNoPatients" class="form-hint" hidden>אין לך מטופלים משויכים</div>
             <div id="patientRows"></div>
           </div>
 

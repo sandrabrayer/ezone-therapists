@@ -1,5 +1,25 @@
 # Changelog
 
+## Schedule modal — restrict to assigned patients + lock the plan type
+
+Closes a generic-toolbar bypass in «קביעת טיפול». Opened from `#mineScheduleBtn`,
+the modal let a therapist autocomplete over the **whole** roster and pick **any**
+treatment type. Now: the schedule patient pickers (`.patient-name-dl`) offer **only
+patients assigned to the therapist** (`p.therapists.indexOf(state.therapist)!==-1`,
+the `renderMine` rule) — for individual **and** group sessions — with a submit-time
+check that blocks an unassigned patient (incl. inside a group) via «ניתן לקבוע
+טיפול רק למטופל/ת המשויך/ת אליך»; a therapist with none sees «אין לך מטופלים
+משויכים» + disabled submit. For an **individual** session the treatment type is
+**locked to the patient's approved plan** (one type → read-only; several → pick
+among only those; none → blocked, never fail open) via a new `#schedulePlanLock`
+note; `readSession` reads the type from the live select so a locked/disabled
+control still submits. **Group sessions keep a selectable shared type** (patient
+restriction only — product decision). New pure `public/scheduling.js` helpers
+(`assignedToTherapist`, `assignedTypesForPatient`, `planLockState`,
+`validateScheduledPatients`) + `test/scheduling.test.js` (+8); suite **221/0**.
+**Frontend-only — no backend/secret/redeploy.** Full notes:
+[`CHANGELOG-schedule-assigned-restriction.md`](CHANGELOG-schedule-assigned-restriction.md).
+
 ## Cross-app data integrity — canonical assignment phone + delete propagation
 
 Two integrity fixes keeping the therapists and outpatient apps in sync.

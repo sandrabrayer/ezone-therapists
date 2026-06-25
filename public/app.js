@@ -100,6 +100,9 @@
 
   // Per-patient gate decisions pending in the schedule modal (null until check).
   var pendingPatients = null;
+  // True when the chosen single patient has NO approved plan type — scheduling is
+  // blocked (never fail open). Drives the submit button's disabled state.
+  var planBlocked = false;
 
   // --- utils -------------------------------------------------------------
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -412,6 +415,30 @@
   function patientByPhone(phone) {
     var key = normPhone(phone);
     return activePatients().filter(function (p) { return p.key === key; })[0] || null;
+  }
+
+  // Patients ASSIGNED to the current therapist — the only patients they may
+  // schedule (individual AND group). Mirrors renderMine's filter. Empty when no
+  // therapist is picked.
+  function assignedPatients() {
+    if (!hasTherapist()) return [];
+    return Scheduling.assignedToTherapist(activePatients(), state.therapist);
+  }
+  function assignedPatientNames() {
+    return assignedPatients().map(function (p) { return p.name; }).filter(Boolean)
+      .sort(function (a, b) { return String(a).localeCompare(b, 'he'); });
+  }
+  // Resolve the assigned patient a schedule row refers to (by phone key first,
+  // then exact name), or null when the row doesn't (yet) name an assigned patient.
+  function resolveAssignedPatientForRow(row) {
+    if (!row) return null;
+    var phone = (row.querySelector('.patient-phone').value || '').trim();
+    var name = (row.querySelector('.patient-name').value || '').trim();
+    var list = assignedPatients();
+    var key = phone ? normPhone(phone) : '';
+    if (key) { var byPhone = list.filter(function (p) { return p.key === key; })[0]; if (byPhone) return byPhone; }
+    if (name) { var byName = list.filter(function (p) { return p.name === name; })[0]; if (byName) return byName; }
+    return null;
   }
 
   // --- render ------------------------------------------------------------
@@ -835,12 +862,17 @@
     var wf = $('#workflowTherapistFilter'); if (wf) wf.innerHTML = '<option value="">כל המטפלים</option>' +
       tNames.map(function (n) { var s = (n === state.workflowTherapist) ? ' selected' : ''; return '<option value="' + escapeHtml(n) + '"' + s + '>' + escapeHtml(n) + '</option>'; }).join('');
 
+    // Intake (Vered) name picker — the FULL active roster (registering anyone).
     var roster = activePatients();
     var names = roster.map(function (p) { return p.name; }).filter(Boolean);
     var rn = $('#rosterNames');
     if (rn) rn.innerHTML = names.map(function (n) { return '<option value="' + escapeHtml(n) + '"></option>'; }).join('');
+    // Schedule-modal patient pickers — ONLY patients assigned to this therapist
+    // (individual and group alike); a therapist can never schedule someone else's
+    // patient. Empty when they have no assigned patients.
+    var assignedNames = assignedPatientNames();
     $$('.patient-name-dl').forEach(function (dl) {
-      dl.innerHTML = names.map(function (n) { return '<option value="' + escapeHtml(n) + '"></option>'; }).join('');
+      dl.innerHTML = assignedNames.map(function (n) { return '<option value="' + escapeHtml(n) + '"></option>'; }).join('');
     });
     var os = $('#originSuggestions');
     if (os) os.innerHTML = ORIGIN_HOUSES.map(function (h) { return '<option value="' + escapeHtml(h.he) + '"></option>'; }).join('');
@@ -882,6 +914,70 @@
     $$('#patientRows .remove-patient').forEach(function (b) { b.style.visibility = isGroup ? 'visible' : 'hidden'; });
   }
 
+  // --- treatment-type plan lock (INDIVIDUAL / single-patient path) -------
+  // The type is locked to the chosen patient's approved plan so a therapist can't
+  // schedule a treatment the patient has no plan for. (Group sessions are exempt
+  // per product decision — there the patient-set restriction alone applies.)
+  function setPlanNote(msg) {
+    var el = $('#schedulePlanLock'); if (!el) return;
+    el.textContent = msg || ''; el.hidden = !msg;
+  }
+  // Options built from a specific set of plan types (NOT the global type list);
+  // value is the resolved/relabeled type that the store + gate expect.
+  function planTypeOptions(types, selected) {
+    return types.map(function (t) {
+      var v = resolveTypeOption(t);
+      var sel = (v === selected) ? ' selected' : '';
+      return '<option value="' + escapeHtml(v) + '"' + sel + '>' + escapeHtml(svc(t)) + '</option>';
+    }).join('');
+  }
+  // Restore the full, editable type list (no patient chosen, or a group session).
+  function unlockType() {
+    var typeEl = $('#scheduleType'); var cur = typeEl.value;
+    typeEl.innerHTML = typeOptionList(cur); typeEl.value = cur;
+    typeEl.disabled = false; setPlanNote('');
+  }
+  function applyPlanLock(types) {
+    var typeEl = $('#scheduleType');
+    var st = Scheduling.planLockState(types);
+    if (st.mode === 'blocked') {
+      typeEl.innerHTML = '<option value="">—</option>'; typeEl.value = '';
+      typeEl.disabled = true; planBlocked = true;
+      setPlanNote('אין תכנית טיפול מאושרת למטופל/ת זו — לא ניתן לקבוע'); return;
+    }
+    planBlocked = false;
+    if (st.mode === 'locked') {
+      var v = resolveTypeOption(st.types[0]);
+      typeEl.innerHTML = planTypeOptions(st.types, v); typeEl.value = v;
+      typeEl.disabled = true;
+      setPlanNote('סוג הטיפול נקבע לפי תכנית הטיפול של המטופל/ת');
+    } else {            // 'choose' — pick among ONLY this patient's plan types
+      var allowed = st.types.map(resolveTypeOption);
+      var keep = allowed.indexOf(typeEl.value) !== -1 ? typeEl.value : '';
+      typeEl.innerHTML = '<option value="">— בחר/י —</option>' + planTypeOptions(st.types, keep);
+      typeEl.value = keep; typeEl.disabled = false;
+      setPlanNote('בחר/י מבין סוגי הטיפול בתכנית של המטופל/ת');
+    }
+  }
+  function updateSubmitEnabled() {
+    var sub = $('#scheduleSubmit');
+    sub.disabled = planBlocked || !assignedPatients().length;
+  }
+  // Re-evaluate the type lock whenever the chosen patient changes. A group session
+  // (group type) or a multi-patient set is exempt — the full type list stays.
+  function refreshTypeLock() {
+    var typeEl = $('#scheduleType');
+    var rows = $$('#patientRows .patient-row');
+    if (Scheduling.isGroupType(typeEl.value, state.treatmentTypes) || rows.length > 1) {
+      unlockType(); planBlocked = false; updateSubmitEnabled(); return;
+    }
+    var p = resolveAssignedPatientForRow(rows[0]);
+    if (!p) { unlockType(); planBlocked = false; updateSubmitEnabled(); return; }
+    applyPlanLock(Scheduling.assignedTypesForPatient(p, state.therapist));
+    updateGroupUi();
+    updateSubmitEnabled();
+  }
+
   function openScheduleModal(prefillPatient) {
     if (!ensureTherapist()) return;
     var form = $('#scheduleForm');
@@ -898,6 +994,10 @@
     th.disabled = true;
     if (prefillPatient && prefillPatient.treatmentType) $('#scheduleType').value = resolveTypeOption(prefillPatient.treatmentType);
     updateGroupUi();
+    // A therapist with no assigned patients can't schedule anyone — say so plainly.
+    $('#scheduleNoPatients').hidden = assignedPatients().length > 0;
+    // Lock the type to the (prefilled) patient's plan on the individual path.
+    refreshTypeLock();
     $('#scheduleModal').hidden = false;
   }
   function closeScheduleModal() { $('#scheduleModal').hidden = true; resetGateResults(); }
@@ -910,10 +1010,14 @@
 
   function readSession() {
     var fd = new FormData($('#scheduleForm'));
+    // Read the type from the live select (not FormData): when the plan lock
+    // disables #scheduleType for a single-plan patient, a disabled control is
+    // omitted from FormData — the element's .value still carries the locked type.
+    var typeEl = $('#scheduleType');
     return {
       // A therapist always schedules as themselves (the select is locked).
       therapist: state.therapist || (fd.get('therapist') || '').trim(),
-      treatmentType: (fd.get('treatmentType') || '').trim(),
+      treatmentType: ((typeEl && typeEl.value) || fd.get('treatmentType') || '').trim(),
       location: (fd.get('location') || '').trim(),
       scheduledDate: fd.get('scheduledDate') || '',
       time: fd.get('time') || ''
@@ -976,6 +1080,16 @@
       if (!pv.ok) { toast(rp.name + ': ' + pv.error, true); return; }
       patients.push({ name: rp.name, phone: pv.value });
     }
+
+    // Authoritative restriction: every patient must be assigned to this therapist
+    // (individual AND group), and for an individual session the type must match
+    // the patient's approved plan. Never fail open. Mirrors the UI plan lock.
+    var assignedCheck = Scheduling.validateScheduledPatients(
+      patients.map(function (p) { return { name: p.name, key: normPhone(p.phone) }; }),
+      assignedPatients(),
+      { therapist: state.therapist, isGroup: isGroup, treatmentType: session.treatmentType }
+    );
+    if (!assignedCheck.ok) { toast(assignedCheck.error, true); return; }
 
     sub.disabled = true;
     sub.textContent = 'בודק חוב…';
@@ -1678,10 +1792,28 @@
     on('#addPatientRowBtn', 'click', function () { addPatientRow(); updateGroupUi(); });
     on('#patientRows', 'click', function (e) {
       var rm = e.target.closest('.remove-patient');
-      if (rm) { var row = rm.closest('.patient-row'); if ($$('#patientRows .patient-row').length > 1) row.remove(); }
+      if (rm) {
+        var row = rm.closest('.patient-row');
+        if ($$('#patientRows .patient-row').length > 1) { row.remove(); refreshTypeLock(); }
+      }
     });
-    // Editing a patient identity invalidates a pending gate result.
-    on('#patientRows', 'input', function () { if (pendingPatients) resetGateResults(); });
+    // Editing a patient identity invalidates a pending gate result AND re-applies
+    // the type lock to whoever is now named in the row.
+    on('#patientRows', 'input', function () { if (pendingPatients) resetGateResults(); refreshTypeLock(); });
+    // Picking an assigned patient by name fills their phone (so the gate + the
+    // assigned-only check key off the right record), then re-locks the type.
+    on('#patientRows', 'change', function (e) {
+      if (e.target.classList && e.target.classList.contains('patient-name')) {
+        var row = e.target.closest('.patient-row');
+        var phoneEl = row.querySelector('.patient-phone');
+        var name = (e.target.value || '').trim();
+        if (name && !(phoneEl.value || '').trim()) {
+          var hit = assignedPatients().filter(function (p) { return p.name === name; });
+          if (hit.length === 1) phoneEl.value = hit[0].phone;
+        }
+      }
+      refreshTypeLock();
+    });
 
     on('#stillAdmitted', 'change', function (e) { $('#admittedDetails').hidden = !e.target.checked; });
 
