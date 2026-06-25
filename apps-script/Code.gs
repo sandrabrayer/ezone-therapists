@@ -1647,6 +1647,84 @@ function migrateTherapistNamesNow() {
   return report;
 }
 
+/* ===== One-time admin cleanup: orphaned scheduled sessions =====
+ * Test patients were deleted (their Patients rows removed by _removePatient), but
+ * their Schedule rows remain and still render under "טיפולים שנקבעו". This removes
+ * the leftovers.
+ *
+ * A Schedule row is ORPHANED when its patientPhone matches NO patient in the
+ * Patients sheet, using the SAME tolerant match as everywhere else (_matchPhone:
+ * recover a Sheets-dropped leading zero, then normalize). Decision per row:
+ *   - exactly ONE matching patient  → KEEP (a live patient — never delete).
+ *   - MORE THAN ONE matching patient → KEEP and FLAG in the log (ambiguous →
+ *     never fail open, never delete).
+ *   - an EMPTY / unparseable phone   → KEEP and FLAG (cannot classify → don't
+ *     delete something we can't positively call an orphan).
+ *   - ZERO matching patients (valid phone) → DELETE (orphaned).
+ *
+ * Deletes by ORPHANED-PATIENT match ONLY — never by date or by "scheduled" status
+ * — so a live patient's real future sessions are never touched. Every deleted row
+ * is logged (patient, therapist, date, phone) BEFORE deletion; ambiguous/empty
+ * rows are logged as FLAG. Returns the count of deleted rows. Idempotent: a second
+ * run finds nothing. Run ONCE from the Apps Script editor.
+ */
+function cleanupOrphanedScheduledSessions() {
+  var schSh = _ensureSheet('Schedule', SCHEDULE_HEADERS);
+  var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
+
+  // Live-patient phone keys → how many patient rows own each (tolerant match). A
+  // key owned by >1 row is ambiguous, so any Schedule row matching it is flagged.
+  var pPhoneIdx = PATIENTS_HEADERS.indexOf('phone');
+  var pLast = pSh.getLastRow();
+  var patientCount = {};
+  if (pLast >= 2) {
+    var pGrid = pSh.getRange(2, 1, pLast - 1, PATIENTS_HEADERS.length).getValues();
+    for (var i = 0; i < pGrid.length; i++) {
+      var pk = _matchPhone(pGrid[i][pPhoneIdx]);
+      if (pk) patientCount[pk] = (patientCount[pk] || 0) + 1;
+    }
+  }
+
+  var sLast = schSh.getLastRow();
+  if (sLast < 2) { Logger.log('cleanupOrphanedScheduledSessions: no Schedule rows.'); return 0; }
+  var phoneIdx = SCHEDULE_HEADERS.indexOf('patientPhone');
+  var nameIdx = SCHEDULE_HEADERS.indexOf('patientName');
+  var therIdx = SCHEDULE_HEADERS.indexOf('therapist');
+  var dateIdx = SCHEDULE_HEADERS.indexOf('scheduledDate');
+  var grid = schSh.getRange(2, 1, sLast - 1, SCHEDULE_HEADERS.length).getValues();
+
+  function rowDesc(r) {
+    return 'patient=' + grid[r][nameIdx] + ' therapist=' + grid[r][therIdx] +
+      ' date=' + grid[r][dateIdx] + ' phone=' + grid[r][phoneIdx];
+  }
+
+  var toDelete = [];   // 1-based sheet row numbers
+  var flagged = 0;
+  for (var r = 0; r < grid.length; r++) {
+    var key = _matchPhone(grid[r][phoneIdx]);
+    if (!key) {                                   // unclassifiable → KEEP + FLAG
+      flagged++;
+      Logger.log('FLAG (empty/invalid phone, kept): ' + rowDesc(r));
+      continue;
+    }
+    var matches = patientCount[key] || 0;
+    if (matches === 1) continue;                  // live patient → KEEP
+    if (matches > 1) {                            // ambiguous → KEEP + FLAG
+      flagged++;
+      Logger.log('FLAG (multi-match ' + matches + ', kept): ' + rowDesc(r));
+      continue;
+    }
+    Logger.log('DELETE (orphaned): ' + rowDesc(r));   // log BEFORE deletion
+    toDelete.push(r + 2);
+  }
+  // Delete bottom-up so earlier row numbers stay valid as rows are removed.
+  for (var d = toDelete.length - 1; d >= 0; d--) schSh.deleteRow(toDelete[d]);
+
+  Logger.log('cleanupOrphanedScheduledSessions: deleted ' + toDelete.length +
+    ' orphaned row(s); kept ' + flagged + ' flagged (ambiguous/empty) row(s).');
+  return toDelete.length;
+}
+
 // Normalized-key set of the final roster (THERAPISTS_SEED), for membership tests.
 function _finalRosterNormSet() {
   var s = {};

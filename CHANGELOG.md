@@ -1,5 +1,26 @@
 # Changelog
 
+## Admin cleanup — delete orphaned scheduled sessions (one-time)
+
+New one-time admin function **`cleanupOrphanedScheduledSessions()`** in
+`apps-script/Code.gs` removes leftover **Schedule** rows whose patient was already
+deleted (their **Patients** row is gone), which still rendered under
+«טיפולים שנקבעו». A row is orphaned when its `patientPhone` matches **no** patient
+in the Patients sheet, using the app's tolerant match (`_matchPhone` — recovers a
+Sheets-dropped leading zero, then normalizes). Per row: exactly **one** matching
+patient → **keep** (live, never deleted); **zero** (valid phone) → **delete**
+(orphaned); **>1** matching rows or an **empty/invalid** phone → **keep + flag** in
+the log (ambiguous → never fail open). Deletes by **orphaned-patient match only** —
+never by date or status — so real future sessions of live patients are untouched.
+Each deleted row is logged (patient, therapist, date, phone) **before** deletion;
+deletes bottom-up; returns the deleted count; idempotent. Not exposed via
+`doPost`/`doGet` — run **once from the Apps Script editor**. New
+`test/orphan-cleanup.test.js` (pure decision mirror + Code.gs mirror-guard); suite
+**251/0**. **Apps Script change** — paste the merged `Code.gs`, deploy a new
+version of the existing deployment (keep the `/exec` URL), then run the function
+once and verify the deleted-row count in the execution log. Full notes:
+[`docs/admin-cleanup-orphaned-sessions.md`](docs/admin-cleanup-orphaned-sessions.md).
+
 ## Schedule modal — restrict to assigned patients + lock the plan type
 
 Closes a generic-toolbar bypass in «קביעת טיפול». Opened from `#mineScheduleBtn`,
