@@ -885,3 +885,18 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .client-card .cc-ther.cc-unassigned { color: var(--amber); border-color: #5a4818; }
 .client-card .alert-row { margin-top: 2px; }
+
+/* ── Therapist weekly fixed-schedule modal ──────────────────────────────────
+   One block per treatment type, each with its slot rows (day/time/location/room)
+   sized to the approved plan frequency. */
+.weekly-type-block {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 10px; background: var(--panel);
+}
+.weekly-type-title { font-weight: 700; color: var(--accent-2); margin-bottom: 8px; }
+.slot-row .s-room {
+  background: var(--bg-elev); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+  min-width: 90px;
+}
+.slot-row .s-room::placeholder { color: var(--muted); }
