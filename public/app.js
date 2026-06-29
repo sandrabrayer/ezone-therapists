@@ -191,7 +191,7 @@
     return data;
   }
   function apiUpdateBooking(id, fields) {
-    return apiPost({ action: 'updateBooking', id: id, scheduledDate: fields.scheduledDate, time: fields.time, location: fields.location });
+    return apiPost({ action: 'updateBooking', id: id, scheduledDate: fields.scheduledDate, time: fields.time, location: fields.location, room: fields.room });
   }
   function apiRemoveSchedule(id) { return apiPost({ action: 'removeSchedule', id: id }); }
   function apiMarkAttendance(id, attendance, extra) {
@@ -260,6 +260,7 @@
       therapist: row.therapist || '',
       treatmentType: row.treatmentType || '',
       location: row.location || '',
+      room: row.room || '',
       scheduledDate: fmtDate(row.scheduledDate),
       time: row.time || '',
       patientName: row.patientName || '',
@@ -1096,6 +1097,7 @@
       therapist: state.therapist || (fd.get('therapist') || '').trim(),
       treatmentType: ((typeEl && typeEl.value) || fd.get('treatmentType') || '').trim(),
       location: (fd.get('location') || '').trim(),
+      room: (fd.get('room') || '').trim(),
       scheduledDate: fd.get('scheduledDate') || '',
       time: fd.get('time') || ''
     };
@@ -1502,6 +1504,7 @@
     form.querySelector('[name="scheduledDate"]').value = fmtDate(row.scheduledDate) || today();
     $('#bookingTime').value = row.time || '';
     $('#bookingLocation').value = row.location || '';
+    if ($('#bookingRoom')) $('#bookingRoom').value = row.room || '';
     $('#bookingModal').hidden = false;
   }
   function closeBookingModal() { $('#bookingModal').hidden = true; bookingEditId = null; }
@@ -1512,7 +1515,8 @@
     var fields = {
       scheduledDate: fd.get('scheduledDate') || '',
       time: fd.get('time') || '',
-      location: (fd.get('location') || '').trim()
+      location: (fd.get('location') || '').trim(),
+      room: (fd.get('room') || '').trim()
     };
     if (!fields.scheduledDate) { toast('יש לבחור תאריך', true); return; }
     btn.disabled = true;
@@ -1698,6 +1702,7 @@
       '<select class="s-weekday">' + weekdayOptions(slot.weekday) + '</select>' +
       '<select class="s-time">' + timeOptions(slot.time || '') + '</select>' +
       '<select class="s-location">' + locationOptions(slot.location || '') + '</select>' +
+      '<input type="text" class="s-room" placeholder="חדר" value="' + escapeHtml(slot.room || '') + '">' +
       '</div>';
   }
   // N slot rows prefilled from stored slots, sized to the approved plan frequency.
@@ -1717,7 +1722,8 @@
       return {
         weekday: el.querySelector('.s-weekday').value,
         time: el.querySelector('.s-time').value,
-        location: el.querySelector('.s-location').value
+        location: el.querySelector('.s-location').value,
+        room: (el.querySelector('.s-room') ? el.querySelector('.s-room').value : '')
       };
     });
   }
