@@ -1,4 +1,4 @@
-[CHANGELOG-dashboard-card-cleanup.md](https://github.com/user-attachments/files/29460800/CHANGELOG-dashboard-card-cleanup.md)
+[CHANGELOG-dashboard-card-cleanup (1).md](https://github.com/user-attachments/files/29461140/CHANGELOG-dashboard-card-cleanup.1.md)
 # Dashboard card cleanup — remove "responsible therapist", clean plan summary
 
 ## Why
@@ -29,3 +29,15 @@ this stage, and the plan must read clearly.
 
 ## Security
 - Display-only change. No new data exposed; no endpoint/secret touched.
+
+## Follow-up: card redesign to match the outpatient look
+The dashboard card was visually cramped (a rigid 6-column `billing-row` grid).
+Redesigned to mirror the ezone-outpatient client card:
+- **public/app.js**: new `planBoxHtml(p)` renders a «תוכנית טיפול» box with ONE
+  stacked line per treatment type (type label + frequency). `freqUnit()` shows
+  `/חודש` for מעקב פסיכיאטרי and `/שבוע` for everything else — matching outpatient.
+  `patientCard()` rebuilt: header (name + phone + debt chip) above the plan box.
+  Uses `assignments` when present, else the approved-plan `planTypes`.
+- **public/style.css**: new `.patient-card` / `.plan-box` / `.plan-line` styles in
+  the app's fuchsia/pink theme (replaces the cramped grid for this card only).
+- `assignmentSummary()` retained — still used by the שיבוץ (workflow) tab rows.
