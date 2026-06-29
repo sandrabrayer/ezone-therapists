@@ -79,7 +79,7 @@
       var time = String(s.time == null ? '' : s.time);
       if (!TIME_RE.test(time)) return { ok: false, error: 'שעה לא תקינה (לדוגמה 10:00)' };
       if (!String(s.location == null ? '' : s.location).trim()) return { ok: false, error: 'יש לבחור מיקום לכל מועד' };
-      out.push({ weekday: wd, time: time, location: String(s.location).trim() });
+      out.push({ weekday: wd, time: time, location: String(s.location).trim(), room: String(s.room == null ? '' : s.room).trim() });
     }
     return { ok: true, slots: out };
   }
@@ -160,6 +160,7 @@
           therapist: a.therapist || '',
           treatmentType: a.treatmentType || '',
           location: slot.location || '',
+          room: slot.room || '',
           scheduledDate: date,
           time: time,
           patientName: pinfo.name || '',
