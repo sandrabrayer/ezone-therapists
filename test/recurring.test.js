@@ -149,3 +149,49 @@ test('generateOccurrences: matches a stopped patient across legacy phone forms',
   });
   assert.equal(occ.length, 0);
 });
+
+// --- patientSlotConflict: a patient can't be in two treatments at once -------
+
+test('patientSlotConflict: same weekday+time on another assignment is blocked', () => {
+  const res = Recurring.patientSlotConflict({
+    candidateSlots: [{ weekday: 1, time: '10:00', location: 'x' }],
+    otherAssignments: [{ id: 'a2', slots: [{ weekday: 1, time: '10:00', location: 'y' }] }]
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.weekday, 1);
+  assert.equal(res.time, '10:00');
+});
+
+test('patientSlotConflict: different time on same weekday is allowed', () => {
+  const res = Recurring.patientSlotConflict({
+    candidateSlots: [{ weekday: 1, time: '11:00', location: 'x' }],
+    otherAssignments: [{ id: 'a2', slots: [{ weekday: 1, time: '10:00', location: 'y' }] }]
+  });
+  assert.equal(res.ok, true);
+});
+
+test('patientSlotConflict: different weekday same time is allowed', () => {
+  const res = Recurring.patientSlotConflict({
+    candidateSlots: [{ weekday: 2, time: '10:00', location: 'x' }],
+    otherAssignments: [{ id: 'a2', slots: [{ weekday: 1, time: '10:00', location: 'y' }] }]
+  });
+  assert.equal(res.ok, true);
+});
+
+test('patientSlotConflict: duplicate within the candidate set itself is blocked', () => {
+  const res = Recurring.patientSlotConflict({
+    candidateSlots: [
+      { weekday: 3, time: '09:00', location: 'x' },
+      { weekday: 3, time: '09:00', location: 'x' }
+    ],
+    otherAssignments: []
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.weekday, 3);
+});
+
+test('patientSlotConflict: no other assignments → always ok', () => {
+  assert.equal(Recurring.patientSlotConflict({
+    candidateSlots: [{ weekday: 0, time: '08:00', location: 'x' }], otherAssignments: []
+  }).ok, true);
+});
