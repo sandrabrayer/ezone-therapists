@@ -107,3 +107,23 @@ test('an assignment-only patient creates NO card (assignments do not add)', () =
   });
   assert.equal(roster.length, 0);
 });
+
+// --- dashboard plan summary: clean per-type breakdown, not the raw blob ------
+
+test('planTypes: multi-type sessions blob becomes a parsed per-type array', () => {
+  const roster = Roster.build({ plans: [planClient({
+    sessions: '{"פרטני":1,"ליווי יומי בקהילה":3}'
+  })]});
+  const p = roster[0];
+  assert.ok(Array.isArray(p.planTypes), 'planTypes is an array');
+  assert.equal(p.planTypes.length, 2, 'one entry per treatment type');
+  const byType = {};
+  p.planTypes.forEach(function (t) { byType[t.treatmentType] = t.frequencyPerWeek; });
+  assert.equal(byType['פרטני'], 1);
+  assert.equal(byType['ליווי יומי בקהילה'], 3);
+});
+
+test('planTypes: empty when there is no parseable plan', () => {
+  const roster = Roster.build({ plans: [planClient({ serviceType: '', sessions: '' })]});
+  assert.deepEqual(roster[0].planTypes, []);
+});
