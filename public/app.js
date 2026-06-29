@@ -497,6 +497,40 @@
     return '';
   }
 
+  // Per-type frequency unit: psychiatric follow-up is MONTHLY, everything else
+  // is weekly. Mirrors the outpatient app so the two read identically.
+  function freqUnit(treatmentType) {
+    return svc(treatmentType) === 'מעקב פסיכיאטרי' ? 'חודש' : 'שבוע';
+  }
+
+  // The clean «תוכנית טיפול» plan box: one stacked line PER treatment type
+  // (label + frequency), matching the outpatient client card. Prefers the
+  // therapist assignments; falls back to the approved plan's parsed planTypes
+  // for not-yet-assigned patients. Never dumps the raw sessions JSON.
+  function planBoxHtml(p) {
+    var rows = [];
+    if (p.assignments && p.assignments.length) {
+      rows = p.assignments.map(function (a) {
+        return { type: a.treatmentType, freq: a.frequencyPerWeek };
+      });
+    } else if (p.planTypes && p.planTypes.length) {
+      rows = p.planTypes.map(function (t) {
+        return { type: t.treatmentType, freq: t.frequencyPerWeek };
+      });
+    }
+    var lines = rows.map(function (r) {
+      var freqTxt = (r.freq || r.freq === 0) ? (r.freq + '/' + freqUnit(r.type)) : '—';
+      return '<div class="plan-line">' +
+        '<span class="plan-type">' + escapeHtml(svc(r.type) || '—') + '</span>' +
+        '<span class="plan-freq">' + escapeHtml(freqTxt) + '</span>' +
+        '</div>';
+    }).join('');
+    if (!lines) lines = '<div class="plan-line plan-empty">לא נקבעה תוכנית</div>';
+    return '<div class="plan-box">' +
+      '<div class="plan-box-title">תוכנית טיפול</div>' + lines +
+      '</div>';
+  }
+
   function patientUpcomingAlert(phone) {
     var key = normPhone(phone);
     for (var i = 0; i < state.alerts.length; i++) {
@@ -508,17 +542,24 @@
   function patientCard(p) {
     var badges = '';
     if (p.stillAdmitted) badges += ' <span class="chip chip-partial">עדיין מאושפז/ת' + (p.admittedHouse ? ' · ' + escapeHtml(houseLabel(p.admittedHouse)) : '') + '</span>';
-    var parts = [];
-    parts.push('<div class="p-name">' + escapeHtml(p.name) + badges + '</div>');
-    parts.push('<div><span class="p-label">טלפון</span><span class="p-val">' + escapeHtml(p.phone) + '</span></div>');
-    var plan = assignmentSummary(p, false);
-    parts.push('<div class="wide"><span class="p-label">תוכנית טיפול</span><span class="p-val">' + (plan ? escapeHtml(plan) : '—') + '</span></div>');
-    if (p.origin) parts.push('<div><span class="p-label">מקור הגעה</span><span class="p-val">' + escapeHtml(p.origin) + '</span></div>');
-    parts.push('<div>' + debtChip(p.debtStatus, p.amountOwed) + '</div>');
+    // Header row: name (right) + phone + debt chip. Plan lives in its own box.
+    var head =
+      '<div class="pc-head">' +
+        '<div class="pc-id">' +
+          '<div class="pc-name">' + escapeHtml(p.name) + badges + '</div>' +
+          '<div class="pc-phone">' + escapeHtml(p.phone) + '</div>' +
+        '</div>' +
+        '<div class="pc-debt">' + debtChip(p.debtStatus, p.amountOwed) + '</div>' +
+      '</div>';
+    var box = planBoxHtml(p);
+    var origin = p.origin
+      ? '<div class="pc-origin"><span class="p-label">מקור הגעה</span> ' + escapeHtml(p.origin) + '</div>'
+      : '';
+    var alertHtml = '';
     var al = patientUpcomingAlert(p.phone);
-    if (al) parts.push('<div class="wide alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>');
+    if (al) alertHtml = '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>';
     // Dashboard is VIEW-ONLY for everyone — no edit/schedule actions here.
-    return '<div class="billing-row">' + parts.join('') + '</div>';
+    return '<div class="patient-card">' + head + box + origin + alertHtml + '</div>';
   }
 
   function renderDashboard() {
