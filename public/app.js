@@ -403,7 +403,18 @@
   // Short human label for a patient's assignments (multiple parallel plans).
   function assignmentSummary(p, withTherapist) {
     if (!p.assignments.length) {
-      // Fall back to the outpatient roster's plan for display only.
+      // Not yet assigned by Yarden: show the APPROVED plan, parsed per-type,
+      // instead of dumping the raw `sessions` JSON blob. e.g.
+      // "פרטני · 1× בשבוע | ליווי יומי בקהילה · 3× בשבוע".
+      var types = (p.planTypes && p.planTypes.length) ? p.planTypes : [];
+      if (types.length) {
+        return types.map(function (t) {
+          var bits = [svc(t.treatmentType) || '—'];
+          if (t.frequencyPerWeek) bits.push(t.frequencyPerWeek + '× בשבוע');
+          return bits.join(' · ');
+        }).join(' | ');
+      }
+      // Last-resort fallback for a scalar plan with no parseable per-type map.
       return p.serviceType ? svc(p.serviceType) + (p.rosterSessions ? ' · ' + p.rosterSessions + '×' : '') : '';
     }
     return p.assignments.map(function (a) {
@@ -500,8 +511,6 @@
     var parts = [];
     parts.push('<div class="p-name">' + escapeHtml(p.name) + badges + '</div>');
     parts.push('<div><span class="p-label">טלפון</span><span class="p-val">' + escapeHtml(p.phone) + '</span></div>');
-    var thers = p.therapists.length ? escapeHtml(p.therapists.join(', ')) : '<em class="assign-pending">טרם שובץ</em>';
-    parts.push('<div><span class="p-label">מטפל/ת אחראי/ת</span><span class="p-val">' + thers + '</span></div>');
     var plan = assignmentSummary(p, false);
     parts.push('<div class="wide"><span class="p-label">תוכנית טיפול</span><span class="p-val">' + (plan ? escapeHtml(plan) : '—') + '</span></div>');
     if (p.origin) parts.push('<div><span class="p-label">מקור הגעה</span><span class="p-val">' + escapeHtml(p.origin) + '</span></div>');
