@@ -783,7 +783,8 @@
       '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
       '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
       '<span class="assign-actions">' +
-        '<button class="btn btn-primary btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+        '<button class="btn btn-primary btn-sm" data-weekly-patient="' + escapeHtml(p.phone) + '">לוז שבועי קבוע</button>' +
+        '<button class="btn btn-ghost btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
         '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
       '</span>' +
       '</div>';
@@ -1777,6 +1778,74 @@
     $('#assignmentsModal').hidden = false;
   }
   function closeAssignmentsModal() { $('#assignmentsModal').hidden = true; }
+
+  // --- Therapist weekly fixed schedule (tab 3) -------------------------------
+  // The therapist sets the recurring weekly slots (day/time/location/room) for
+  // their OWN assignment(s) on this patient, sized to the approved plan frequency.
+  // On save, a patient-collision check blocks any slot that lands on a weekday+time
+  // already taken by ANOTHER of the patient's assignments (can't be in two places
+  // at once). Slots are stored on the assignment; the recurring engine turns them
+  // into occurrences. Single-session postpone remains available via «עריכה» on a
+  // materialized occurrence in the list below.
+  var weeklyCtx = null;
+  function openWeeklyModal(phone) {
+    var p = patientByPhone(phone);
+    if (!p) { toast('מטופל/ת לא נמצא', true); return; }
+    // Only the signed-in therapist's own assignments are editable here.
+    var mine = (p.assignments || []).filter(function (a) { return a.therapist === state.therapist; });
+    if (!mine.length) { toast('אין לך טיפולים משובצים למטופל/ת זה', true); return; }
+    weeklyCtx = { phone: p.phone };
+    $('#weeklyPatientName').textContent = p.name;
+    var rows = mine.map(function (a) {
+      return '<div class="weekly-type-block" data-aid="' + escapeHtml(a.id) + '" data-type="' + escapeHtml(a.treatmentType) + '">' +
+        '<div class="weekly-type-title">' + escapeHtml(svc(a.treatmentType)) +
+          (a.frequencyPerWeek ? ' · ' + a.frequencyPerWeek + '× בשבוע' : '') + '</div>' +
+        '<div class="a-slots">' + slotsEditorHtml(a.slots, a.frequencyPerWeek) + '</div>' +
+        '</div>';
+    });
+    $('#weeklyRows').innerHTML = rows.join('');
+    $('#weeklyModal').hidden = false;
+  }
+  function closeWeeklyModal() { $('#weeklyModal').hidden = true; weeklyCtx = null; }
+  function saveWeekly() {
+    var btn = $('#weeklySave'); if (!weeklyCtx || (btn && btn.disabled)) return;
+    var phone = weeklyCtx.phone;
+    var p = patientByPhone(phone);
+    if (!p) { toast('מטופל/ת לא נמצא', true); return; }
+    var blocks = $$('.weekly-type-block', $('#weeklyRows'));
+    var toSave = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var el = blocks[i];
+      var aid = el.getAttribute('data-aid');
+      var typeName = el.getAttribute('data-type');
+      var existing = p.assignments.filter(function (a) { return a.id === aid; })[0] || {};
+      var planFreq = String(existing.frequencyPerWeek || '');
+      var filled = readSlotRows(el.querySelector('.a-slots')).filter(function (s) {
+        return s.weekday !== '' || s.time || s.location || s.room;
+      });
+      var slotsJson = '';
+      if (filled.length) {
+        var v = Recurring.validateSlots(filled, planFreq);
+        if (!v.ok) { toast(svc(typeName) + ': ' + v.error, true); return; }
+        // Patient collision: compare against the patient's OTHER assignments.
+        var others = p.assignments.filter(function (a) { return a.id !== aid; });
+        var c = Recurring.patientSlotConflict({ candidateSlots: v.slots, otherAssignments: others });
+        if (!c.ok) { toast(svc(typeName) + ': ' + c.error, true); return; }
+        slotsJson = JSON.stringify(v.slots);
+      }
+      toSave.push(Plan.assignmentPayload({
+        entry: { treatmentType: existing.treatmentType, frequencyPerWeek: existing.frequencyPerWeek },
+        id: aid, patientPhone: phone, therapist: existing.therapist,
+        slots: slotsJson, updatedBy: state.therapist || 'עורך'
+      }));
+    }
+    if (btn) btn.disabled = true;
+    Promise.all(toSave.map(function (a) { return apiSaveAssignment(a); }))
+      .then(function () { closeWeeklyModal(); return loadAll(); })
+      .then(function () { toast('הלוז השבועי נשמר'); })
+      .catch(function () { toast('שמירה נכשלה', true); })
+      .then(function () { if (btn) btn.disabled = false; });
+  }
   function saveAssignments() {
     var btn = $('#assignmentsSave');
     if (btn.disabled) return;
@@ -1928,6 +1997,8 @@
     // המטופלים שלי (therapist): schedule + report did-it-happen on their patients.
     on('#mineSearch', 'input', function (e) { state.mineSearch = e.target.value; renderMine(); });
     on('#view-mine', 'click', function (e) {
+      var wk = e.target.closest('[data-weekly-patient]');
+      if (wk) { openWeeklyModal(wk.getAttribute('data-weekly-patient')); return; }
       var stp = e.target.closest('[data-stop-patient]');
       if (stp) { onPatientListClick(e); return; }
       var sp = e.target.closest('[data-schedule-patient]');
@@ -1982,11 +2053,12 @@
     // frequency) — there is no add/remove and no editable frequency, so the only
     // wiring is save.
     on('#assignmentsSave', 'click', saveAssignments);
+    on('#weeklySave', 'click', saveWeekly);
 
     on('#reportSave', 'click', saveReport);
     on('#bookingForm', 'submit', function (e) { e.preventDefault(); saveBooking(); });
     $$('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); closeReportModal(); closeBookingModal(); });
+      b.addEventListener('click', function () { closeScheduleModal(); closePatientModal(); closeAssignmentsModal(); closeReportModal(); closeBookingModal(); closeWeeklyModal(); });
     });
 
     on('#scheduleForm', 'submit', function (e) { e.preventDefault(); handleScheduleSubmit(); });
