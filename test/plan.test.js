@@ -180,3 +180,35 @@ test('a 2-type plan produces 2 assignable rows with independent therapists + per
   assert.deepEqual(payloads.map((p) => p.therapist), ['דנה', 'רון']);   // independent per type
   assert.deepEqual(payloads.map((p) => p.id), ['a1', 'a2']);
 });
+
+// --- Yarden's assignment save contract (therapist-only; slots preserved) -----
+// Yarden's שיבוץ modal no longer edits weekly slots — it assigns the therapist
+// per type and passes through any slots the therapist already set. assignmentPayload
+// must (a) force type+freq from the plan entry, (b) carry slots through verbatim.
+
+test('assignmentPayload forces type/freq from the plan entry, not from input', () => {
+  const p = Plan.assignmentPayload({
+    entry: { treatmentType: 'מעקב פסיכיאטרי', frequencyPerWeek: 2 },
+    id: 'a1', patientPhone: '0501234567', therapist: 'ירדן', updatedBy: 'עורך'
+  });
+  assert.equal(p.treatmentType, 'מעקב פסיכיאטרי');
+  assert.equal(p.frequencyPerWeek, '2');
+  assert.equal(p.therapist, 'ירדן');
+});
+
+test('assignmentPayload preserves existing slots passed through (not wiped)', () => {
+  const slots = '[{"weekday":"1","time":"10:00","location":"מרכז"},{"weekday":"3","time":"10:00","location":"מרכז"}]';
+  const p = Plan.assignmentPayload({
+    entry: { treatmentType: 'פרטני', frequencyPerWeek: 2 },
+    id: 'a2', patientPhone: '0501234567', therapist: 'ירדן', slots: slots, updatedBy: 'עורך'
+  });
+  assert.equal(p.slots, slots, 'slots carried through unchanged');
+});
+
+test('assignmentPayload tolerates no slots (Yarden assigns before scheduling)', () => {
+  const p = Plan.assignmentPayload({
+    entry: { treatmentType: 'פרטני', frequencyPerWeek: 1 },
+    id: 'a3', patientPhone: '0501234567', therapist: 'ירדן', updatedBy: 'עורך'
+  });
+  assert.equal(p.slots, '');
+});
