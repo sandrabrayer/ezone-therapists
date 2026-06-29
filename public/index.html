@@ -267,6 +267,19 @@
         </div>
       </div>
     </div>
+    <!-- Therapist sets the fixed weekly schedule (days/hours/location/room) per
+         treatment type for one of their patients. -->
+    <div id="weeklyModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-title">לוז שבועי קבוע — <span id="weeklyPatientName"></span></div>
+        <div class="muted" style="margin-bottom:8px">קביעת הימים והשעות הקבועים לכל סוג טיפול. מספר המועדים נקבע לפי תדירות תוכנית הטיפול. לא ניתן לשבץ את המטופל/ת לשני טיפולים באותו יום ושעה.</div>
+        <div id="weeklyRows"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close>סגירה</button>
+          <button type="button" class="btn btn-primary" id="weeklySave">שמירה</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="access.js?v=__BUILD__"></script>
