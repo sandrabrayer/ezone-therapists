@@ -1,4 +1,4 @@
-[CHANGELOG-dashboard-card-cleanup (1).md](https://github.com/user-attachments/files/29461140/CHANGELOG-dashboard-card-cleanup.1.md)
+[CHANGELOG-dashboard-card-cleanup (3).md](https://github.com/user-attachments/files/29463798/CHANGELOG-dashboard-card-cleanup.3.md)
 # Dashboard card cleanup — remove "responsible therapist", clean plan summary
 
 ## Why
@@ -41,3 +41,15 @@ Redesigned to mirror the ezone-outpatient client card:
 - **public/style.css**: new `.patient-card` / `.plan-box` / `.plan-line` styles in
   the app's fuchsia/pink theme (replaces the cramped grid for this card only).
 - `assignmentSummary()` retained — still used by the שיבוץ (workflow) tab rows.
+
+## Bugfix: plan box always showed "לא נקבעה תוכנית"
+The lazy Plan resolver in public/roster.js referenced `root`, which is the OUTER
+IIFE wrapper's parameter and is NOT in scope inside the factory closure. In the
+browser it therefore always resolved to null, so `planTypes` came back empty and
+every card rendered "לא נקבעה תוכנית" — even with a valid approved plan. (Node
+tests passed because they inject Plan via require, never exercising this path.)
+- **public/roster.js**: `planApi()` now reaches the global via
+  `globalThis`/`self`/`window` directly instead of the out-of-scope `root`.
+- **test/roster.test.js**: added a browser-path regression test that loads
+  roster.js with Plan as a global (not injected) and asserts planTypes is
+  populated. Verified it FAILS on the old code and passes on the fix.
