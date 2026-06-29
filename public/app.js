@@ -1700,10 +1700,11 @@
       '<select class="s-location">' + locationOptions(slot.location || '') + '</select>' +
       '</div>';
   }
-  // N slot rows prefilled from stored slots. The frequency is LOCKED to the
-  // approved plan, so when `freq` is given it WINS (exactly `freq` rows, padded
-  // from / truncated to the stored slots); only when no freq is known do we fall
-  // back to the stored slot count.
+  // N slot rows prefilled from stored slots, sized to the approved plan frequency.
+  // Used by the therapist's «המטופלים שלי» scheduling (NOT by Yarden's שיבוץ modal,
+  // which is therapist-only). The frequency is LOCKED to the approved plan, so when
+  // `freq` is given it WINS (exactly `freq` rows, padded/truncated from the stored
+  // slots); only when no freq is known do we fall back to the stored slot count.
   function slotsEditorHtml(slots, freq) {
     var arr = Recurring.parseSlots(slots);
     var n = (parseInt(freq, 10) || 0) || arr.length;
@@ -1720,16 +1721,18 @@
       };
     });
   }
-  // Yarden edits ONLY the therapist and the weekly slots. The treatment TYPE and
-  // its weekly FREQUENCY are LOCKED to ONE approved plan-type entry and shown
-  // READ-ONLY. One row is rendered PER plan type; data-type pins the row to its
-  // plan type so the save sources type+freq from it (never from any input).
+  // Yarden's row: she assigns ONLY the therapist per treatment type. The type and
+  // its frequency are LOCKED to the approved plan (read-only). The weekly
+  // days/hours are NOT set here — the assigned therapist sets them in their own
+  // «המטופלים שלי» tab. Any slots already set by the therapist are preserved
+  // (carried on data-slots) so re-saving an assignment here never wipes them.
   function assignmentRowHtml(a, entry) {
     a = a || {};
     entry = entry || { treatmentType: '', frequencyPerWeek: 0 };
     var freq = entry.frequencyPerWeek;
     var freqText = freq ? (freq + '× בשבוע') : '—';
-    return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '" data-type="' + escapeHtml(entry.treatmentType || '') + '">' +
+    var slotsAttr = a.slots ? escapeHtml(typeof a.slots === 'string' ? a.slots : JSON.stringify(a.slots)) : '';
+    return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '" data-type="' + escapeHtml(entry.treatmentType || '') + '" data-slots="' + slotsAttr + '">' +
       '<div class="assignment-head">' +
         '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
         '<span class="a-plan-lock" title="נקבע בתוכנית הטיפול המאושרת (קריאה בלבד)">' +
@@ -1737,8 +1740,6 @@
           '<span class="a-freq-lock">' + escapeHtml(freqText) + '</span>' +
         '</span>' +
       '</div>' +
-      '<div class="a-slots-label">מועדים שבועיים קבועים:</div>' +
-      '<div class="a-slots">' + slotsEditorHtml(a.slots, freq) + '</div>' +
       '</div>';
   }
   function openAssignmentsModal(phone) {
@@ -1790,21 +1791,11 @@
       var typeName = el.getAttribute('data-type') || '';
       var entry = types.filter(function (t) { return t.treatmentType === typeName; })[0] ||
                   { treatmentType: typeName, frequencyPerWeek: 0 };
-      var planFreq = String(entry.frequencyPerWeek || '');
-      // Weekly recurring pattern (optional): all-or-nothing — either no slots, or
-      // exactly `planFreq` complete slots {weekday,time,location}.
-      var filled = readSlotRows(el.querySelector('.a-slots')).filter(function (s) {
-        return s.weekday !== '' || s.time || s.location;
-      });
-      if (!ther && !filled.length) continue;              // type left unassigned -> skip (removes existing)
-      if (!ther) { toast(svc(typeName) + ': יש לבחור מטפל/ת', true); return; }
-      var slotsJson = '';
-      if (filled.length) {
-        if (!planFreq) { toast(ther + ': אין תדירות בתוכנית הטיפול — לא ניתן להגדיר מועדים', true); return; }
-        var v = Recurring.validateSlots(filled, planFreq);
-        if (!v.ok) { toast(ther + ': ' + v.error, true); return; }
-        slotsJson = JSON.stringify(v.slots);
-      }
+      // Yarden assigns ONLY the therapist here. The weekly days/hours are set by
+      // the therapist in «המטופלים שלי», so we PRESERVE any existing slots stored
+      // on this assignment (carried on data-slots) and pass them through unchanged.
+      var slotsJson = el.getAttribute('data-slots') || '';
+      if (!ther) continue;                               // type left unassigned -> skip (removes existing)
       var aid = el.getAttribute('data-aid') || '';
       if (aid) keptIds[aid] = true;
       // treatmentType + frequencyPerWeek are FORCED from the plan-type entry, never
