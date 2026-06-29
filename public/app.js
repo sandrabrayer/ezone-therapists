@@ -92,6 +92,7 @@
     debtRoster: [], debtRosterOk: false,
     plans: [], plansOk: false,
     alerts: [],
+    notifications: [],
     dashboardSearch: '',
     workflowSearch: '',
     workflowTherapist: '',
@@ -221,6 +222,7 @@
   function apiRestorePatient(body) { return apiPost(Object.assign({ action: 'restorePatient' }, body)); }
   function apiRemovePatient(body) { return apiPost(Object.assign({ action: 'removePatient' }, body)); }
   function apiSaveAssignment(assignment) { return apiPost({ action: 'saveAssignment', assignment: assignment }); }
+  function apiDismissNotification(id) { return apiPost({ action: 'dismissNotification', id: id, therapist: state.therapist || '' }); }
   function apiRemoveAssignment(id) { return apiPost({ action: 'removeAssignment', id: id }); }
 
   // The assignment ALWAYS saves locally; pushing the clinical billing type to
@@ -302,6 +304,10 @@
       });
       state.therapists = data.therapists || [];
       state.treatmentTypes = data.treatmentTypes || [];
+      state.notifications = (data.notifications || []).map(function (n) {
+        if (n && n.patientPhone != null) n.patientPhone = Phone.recoverStored(n.patientPhone);
+        return n;
+      });
       state.loaded = true;
     } catch (e) {
       toast('שגיאה בטעינת הנתונים: ' + e.message, true);
@@ -744,15 +750,13 @@
   // only on the dashboard. Filterable by therapist (assigned) AND patient name.
   function renderAssign() {
     var list = activePatients().filter(function (p) {
-      // Filter by therapist (matches ANY of the patient's assigned therapists) AND name.
       var byTher = !state.workflowTherapist || p.therapists.indexOf(state.workflowTherapist) !== -1;
       return byTher && matchName(p.name, state.workflowSearch);
     }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
-    var rows = list.map(function (p) {
+
+    function rowHtml(p) {
       var unassigned = !p.therapists.length;
       var thers = unassigned ? '<em class="assign-pending">טרם שובץ</em>' : escapeHtml(p.therapists.join(', '));
-      // Unassigned patients get a prominent «שבץ מטפל» call-to-action so Yarden can
-      // assign right here; already-assigned patients get the quieter «עריכה».
       var assignBtn = unassigned
         ? '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שבץ מטפל</button>'
         : '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>';
@@ -760,16 +764,24 @@
         '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
         '<span class="assign-ther"><span class="assign-ther-label">מטפל</span>' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
-        // Vered's actions: patient details + therapist/plan assignment.
-        // Scheduling is the THERAPIST's action — it lives in «המטופלים שלי».
         '<span class="assign-actions">' +
           '<button class="btn btn-ghost btn-sm" data-edit-patient="' + escapeHtml(p.phone) + '">פרטים</button>' +
           assignBtn +
           '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
         '</span>' +
         '</div>';
-    });
-    $('#assignList').innerHTML = rows.length ? rows.join('') : '<div class="billing-empty">אין מטופלים</div>';
+    }
+
+    // New leads = approved plan, ZERO assignments (no therapist on any type).
+    // They head the list under their own heading; assigned patients follow.
+    var leads = list.filter(function (p) { return !p.therapists.length; });
+    var assigned = list.filter(function (p) { return p.therapists.length; });
+    var html = '';
+    html += '<div class="assign-section-title">לידים חדשים — טרם שובצו (' + leads.length + ')</div>';
+    html += leads.length ? leads.map(rowHtml).join('') : '<div class="billing-empty">אין לידים חדשים</div>';
+    html += '<div class="assign-section-title">מטופלים משובצים (' + assigned.length + ')</div>';
+    html += assigned.length ? assigned.map(rowHtml).join('') : '<div class="billing-empty">—</div>';
+    $('#assignList').innerHTML = list.length ? html : '<div class="billing-empty">אין מטופלים</div>';
   }
 
   // --- my treatments (tab 3) — friendly per-therapist session-outcome view --
@@ -815,10 +827,32 @@
       '</div>';
   }
 
+  // New-assignment alerts everyone sees, each dismissible («ראיתי»). Global:
+  // dismissing hides it for all. Shown regardless of which therapist is picked.
+  function renderNotifications() {
+    var el = $('#notifBanner');
+    if (!el) return;
+    var live = (state.notifications || []).filter(function (n) {
+      return String(n.dismissed) !== 'true';
+    }).sort(function (a, b) { return String(b.created).localeCompare(String(a.created)); });
+    if (!live.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = '<div class="notif-title">🔔 שיבוצים חדשים</div>' +
+      live.map(function (n) {
+        return '<div class="notif-item">' +
+          '<span class="notif-text">' + escapeHtml(n.patientName || 'מטופל/ת') +
+            ' שובץ/ה ל' + escapeHtml(n.therapist) +
+            (n.treatmentType ? ' · ' + escapeHtml(svc(n.treatmentType)) : '') + '</span>' +
+          '<button class="btn btn-ghost btn-sm" data-dismiss-notif="' + escapeHtml(n.id) + '">ראיתי</button>' +
+          '</div>';
+      }).join('');
+  }
+
   function renderMine() {
+    renderNotifications();
     var panels = ['#myPatientsPanel', '#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
 
-    // No name picked yet → prompt, hide everything else.
+    // No name picked yet → prompt, hide everything else (notifications still show).
     if (!hasTherapist()) {
       $('#mineEmpty').hidden = false;
       $('#syncBanner').hidden = true;
@@ -2022,6 +2056,19 @@
     // המטופלים שלי (therapist): schedule + report did-it-happen on their patients.
     on('#mineSearch', 'input', function (e) { state.mineSearch = e.target.value; renderMine(); });
     on('#view-mine', 'click', function (e) {
+      var dn = e.target.closest('[data-dismiss-notif]');
+      if (dn) {
+        var nid = dn.getAttribute('data-dismiss-notif');
+        dn.disabled = true;
+        apiDismissNotification(nid)
+          .then(function () {
+            var n = (state.notifications || []).filter(function (x) { return x.id === nid; })[0];
+            if (n) n.dismissed = 'true';
+            renderNotifications();
+          })
+          .catch(function () { dn.disabled = false; toast('הפעולה נכשלה', true); });
+        return;
+      }
       var wk = e.target.closest('[data-weekly-patient]');
       if (wk) { openWeeklyModal(wk.getAttribute('data-weekly-patient')); return; }
       var stp = e.target.closest('[data-stop-patient]');
