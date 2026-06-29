@@ -900,3 +900,15 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   min-width: 90px;
 }
 .slot-row .s-room::placeholder { color: var(--muted); }
+
+/* Fixed weekly schedule shown under each treatment-type line on the dashboard
+   "bible" card: «יום · שעה · מיקום · חדר» chips. */
+.client-card .cc-slots {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 0 8px; border-top: 1px dashed var(--border); margin-top: -1px;
+}
+.client-card .cc-slot {
+  font-size: 12px; color: var(--text-soft);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px;
+}
