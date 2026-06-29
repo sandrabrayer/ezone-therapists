@@ -127,3 +127,35 @@ test('planTypes: empty when there is no parseable plan', () => {
   const roster = Roster.build({ plans: [planClient({ serviceType: '', sessions: '' })]});
   assert.deepEqual(roster[0].planTypes, []);
 });
+
+// --- browser path: Plan resolved from the global, not injected --------------
+// Regression guard: roster.js must resolve Plan via the global object when it is
+// NOT passed in as a Node dependency (the real browser load order). A previous
+// bug referenced an out-of-scope `root`, so planTypes silently came back empty.
+
+test('planTypes resolves Plan from the global object (browser path)', () => {
+  // Load a FRESH roster module instance with no Plan dependency, the way the
+  // browser IIFE does (root.Roster = factory(Phone, StopFlow, null)).
+  const path = require('path');
+  const Phone = require('../public/phone');
+  const StopFlow = require('../public/stopflow');
+  const PlanGlobal = require('../public/plan');
+  // Expose Plan as a global, like the browser <script> would.
+  globalThis.Plan = PlanGlobal;
+  // Re-require roster.js in browser mode by clearing the cache and stubbing the
+  // module system off: simplest reliable approach is to read + eval the factory
+  // with module.exports undefined so it takes the browser branch.
+  delete require.cache[require.resolve('../public/roster')];
+  const code = require('fs').readFileSync(path.resolve(__dirname, '../public/roster.js'), 'utf8');
+  const sandbox = { self: globalThis, Phone: Phone, StopFlow: StopFlow };
+  globalThis.Phone = Phone; globalThis.StopFlow = StopFlow;
+  // eslint-disable-next-line no-eval
+  (0, eval)(code); // defines self.Roster using the global Plan
+  const R = globalThis.Roster;
+  const roster = R.build({ plans: [{
+    sourceApp: 'ezone-outpatient', name: 'גלוב', phone: '0501234567',
+    serviceType: 'פרטני', sessions: '{"פרטני":1,"מעקב פסיכיאטרי":2}', status: 'מצורף'
+  }]});
+  assert.equal(roster[0].planTypes.length, 2, 'Plan resolved from global → per-type array');
+  delete globalThis.Plan; delete globalThis.Phone; delete globalThis.StopFlow; delete globalThis.Roster;
+});
