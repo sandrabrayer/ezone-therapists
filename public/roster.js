@@ -20,14 +20,28 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./phone'), require('./stopflow'));   // Node / tests
+    module.exports = factory(require('./phone'), require('./stopflow'), require('./plan'));   // Node / tests
   } else {
-    root.Roster = factory(root.Phone, root.StopFlow);                      // browser global
+    // Browser: plan.js loads AFTER roster.js, so Plan is resolved lazily at call
+    // time (see planTypesFor) rather than captured here.
+    root.Roster = factory(root.Phone, root.StopFlow, null);                      // browser global
   }
-})(typeof self !== 'undefined' ? self : this, function (Phone, StopFlow) {
+})(typeof self !== 'undefined' ? self : this, function (Phone, StopFlow, PlanDep) {
   'use strict';
 
   function normPhone(v) { return Phone.normalizeForMatch(v); }
+
+  // Resolve Plan: the Node dependency if injected, else the browser global
+  // (plan.js loads after roster.js, so it exists by the time build() runs).
+  function planApi() {
+    if (PlanDep) return PlanDep;
+    return (typeof root !== 'undefined' && root.Plan) ? root.Plan : null;
+  }
+  // Clean per-type plan breakdown, or [] if Plan isn't available yet.
+  function planTypesFor(sessions, serviceType) {
+    var P = planApi();
+    return P ? P.typesFromSessions(sessions, serviceType) : [];
+  }
 
   // Render a plan's sessions value (object map or scalar) as a short label.
   function planSessionsText(s) {
@@ -110,6 +124,10 @@
         phone: base.phone,
         serviceType: base.serviceType,
         rosterSessions: planSessionsText(base.sessions),
+        // Clean per-type plan breakdown from the approved plan's `sessions` blob
+        // (the keys ARE the treatment types). Used for a readable dashboard plan
+        // summary INSTEAD of dumping the raw JSON. [{treatmentType,frequencyPerWeek}].
+        planTypes: planTypesFor(base.sessions, base.serviceType),
         assignments: assigns,
         therapists: assigns.map(function (a) { return a.therapist; }).filter(Boolean),
         origin: local.origin || '',
