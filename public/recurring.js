@@ -85,6 +85,49 @@
   }
 
   /**
+   * Patient time-collision check. A patient cannot be in two treatments at the
+   * same weekday+time (they can't be in two places at once), regardless of which
+   * therapist or treatment type. Used when a therapist sets/edits the weekly
+   * schedule for one of the patient's assignments.
+   *
+   * @param {object}  args
+   * @param {Array}   args.candidateSlots  the slots being set, [{weekday,time,...}]
+   * @param {Array}   args.otherAssignments the SAME patient's OTHER assignments
+   *                  (exclude the one being edited), each with .slots
+   * @returns {{ok:true} | {ok:false, error:string, weekday:number, time:string}}
+   *   On conflict, returns the first offending weekday+time.
+   */
+  function patientSlotConflict(args) {
+    args = args || {};
+    var cand = parseSlots(args.candidateSlots);
+    var others = Array.isArray(args.otherAssignments) ? args.otherAssignments : [];
+    // Build a set of taken "weekday@time" keys from all OTHER assignments.
+    var taken = {};
+    others.forEach(function (a) {
+      parseSlots(a && a.slots).forEach(function (s) {
+        var wd = Number(s.weekday);
+        var t = String(s.time == null ? '' : s.time);
+        if (!isNaN(wd) && t) taken[wd + '@' + t] = true;
+      });
+    });
+    for (var i = 0; i < cand.length; i++) {
+      var wd2 = Number(cand[i].weekday);
+      var t2 = String(cand[i].time == null ? '' : cand[i].time);
+      if (!t2 || isNaN(wd2)) continue;
+      if (taken[wd2 + '@' + t2]) {
+        return { ok: false, error: 'המטופל/ת כבר משובץ/ת לטיפול אחר באותו יום ושעה', weekday: wd2, time: t2 };
+      }
+      // Also guard against a duplicate WITHIN the candidate set itself.
+      for (var j = i + 1; j < cand.length; j++) {
+        if (Number(cand[j].weekday) === wd2 && String(cand[j].time || '') === t2) {
+          return { ok: false, error: 'שני מועדים זהים באותו יום ושעה', weekday: wd2, time: t2 };
+        }
+      }
+    }
+    return { ok: true };
+  }
+
+  /**
    * The DETERMINISTIC occurrence id — the idempotency key. Same assignment + date
    * + time always yields the same id, which becomes the Schedule row id and the
    * write-back treatmentId.
@@ -177,6 +220,7 @@
   return {
     parseSlots: parseSlots,
     validateSlots: validateSlots,
+    patientSlotConflict: patientSlotConflict,
     occurrenceId: occurrenceId,
     generateOccurrences: generateOccurrences
   };
