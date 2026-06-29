@@ -844,59 +844,6 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .recurring-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-inline-start: 6px;
   background: rgba(236, 72, 153, 0.18); color: var(--accent-2); vertical-align: middle; }
 
-/* ── Dashboard patient card (mirrors the outpatient client card) ────────────
-   Bordered card: header (name + debt badge, then phone chip) above a
-   «תוכנית טיפול» panel with one line per treatment type
-   (type · frequency · therapist). No money panel here — billing lives in OUT. */
-.client-card {
-  background: var(--bg-elev); border: 1px solid var(--border);
-  border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.client-card:hover { border-color: var(--accent-deep); }
-.client-card .cc-top { display: flex; flex-direction: column; gap: 6px; }
-.client-card .client-head {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-}
-.client-card .client-name { font-weight: 700; font-size: 16px; color: var(--text); }
-.client-card .client-meta {
-  color: var(--text-soft); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap;
-}
-.client-card .cc-body { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.client-card .cc-body-2 { grid-template-columns: 1fr 1fr; }
-@media (max-width: 640px) { .client-card .cc-body-2 { grid-template-columns: 1fr; } }
-.client-card .cc-panel {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 10px; padding: 10px 12px;
-}
-.client-card .cc-panel-title {
-  font-size: 11px; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 8px;
-}
-/* Plan panel — OUT style: type name on top, frequency below, therapist chip. */
-.client-card .cc-line {
-  padding: 6px 0; border-top: 1px solid var(--border);
-}
-.client-card .cc-line:first-of-type { border-top: 0; }
-.client-card .cc-stack { display: flex; flex-direction: column; gap: 2px; }
-.client-card .cc-line .cc-k { font-size: 14px; font-weight: 600; color: var(--text); }
-.client-card .cc-line .cc-v { font-size: 13px; font-weight: 700; color: var(--accent-2); direction: ltr; }
-.client-card .cc-line.cc-muted { font-size: 12px; color: var(--muted); }
-.client-card .cc-ther {
-  align-self: flex-start; margin-top: 2px;
-  font-size: 12px; font-weight: 600; color: var(--text-soft);
-  padding: 2px 10px; border-radius: 999px;
-  background: var(--panel-2); border: 1px solid var(--border);
-}
-.client-card .cc-ther.cc-unassigned { color: var(--amber); border-color: #5a4818; }
-/* Schedule panel — per type, ordered day/time + location/room rows. */
-.client-card .cc-sched-type { margin-bottom: 8px; }
-.client-card .cc-sched-type:last-child { margin-bottom: 0; }
-.client-card .cc-sched-type-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
-.client-card .cc-sched-line { display: flex; justify-content: space-between; gap: 10px; border-top: 0; padding: 3px 0; }
-.client-card .cc-sched-line .cc-k { font-size: 13px; font-weight: 600; color: var(--text); }
-.client-card .cc-sched-line .cc-v { font-size: 12px; font-weight: 500; color: var(--text-soft); direction: rtl; }
-.client-card .alert-row { margin-top: 2px; }
-
 /* ── Therapist weekly fixed-schedule modal ──────────────────────────────────
    One block per treatment type, each with its slot rows (day/time/location/room)
    sized to the approved plan frequency. */
@@ -1763,11 +1710,11 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    «תוכנית טיפול» panel with one line per treatment type
    (type · frequency · therapist). No money panel here — billing lives in OUT. */
 .client-card {
-  background: var(--bg-elev); border: 1px solid var(--border);
+  background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
   display: flex; flex-direction: column; gap: 8px;
 }
-.client-card:hover { border-color: var(--accent-deep); }
+.client-card:hover { border-color: var(--accent); }
 .client-card .cc-top { display: flex; flex-direction: column; gap: 6px; }
 .client-card .client-head {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -1783,6 +1730,11 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 10px; padding: 10px 12px;
 }
+/* Distinct panel tints so the two halves read as separate (like OUT). */
+.client-card .cc-plan  { background: #3d1430; border-color: var(--accent-deep); }
+.client-card .cc-sched { background: #2e1840; border-color: var(--purple); }
+.client-card .cc-plan .cc-panel-title  { color: var(--accent-2); }
+.client-card .cc-sched .cc-panel-title { color: #c89bf5; }
 .client-card .cc-panel-title {
   font-size: 11px; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 8px;
 }
