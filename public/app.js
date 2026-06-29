@@ -516,29 +516,28 @@
   // Each line shows: treatment type · frequency · assigned therapist (or
   // «טרם שובץ» when that type has no therapist yet). A patient can have a
   // DIFFERENT therapist per type, so the therapist is shown per-line, not once.
+  // «תוכנית טיפול» panel — OUT style: one block per treatment type with the type
+  // name on top and «N/שבוע» (or /חודש) below, plus the assigned therapist.
   function planPanelHtml(p) {
-    // Map treatmentType -> {therapist, slots} from existing assignments.
-    var byType = {};
+    var therByType = {};
     (p.assignments || []).forEach(function (a) {
-      if (a.treatmentType) byType[a.treatmentType] = { therapist: a.therapist || '', slots: a.slots };
+      if (a.treatmentType) therByType[a.treatmentType] = a.therapist || '';
     });
-    // Rows come from the approved plan types (the authority on which types
-    // exist); assignments supply the therapist + fixed weekly schedule per type.
     var src = (p.planTypes && p.planTypes.length)
       ? p.planTypes
       : (p.assignments || []).map(function (a) { return { treatmentType: a.treatmentType, frequencyPerWeek: a.frequencyPerWeek }; });
     var lines = src.map(function (r) {
       var freqTxt = (r.frequencyPerWeek || r.frequencyPerWeek === 0) ? (r.frequencyPerWeek + '/' + freqUnit(r.treatmentType)) : '—';
-      var info = byType[r.treatmentType] || {};
-      var therHtml = info.therapist
-        ? '<span class="cc-ther">' + escapeHtml(info.therapist) + '</span>'
+      var ther = therByType[r.treatmentType];
+      var therHtml = ther
+        ? '<span class="cc-ther">' + escapeHtml(ther) + '</span>'
         : '<span class="cc-ther cc-unassigned">טרם שובץ</span>';
-      return '<div class="cc-line cc-plan-line">' +
+      // Stacked: type name (cc-k) on top, frequency (cc-v) below, therapist chip.
+      return '<div class="cc-line cc-stack">' +
         '<span class="cc-k">' + escapeHtml(svc(r.treatmentType) || '—') + '</span>' +
         '<span class="cc-v">' + escapeHtml(freqTxt) + '</span>' +
         therHtml +
-        '</div>' +
-        slotsLineHtml(info.slots);
+        '</div>';
     }).join('');
     if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
     return '<div class="cc-panel cc-plan">' +
@@ -546,21 +545,29 @@
       '</div>';
   }
 
-  // The fixed weekly schedule for one treatment type, shown under its plan line:
-  // «יום · שעה · מיקום · חדר» per slot. Empty when no schedule is set yet.
-  function slotsLineHtml(slots) {
-    var arr = Recurring.parseSlots(slots);
-    if (!arr.length) return '';
-    var items = arr.map(function (s) {
-      var wd = (WEEKDAY_LABELS[Number(s.weekday)] || '');
-      var bits = [];
-      if (wd) bits.push(wd);
-      if (s.time) bits.push(s.time);
-      if (s.location) bits.push(locationLabel(s.location));
-      if (s.room) bits.push('חדר ' + s.room);
-      return '<span class="cc-slot">' + escapeHtml(bits.join(' · ')) + '</span>';
-    }).join('');
-    return '<div class="cc-slots">' + items + '</div>';
+  // «לוז שבועי» panel — per treatment type, the fixed weekly slots as ordered
+  // rows: type name, then each «יום · שעה · מיקום · חדר». Empty types are skipped.
+  function schedulePanelHtml(p) {
+    var blocks = (p.assignments || []).map(function (a) {
+      var arr = Recurring.parseSlots(a.slots);
+      if (!arr.length) return '';
+      var rows = arr.map(function (s) {
+        var wd = (WEEKDAY_LABELS[Number(s.weekday)] || '');
+        var right = [wd, s.time].filter(Boolean).join(' ');
+        var left = [s.location ? locationLabel(s.location) : '', s.room ? ('חדר ' + s.room) : ''].filter(Boolean).join(' · ');
+        return '<div class="cc-line cc-sched-line">' +
+          '<span class="cc-k">' + escapeHtml(right || '—') + '</span>' +
+          '<span class="cc-v">' + escapeHtml(left) + '</span>' +
+          '</div>';
+      }).join('');
+      return '<div class="cc-sched-type">' +
+        '<div class="cc-sched-type-name">' + escapeHtml(svc(a.treatmentType) || '—') + '</div>' +
+        rows + '</div>';
+    }).filter(Boolean).join('');
+    if (!blocks) blocks = '<div class="cc-line cc-muted">טרם נקבע לוז</div>';
+    return '<div class="cc-panel cc-sched">' +
+      '<div class="cc-panel-title">לוז שבועי</div>' + blocks +
+      '</div>';
   }
 
   function patientCard(p) {
@@ -581,7 +588,7 @@
     if (al) alertHtml = '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>';
     // Dashboard is VIEW-ONLY for everyone — no edit/schedule actions here.
     return '<div class="client-card">' + top +
-      '<div class="cc-body">' + planPanelHtml(p) + '</div>' +
+      '<div class="cc-body cc-body-2">' + planPanelHtml(p) + schedulePanelHtml(p) + '</div>' +
       alertHtml + '</div>';
   }
 
