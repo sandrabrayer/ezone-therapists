@@ -843,3 +843,42 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* «קבוע» tag on a recurring occurrence in the weekly view */
 .recurring-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-inline-start: 6px;
   background: rgba(236, 72, 153, 0.18); color: var(--accent-2); vertical-align: middle; }
+
+/* ── Dashboard patient card (redesign to match the outpatient client card) ──
+   Replaces the cramped 6-column billing-row grid on the patients dashboard with
+   a clean stacked card: header (name + phone + debt chip) above a «תוכנית טיפול»
+   plan box, one line per treatment type. View-only. */
+.patient-card {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+}
+.patient-card:hover { border-color: var(--accent-deep); }
+.patient-card .pc-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 10px;
+}
+.patient-card .pc-name { font-weight: 700; font-size: 16px; color: var(--text); }
+.patient-card .pc-phone {
+  direction: ltr; text-align: right; font-size: 13px;
+  color: var(--muted); margin-top: 2px;
+}
+.patient-card .pc-debt { flex: 0 0 auto; }
+.patient-card .plan-box {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.patient-card .plan-box-title {
+  font-size: 11px; letter-spacing: 0.4px; color: var(--muted);
+  margin-bottom: 8px; text-transform: none;
+}
+.patient-card .plan-line {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding: 4px 0; border-top: 1px solid var(--border);
+}
+.patient-card .plan-line:first-of-type { border-top: 0; }
+.patient-card .plan-type { font-size: 14px; font-weight: 600; color: var(--text); }
+.patient-card .plan-freq { font-size: 13px; font-weight: 700; color: var(--accent-2); direction: ltr; }
+.patient-card .plan-empty { color: var(--muted); font-weight: 500; }
+.patient-card .pc-origin { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.patient-card .pc-origin .p-label { letter-spacing: 0.4px; }
+.patient-card .alert-row { margin-top: 8px; }
