@@ -33,9 +33,14 @@
 
   // Resolve Plan: the Node dependency if injected, else the browser global
   // (plan.js loads after roster.js, so it exists by the time build() runs).
+  // NOTE: `root` from the outer IIFE is NOT in this factory's scope, so reach the
+  // global object directly.
   function planApi() {
     if (PlanDep) return PlanDep;
-    return (typeof root !== 'undefined' && root.Plan) ? root.Plan : null;
+    var g = (typeof globalThis !== 'undefined') ? globalThis
+          : (typeof self !== 'undefined') ? self
+          : (typeof window !== 'undefined') ? window : null;
+    return (g && g.Plan) ? g.Plan : null;
   }
   // Clean per-type plan breakdown, or [] if Plan isn't available yet.
   function planTypesFor(sessions, serviceType) {
