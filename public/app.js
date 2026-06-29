@@ -503,34 +503,6 @@
     return svc(treatmentType) === 'מעקב פסיכיאטרי' ? 'חודש' : 'שבוע';
   }
 
-  // The clean «תוכנית טיפול» plan box: one stacked line PER treatment type
-  // (label + frequency), matching the outpatient client card. Prefers the
-  // therapist assignments; falls back to the approved plan's parsed planTypes
-  // for not-yet-assigned patients. Never dumps the raw sessions JSON.
-  function planBoxHtml(p) {
-    var rows = [];
-    if (p.assignments && p.assignments.length) {
-      rows = p.assignments.map(function (a) {
-        return { type: a.treatmentType, freq: a.frequencyPerWeek };
-      });
-    } else if (p.planTypes && p.planTypes.length) {
-      rows = p.planTypes.map(function (t) {
-        return { type: t.treatmentType, freq: t.frequencyPerWeek };
-      });
-    }
-    var lines = rows.map(function (r) {
-      var freqTxt = (r.freq || r.freq === 0) ? (r.freq + '/' + freqUnit(r.type)) : '—';
-      return '<div class="plan-line">' +
-        '<span class="plan-type">' + escapeHtml(svc(r.type) || '—') + '</span>' +
-        '<span class="plan-freq">' + escapeHtml(freqTxt) + '</span>' +
-        '</div>';
-    }).join('');
-    if (!lines) lines = '<div class="plan-line plan-empty">לא נקבעה תוכנית</div>';
-    return '<div class="plan-box">' +
-      '<div class="plan-box-title">תוכנית טיפול</div>' + lines +
-      '</div>';
-  }
-
   function patientUpcomingAlert(phone) {
     var key = normPhone(phone);
     for (var i = 0; i < state.alerts.length; i++) {
@@ -539,27 +511,59 @@
     return null;
   }
 
+  // Plan panel: bordered «תוכנית טיפול» box with one cc-line per treatment type.
+  // Each line shows: treatment type · frequency · assigned therapist (or
+  // «טרם שובץ» when that type has no therapist yet). A patient can have a
+  // DIFFERENT therapist per type, so the therapist is shown per-line, not once.
+  function planPanelHtml(p) {
+    // Map treatmentType -> therapist from existing assignments.
+    var therByType = {};
+    (p.assignments || []).forEach(function (a) {
+      if (a.treatmentType) therByType[a.treatmentType] = a.therapist || '';
+    });
+    // Rows come from the approved plan types (the authority on which types
+    // exist); assignments only supply the therapist name per type.
+    var src = (p.planTypes && p.planTypes.length)
+      ? p.planTypes
+      : (p.assignments || []).map(function (a) { return { treatmentType: a.treatmentType, frequencyPerWeek: a.frequencyPerWeek }; });
+    var lines = src.map(function (r) {
+      var freqTxt = (r.frequencyPerWeek || r.frequencyPerWeek === 0) ? (r.frequencyPerWeek + '/' + freqUnit(r.treatmentType)) : '—';
+      var ther = therByType[r.treatmentType];
+      var therHtml = ther
+        ? '<span class="cc-ther">' + escapeHtml(ther) + '</span>'
+        : '<span class="cc-ther cc-unassigned">טרם שובץ</span>';
+      return '<div class="cc-line cc-plan-line">' +
+        '<span class="cc-k">' + escapeHtml(svc(r.treatmentType) || '—') + '</span>' +
+        '<span class="cc-v">' + escapeHtml(freqTxt) + '</span>' +
+        therHtml +
+        '</div>';
+    }).join('');
+    if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
+    return '<div class="cc-panel cc-plan">' +
+      '<div class="cc-panel-title">תוכנית טיפול</div>' + lines +
+      '</div>';
+  }
+
   function patientCard(p) {
     var badges = '';
     if (p.stillAdmitted) badges += ' <span class="chip chip-partial">עדיין מאושפז/ת' + (p.admittedHouse ? ' · ' + escapeHtml(houseLabel(p.admittedHouse)) : '') + '</span>';
-    // Header row: name (right) + phone + debt chip. Plan lives in its own box.
-    var head =
-      '<div class="pc-head">' +
-        '<div class="pc-id">' +
-          '<div class="pc-name">' + escapeHtml(p.name) + badges + '</div>' +
-          '<div class="pc-phone">' + escapeHtml(p.phone) + '</div>' +
+    var phoneChip = p.phone ? '<span class="chip">📞 ' + escapeHtml(p.phone) + '</span>' : '';
+    var originChip = p.origin ? '<span class="chip">' + escapeHtml(p.origin) + '</span>' : '';
+    var top =
+      '<div class="cc-top">' +
+        '<div class="client-head">' +
+          '<div class="client-name">' + escapeHtml(p.name) + badges + '</div>' +
+          debtChip(p.debtStatus, p.amountOwed) +
         '</div>' +
-        '<div class="pc-debt">' + debtChip(p.debtStatus, p.amountOwed) + '</div>' +
+        '<div class="client-meta">' + phoneChip + originChip + '</div>' +
       '</div>';
-    var box = planBoxHtml(p);
-    var origin = p.origin
-      ? '<div class="pc-origin"><span class="p-label">מקור הגעה</span> ' + escapeHtml(p.origin) + '</div>'
-      : '';
     var alertHtml = '';
     var al = patientUpcomingAlert(p.phone);
     if (al) alertHtml = '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>';
     // Dashboard is VIEW-ONLY for everyone — no edit/schedule actions here.
-    return '<div class="patient-card">' + head + box + origin + alertHtml + '</div>';
+    return '<div class="client-card">' + top +
+      '<div class="cc-body">' + planPanelHtml(p) + '</div>' +
+      alertHtml + '</div>';
   }
 
   function renderDashboard() {
