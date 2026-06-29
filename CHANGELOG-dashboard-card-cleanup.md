@@ -1,4 +1,4 @@
-[CHANGELOG-dashboard-card-cleanup (3).md](https://github.com/user-attachments/files/29463798/CHANGELOG-dashboard-card-cleanup.3.md)
+[CHANGELOG-dashboard-card-cleanup (4).md](https://github.com/user-attachments/files/29464184/CHANGELOG-dashboard-card-cleanup.4.md)
 # Dashboard card cleanup — remove "responsible therapist", clean plan summary
 
 ## Why
@@ -53,3 +53,16 @@ tests passed because they inject Plan via require, never exercising this path.)
 - **test/roster.test.js**: added a browser-path regression test that loads
   roster.js with Plan as a global (not injected) and asserts planTypes is
   populated. Verified it FAILS on the old code and passes on the fix.
+
+## Follow-up 2: card matches the outpatient layout + shows therapists per type
+Rebuilt the dashboard card to mirror the ezone-outpatient client card structure
+(cc-top header + bordered cc-panel), minus the money panel (billing lives in OUT).
+- **public/app.js**: `patientCard()` now renders a `client-card` with a header
+  (name + debt badge, phone chip) and a «תוכנית טיפול» panel. New
+  `planPanelHtml(p)` shows ONE line per treatment type: type · frequency ·
+  therapist. A patient may have a different therapist per type, so the therapist
+  is shown per-line; types with no assignment show «טרם שובץ». Removed the
+  interim `planBoxHtml` helper.
+- **public/style.css**: replaced the interim `.patient-card` styles with
+  `.client-card` / `.cc-panel` / `.cc-line` classes in the app's fuchsia theme,
+  plus a `.cc-ther` therapist chip (amber when unassigned).
