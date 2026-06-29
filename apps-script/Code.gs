@@ -58,7 +58,8 @@ var SCHEDULE_HEADERS = [
   'created',
   'syncStatus', 'syncedAt',
   'time', 'reason',         // iteration 7 — appended (time-of-day; not-done reason)
-  'outcome', 'outcomeAt'    // iteration 18 step 2 — appended (3-state session outcome + stamp)
+  'outcome', 'outcomeAt',   // iteration 18 step 2 — appended (3-state session outcome + stamp)
+  'room'                    // appended — treatment room (free text); Yarden fills, visible to all
 ];
 
 /* Append-only audit trail of every debtor approval. */
@@ -507,6 +508,7 @@ function _materializeOccurrenceRow(sh, occ) {
     therapist: occ.therapist || '',
     treatmentType: occ.treatmentType || '',
     location: occ.location || '',
+    room: occ.room || '',
     scheduledDate: occ.scheduledDate || '',
     patientName: occ.patientName || '',
     patientPhone: canon || String(occ.patientPhone == null ? '' : occ.patientPhone),
@@ -1505,6 +1507,7 @@ function _updateBooking(payload) {
     if (payload.scheduledDate != null) setCol('scheduledDate', String(payload.scheduledDate));
     if (payload.time != null) setCol('time', String(payload.time));
     if (payload.location != null) setCol('location', String(payload.location));
+    if (payload.room != null) setCol('room', String(payload.room));
 
     var status = '';
     if (String(grid[found][attIdx] || '') !== '') {   // already reported → re-sync the correction
