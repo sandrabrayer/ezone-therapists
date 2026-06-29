@@ -31,7 +31,26 @@ const OCCUPANCY_SECRET = process.env.OCCUPANCY_SECRET || '';
 // a password screen on open and verifies it here (server-side); when empty, the
 // gate is OFF and the app opens directly. NEVER sent to the browser.
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
-const BUILD = String(Date.now());
+// BUILD — the cache-buster stamped into asset URLs (app.js?v=BUILD, etc.).
+// Derived from the deployed commit SHA so it ALWAYS changes when the code changes
+// — a plain browser refresh then fetches the new app.js/style.css, no manual
+// "empty cache" needed. Railway exposes the SHA; fall back to newest file mtime,
+// then to process start time, so it still works locally and off-Railway.
+const BUILD = (function () {
+  var sha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION ||
+            process.env.RAILWAY_DEPLOYMENT_ID || process.env.GIT_COMMIT || '';
+  if (sha) return String(sha).slice(0, 12);
+  try {
+    var dir = path.join(__dirname, 'public');
+    var newest = 0;
+    fs.readdirSync(dir).forEach(function (f) {
+      var m = fs.statSync(path.join(dir, f)).mtimeMs;
+      if (m > newest) newest = m;
+    });
+    if (newest) return String(Math.floor(newest));
+  } catch (e) { /* fall through */ }
+  return String(Date.now());
+})();
 
 // --- Cache config -----------------------------------------------------------
 // Caches the slow `getData` bulk read from this app's own Apps Script in
