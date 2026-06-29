@@ -43,7 +43,17 @@ test('validateSlots: each slot needs weekday 0-6, HH:mm time, location', () => {
   assert.equal(Recurring.validateSlots([{ weekday: 1, time: '10:00', location: '' }], 1).ok, false);
   const ok = Recurring.validateSlots([{ weekday: 1, time: '10:00', location: 'x' }], 1);
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.slots, [{ weekday: 1, time: '10:00', location: 'x' }]);
+  assert.deepEqual(ok.slots, [{ weekday: 1, time: '10:00', location: 'x', room: '' }]);
+});
+
+test('validateSlots: room (free text) is preserved and trimmed; optional', () => {
+  const ok = Recurring.validateSlots([{ weekday: 2, time: '11:00', location: 'rehab', room: '  חדר 3 ' }], 1);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.slots[0].room, 'חדר 3');
+  // No room provided → empty string, still valid (room is optional).
+  const ok2 = Recurring.validateSlots([{ weekday: 2, time: '11:00', location: 'rehab' }], 1);
+  assert.equal(ok2.ok, true);
+  assert.equal(ok2.slots[0].room, '');
 });
 
 test('validateSlots: weekday 0 (Sunday) is valid, not treated as missing', () => {
