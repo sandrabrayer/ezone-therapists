@@ -1778,3 +1778,24 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .slot-row .s-room::placeholder { color: var(--muted); }
 
+
+/* New-assignment notifications banner (therapists tab) — everyone sees; each
+   row dismissible with «ראיתי». */
+.notif-banner {
+  background: #2e1840; border: 1px solid var(--purple);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+}
+.notif-banner .notif-title { font-weight: 700; color: #c89bf5; margin-bottom: 6px; }
+.notif-banner .notif-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 4px 0; border-top: 1px solid var(--border);
+}
+.notif-banner .notif-item:first-of-type { border-top: 0; }
+.notif-banner .notif-text { color: var(--text-soft); font-size: 13px; }
+
+/* «לידים חדשים» / «מטופלים משובצים» section headings in the assign tab. */
+.assign-section-title {
+  font-weight: 700; color: var(--accent-2); font-size: 13px;
+  margin: 12px 2px 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.assign-section-title:first-child { margin-top: 0; }
