@@ -258,6 +258,7 @@
         therapist: String(session.therapist || '').trim(),
         treatmentType: String(session.treatmentType || '').trim(),
         location: String(session.location || '').trim(),
+        room: String(session.room == null ? '' : session.room).trim(),
         scheduledDate: String(session.scheduledDate || '').trim(),
         time: String(session.time == null ? '' : session.time).trim(),
         patientName: String(p.name == null ? '' : p.name).trim(),
