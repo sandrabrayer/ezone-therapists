@@ -517,32 +517,50 @@
   // «טרם שובץ» when that type has no therapist yet). A patient can have a
   // DIFFERENT therapist per type, so the therapist is shown per-line, not once.
   function planPanelHtml(p) {
-    // Map treatmentType -> therapist from existing assignments.
-    var therByType = {};
+    // Map treatmentType -> {therapist, slots} from existing assignments.
+    var byType = {};
     (p.assignments || []).forEach(function (a) {
-      if (a.treatmentType) therByType[a.treatmentType] = a.therapist || '';
+      if (a.treatmentType) byType[a.treatmentType] = { therapist: a.therapist || '', slots: a.slots };
     });
     // Rows come from the approved plan types (the authority on which types
-    // exist); assignments only supply the therapist name per type.
+    // exist); assignments supply the therapist + fixed weekly schedule per type.
     var src = (p.planTypes && p.planTypes.length)
       ? p.planTypes
       : (p.assignments || []).map(function (a) { return { treatmentType: a.treatmentType, frequencyPerWeek: a.frequencyPerWeek }; });
     var lines = src.map(function (r) {
       var freqTxt = (r.frequencyPerWeek || r.frequencyPerWeek === 0) ? (r.frequencyPerWeek + '/' + freqUnit(r.treatmentType)) : '—';
-      var ther = therByType[r.treatmentType];
-      var therHtml = ther
-        ? '<span class="cc-ther">' + escapeHtml(ther) + '</span>'
+      var info = byType[r.treatmentType] || {};
+      var therHtml = info.therapist
+        ? '<span class="cc-ther">' + escapeHtml(info.therapist) + '</span>'
         : '<span class="cc-ther cc-unassigned">טרם שובץ</span>';
       return '<div class="cc-line cc-plan-line">' +
         '<span class="cc-k">' + escapeHtml(svc(r.treatmentType) || '—') + '</span>' +
         '<span class="cc-v">' + escapeHtml(freqTxt) + '</span>' +
         therHtml +
-        '</div>';
+        '</div>' +
+        slotsLineHtml(info.slots);
     }).join('');
     if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
     return '<div class="cc-panel cc-plan">' +
       '<div class="cc-panel-title">תוכנית טיפול</div>' + lines +
       '</div>';
+  }
+
+  // The fixed weekly schedule for one treatment type, shown under its plan line:
+  // «יום · שעה · מיקום · חדר» per slot. Empty when no schedule is set yet.
+  function slotsLineHtml(slots) {
+    var arr = Recurring.parseSlots(slots);
+    if (!arr.length) return '';
+    var items = arr.map(function (s) {
+      var wd = (WEEKDAY_LABELS[Number(s.weekday)] || '');
+      var bits = [];
+      if (wd) bits.push(wd);
+      if (s.time) bits.push(s.time);
+      if (s.location) bits.push(locationLabel(s.location));
+      if (s.room) bits.push('חדר ' + s.room);
+      return '<span class="cc-slot">' + escapeHtml(bits.join(' · ')) + '</span>';
+    }).join('');
+    return '<div class="cc-slots">' + items + '</div>';
   }
 
   function patientCard(p) {
