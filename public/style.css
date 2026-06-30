@@ -1634,7 +1634,18 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   border: 1px solid rgba(242, 195, 85, 0.4);
   padding: 1px 9px; border-radius: 999px; font-size: 12px;
 }
-.assign-row-pending { border-right-color: var(--amber); }
+.assign-row-pending {
+  border-right-color: var(--amber);
+  border-color: rgba(242, 195, 85, 0.55);
+  background: linear-gradient(180deg, rgba(242,195,85,0.10), rgba(242,195,85,0.03));
+  box-shadow: 0 0 0 1px rgba(242,195,85,0.12), 0 4px 14px rgba(0,0,0,0.25);
+}
+.assign-row-pending .assign-name { color: #ffe6a6; }
+.assign-row-assigned {
+  border-right-color: var(--purple);
+  background: var(--bg-elev); opacity: 0.92;
+}
+.assign-row-assigned .assign-name { font-size: 17px; font-weight: 700; }
 
 /* Soft monthly-package-cap warning in the schedule review (does not block). */
 .cap-warn {
@@ -1799,3 +1810,17 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   margin: 12px 2px 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
 }
 .assign-section-title:first-child { margin-top: 0; }
+
+/* Therapist tab — full patient card extras: sessions-to-report panel + actions. */
+.client-card .cc-sessions { margin-top: 8px; background: var(--panel); border-color: var(--border); }
+.client-card .cc-session-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 0; border-top: 1px solid var(--border);
+}
+.client-card .cc-session-row:first-of-type { border-top: 0; }
+.client-card .cc-session-when { font-size: 13px; font-weight: 600; color: var(--text); min-width: 130px; }
+.client-card .cc-session-type { font-size: 12px; color: var(--text-soft); flex: 1; }
+.client-card .cc-card-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
