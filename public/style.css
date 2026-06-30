@@ -30,7 +30,7 @@ body {
   margin: 0;
   background: radial-gradient(1200px 600px at 70% -10%, #3a1530 0%, var(--bg) 60%) fixed;
   color: var(--text);
-  font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
+  font-family: "Rubik", "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
 }
 
@@ -894,7 +894,7 @@ body {
   margin: 0;
   background: radial-gradient(1200px 600px at 70% -10%, #3a1530 0%, var(--bg) 60%) fixed;
   color: var(--text);
-  font-family: "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
+  font-family: "Rubik", "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
 }
 
@@ -1642,12 +1642,12 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   padding: 1px 9px; border-radius: 999px; font-size: 12px;
 }
 .assign-row-pending {
-  border-right: 6px solid var(--amber);
-  border-color: rgba(242, 195, 85, 0.7);
-  background: linear-gradient(180deg, rgba(242,195,85,0.22), rgba(242,195,85,0.06)), var(--card);
-  box-shadow: 0 0 0 1px rgba(242,195,85,0.25), 0 8px 22px rgba(0,0,0,0.4);
+  border-right: 6px solid var(--accent);
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(236,72,153,0.22), rgba(236,72,153,0.06)), var(--card);
+  box-shadow: 0 0 0 1px rgba(236,72,153,0.3), 0 8px 22px rgba(0,0,0,0.4);
 }
-.assign-row-pending .assign-name { color: #ffe6a6; }
+.assign-row-pending .assign-name { color: #ffd0e6; }
 .assign-row-assigned {
   border-right: 4px solid var(--purple);
   border-color: var(--panel-sched-border);
@@ -1667,7 +1667,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* Treatment plan — quiet secondary line, full width, no longer competing. */
 .assign-type {
   grid-area: type;
-  color: var(--muted); font-size: 12.5px; line-height: 1.5;
+  color: var(--text-soft); font-size: 13.5px; font-weight: 600; line-height: 1.6;
   padding-top: 6px; margin-top: 4px;
   border-top: 1px dashed var(--border);
 }
@@ -1775,13 +1775,14 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: var(--panel-2); border: 1px solid var(--border);
 }
 .client-card .cc-ther.cc-unassigned { color: var(--amber); border-color: #5a4818; }
+.client-card .cc-ther.cc-framework { color: #b9a9f5; border-color: var(--panel-sched-border); background: rgba(160,108,242,0.15); }
 /* Schedule panel — per type, ordered day/time + location/room rows. */
 .client-card .cc-sched-type { margin-bottom: 8px; }
 .client-card .cc-sched-type:last-child { margin-bottom: 0; }
-.client-card .cc-sched-type-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.client-card .cc-sched-type-name { font-size: 14px; font-weight: 800; color: #ffd0e6; margin-bottom: 3px; }
 .client-card .cc-sched-line { display: flex; justify-content: space-between; gap: 10px; border-top: 0; padding: 3px 0; }
-.client-card .cc-sched-line .cc-k { font-size: 13px; font-weight: 600; color: var(--text); }
-.client-card .cc-sched-line .cc-v { font-size: 12px; font-weight: 500; color: var(--text-soft); direction: rtl; }
+.client-card .cc-sched-line .cc-k { font-size: 14px; font-weight: 800; color: #ffffff; }
+.client-card .cc-sched-line .cc-v { font-size: 13px; font-weight: 700; color: #ffd0e6; direction: rtl; }
 .client-card .alert-row { margin-top: 2px; }
 
 /* ── Therapist weekly fixed-schedule modal ──────────────────────────────────
@@ -1842,7 +1843,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 @media (max-width: 820px) { .assign-columns { grid-template-columns: 1fr; } }
 .assign-col { min-width: 0; }
 .assign-title-leads {
-  color: #ffe6a6; border-bottom-color: rgba(242,195,85,0.5);
+  color: var(--accent-2); border-bottom-color: var(--accent);
 }
 .assign-title-assigned {
   color: #c89bf5; border-bottom-color: var(--panel-sched-border);
