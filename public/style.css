@@ -1,8 +1,8 @@
 :root {
   --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
-  --card:      #43204a;  --card-hover: #512659; --card-border: #9a4f8a;
-  --panel-plan:  #4a1c3d; --panel-plan-border:  #b3477f;
-  --panel-sched: #3a2358; --panel-sched-border: #8b5cf6;
+  --card:      #52214c;  --card-hover: #5f2657; --card-border: #c052a0;
+  --panel-plan:  #5e1f48; --panel-plan-border:  #e0559b;
+  --panel-sched: #432a66; --panel-sched-border: #a06cf2;
   --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
   --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
   --purple:    #a855f7;
@@ -864,9 +864,9 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 
 :root {
   --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
-  --card:      #43204a;  --card-hover: #512659; --card-border: #9a4f8a;
-  --panel-plan:  #4a1c3d; --panel-plan-border:  #b3477f;
-  --panel-sched: #3a2358; --panel-sched-border: #8b5cf6;
+  --card:      #52214c;  --card-hover: #5f2657; --card-border: #c052a0;
+  --panel-plan:  #5e1f48; --panel-plan-border:  #e0559b;
+  --panel-sched: #432a66; --panel-sched-border: #a06cf2;
   --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
   --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
   --purple:    #a855f7;
@@ -1765,8 +1765,8 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .client-card .cc-line:first-of-type { border-top: 0; }
 .client-card .cc-stack { display: flex; flex-direction: column; gap: 2px; }
-.client-card .cc-line .cc-k { font-size: 14px; font-weight: 600; color: var(--text); }
-.client-card .cc-line .cc-v { font-size: 13px; font-weight: 700; color: var(--accent-2); direction: ltr; }
+.client-card .cc-line .cc-k { font-size: 15px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px; }
+.client-card .cc-line .cc-v { font-size: 14px; font-weight: 800; color: #ffd0e6; direction: ltr; }
 .client-card .cc-line.cc-muted { font-size: 12px; color: var(--muted); }
 .client-card .cc-ther {
   align-self: flex-start; margin-top: 2px;
@@ -1833,4 +1833,17 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .client-card .cc-card-actions {
   display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
   padding-top: 10px; border-top: 1px solid var(--border);
+}
+
+/* Assignment tab — two side-by-side columns: leads | assigned. */
+.assign-columns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;
+}
+@media (max-width: 820px) { .assign-columns { grid-template-columns: 1fr; } }
+.assign-col { min-width: 0; }
+.assign-title-leads {
+  color: #ffe6a6; border-bottom-color: rgba(242,195,85,0.5);
+}
+.assign-title-assigned {
+  color: #c89bf5; border-bottom-color: var(--panel-sched-border);
 }
