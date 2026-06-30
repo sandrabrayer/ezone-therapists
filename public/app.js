@@ -772,16 +772,23 @@
         '</div>';
     }
 
-    // New leads = approved plan, ZERO assignments (no therapist on any type).
-    // They head the list under their own heading; assigned patients follow.
+    // New leads = approved plan, ZERO assignments. Two side-by-side columns:
+    // unassigned leads on one side, assigned patients on the other.
     var leads = list.filter(function (p) { return !p.therapists.length; });
     var assigned = list.filter(function (p) { return p.therapists.length; });
-    var html = '';
-    html += '<div class="assign-section-title">לידים חדשים — טרם שובצו (' + leads.length + ')</div>';
-    html += leads.length ? leads.map(rowHtml).join('') : '<div class="billing-empty">אין לידים חדשים</div>';
-    html += '<div class="assign-section-title">מטופלים משובצים (' + assigned.length + ')</div>';
-    html += assigned.length ? assigned.map(rowHtml).join('') : '<div class="billing-empty">—</div>';
-    $('#assignList').innerHTML = list.length ? html : '<div class="billing-empty">אין מטופלים</div>';
+    var leadsCol =
+      '<div class="assign-col assign-col-leads">' +
+        '<div class="assign-section-title assign-title-leads">לידים חדשים — טרם שובצו (' + leads.length + ')</div>' +
+        (leads.length ? leads.map(rowHtml).join('') : '<div class="billing-empty">אין לידים חדשים</div>') +
+      '</div>';
+    var assignedCol =
+      '<div class="assign-col assign-col-assigned">' +
+        '<div class="assign-section-title assign-title-assigned">מטופלים משובצים (' + assigned.length + ')</div>' +
+        (assigned.length ? assigned.map(rowHtml).join('') : '<div class="billing-empty">—</div>') +
+      '</div>';
+    $('#assignList').innerHTML = list.length
+      ? '<div class="assign-columns">' + leadsCol + assignedCol + '</div>'
+      : '<div class="billing-empty">אין מטופלים</div>';
   }
 
   // Outcome/report + edit buttons for ONE session row (shared by the therapist
