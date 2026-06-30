@@ -481,6 +481,17 @@
     renderAssign();
     renderSchedule();
     renderMine();
+    updateLeadsBadge();
+  }
+
+  // Live count of waiting leads (patients needing a non-framework therapist) on
+  // the «שיבוץ מטפלים» tab, visible from anywhere. Everyone sees it.
+  function updateLeadsBadge() {
+    var el = $('#leadsBadge');
+    if (!el) return;
+    var n = activePatients().filter(needsAssignment).length;
+    el.textContent = n;
+    el.hidden = n === 0;
   }
 
   function pendingSyncCount() {
@@ -798,7 +809,7 @@
         ? '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שבץ מטפל</button>'
         : '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>';
       return '<div class="assign-row' + (unassigned ? ' assign-row-pending' : ' assign-row-assigned') + '">' +
-        '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
+        '<span class="assign-name">' + escapeHtml(p.name) + (unassigned ? ' <span class="lead-new-tag">חדש</span>' : '') + '</span>' +
         '<span class="assign-ther"><span class="assign-ther-label">מטפל</span>' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
         '<span class="assign-actions">' +
