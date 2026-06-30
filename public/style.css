@@ -1855,3 +1855,18 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   margin-inline-start: 8px;
 }
 .assignment-row .a-location { min-width: 150px; }
+
+/* «שיבוץ מטפלים» tab badge — live count of leads waiting for assignment. */
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  font-size: 11px; font-weight: 800; line-height: 1; vertical-align: middle;
+  box-shadow: 0 0 0 2px rgba(236,72,153,0.25);
+}
+/* «חדש» tag on a not-yet-assigned lead. */
+.lead-new-tag {
+  font-size: 11px; font-weight: 800; color: #fff;
+  background: var(--accent); padding: 1px 8px; border-radius: 999px;
+  margin-inline-start: 6px; vertical-align: middle;
+}
