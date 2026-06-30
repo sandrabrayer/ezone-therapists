@@ -1870,3 +1870,60 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: var(--accent); padding: 1px 8px; border-radius: 999px;
   margin-inline-start: 6px; vertical-align: middle;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile / phone layout (≤560px). The app is used on both desktop and phone,
+   so this keeps the topbar, tabs, toolbars, modals and cards comfortable on a
+   narrow touch screen. */
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap; gap: 8px; padding: 10px 12px;
+  }
+  .logo { font-size: 16px; }
+  .tabs {
+    order: 3; width: 100%;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    gap: 6px; padding-bottom: 2px;
+  }
+  .tab { white-space: nowrap; padding: 8px 14px; font-size: 14px; }
+  .topbar-right { order: 2; }
+
+  /* Toolbars (search + buttons) stack and go full width. */
+  .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .toolbar .search, .toolbar select, .toolbar .btn,
+  .mine-picker, .mine-picker select { width: 100%; }
+
+  /* Cards: a touch more breathing room; panels already stack via cc-body-2. */
+  .client-card { padding: 12px; }
+  .client-card .client-name { font-size: 17px; }
+
+  /* Assignment rows: column actions wrap, buttons reachable. */
+  .assign-row { padding: 12px; }
+  .assign-actions { flex-wrap: wrap; }
+  .assign-actions .btn { flex: 1 1 auto; }
+
+  /* Modals: full-width sheet with internal scroll instead of a tiny centered box. */
+  .modal { padding: 0; align-items: flex-end; }
+  .modal-card, .modal-card-wide {
+    width: 100%; max-width: 100%; max-height: 92vh; overflow-y: auto;
+    border-radius: 16px 16px 0 0; margin: 0;
+  }
+  .form-grid { grid-template-columns: 1fr; }
+
+  /* KPI cards stack to one column on a phone. */
+  .kpis, .kpi-row { grid-template-columns: 1fr !important; }
+
+  /* Slot editor rows wrap so day/time/location/room stay usable. */
+  .slot-row { flex-wrap: wrap; }
+  .slot-row > * { flex: 1 1 45%; }
+
+  /* Session report buttons wrap under the session line. */
+  .cc-session-row { align-items: stretch; }
+  .cc-session-row .att-btns { width: 100%; flex-wrap: wrap; }
+  .cc-session-row .att-btns .btn { flex: 1 1 auto; }
+}
+
+/* Comfortable tap targets on any touch device. */
+@media (pointer: coarse) {
+  .btn, .tab, select, input { min-height: 40px; }
+}
