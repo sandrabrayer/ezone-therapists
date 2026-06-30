@@ -510,6 +510,14 @@
     return svc(treatmentType) === 'מעקב פסיכיאטרי' ? 'חודש' : 'שבוע';
   }
 
+  // Framework types are part of the plan but are a SETTING/מסגרת, not a
+  // therapist-delivered session: they need no therapist, never count as
+  // "unassigned", and expect no weekly scheduling. «ליווי יומי בקהילה» is one.
+  var FRAMEWORK_TYPES = { 'ליווי יומי בקהילה': true, 'מרכז יום': true };
+  function isFrameworkType(treatmentType) {
+    return !!FRAMEWORK_TYPES[svc(treatmentType)] || !!FRAMEWORK_TYPES[treatmentType];
+  }
+
   function patientUpcomingAlert(phone) {
     var key = normPhone(phone);
     for (var i = 0; i < state.alerts.length; i++) {
@@ -526,23 +534,37 @@
   // name on top and «N/שבוע» (or /חודש) below, plus the assigned therapist.
   function planPanelHtml(p) {
     var therByType = {};
+    var slotsByType = {};
     (p.assignments || []).forEach(function (a) {
-      if (a.treatmentType) therByType[a.treatmentType] = a.therapist || '';
+      if (a.treatmentType) {
+        therByType[a.treatmentType] = a.therapist || '';
+        slotsByType[a.treatmentType] = a.slots;
+      }
     });
     var src = (p.planTypes && p.planTypes.length)
       ? p.planTypes
       : (p.assignments || []).map(function (a) { return { treatmentType: a.treatmentType, frequencyPerWeek: a.frequencyPerWeek }; });
     var lines = src.map(function (r) {
       var freqTxt = (r.frequencyPerWeek || r.frequencyPerWeek === 0) ? (r.frequencyPerWeek + '/' + freqUnit(r.treatmentType)) : '—';
-      var ther = therByType[r.treatmentType];
-      var therHtml = ther
-        ? '<span class="cc-ther">' + escapeHtml(ther) + '</span>'
-        : '<span class="cc-ther cc-unassigned">טרם שובץ</span>';
-      // Stacked: type name (cc-k) on top, frequency (cc-v) below, therapist chip.
+      var tagHtml;
+      if (isFrameworkType(r.treatmentType)) {
+        // Framework (מסגרת) — no therapist. Show WHERE it happens (location set by
+        // Yarden on the slots); never «טרם שובץ».
+        var locs = Recurring.parseSlots(slotsByType[r.treatmentType])
+          .map(function (s) { return s.location ? locationLabel(s.location) : ''; })
+          .filter(Boolean);
+        var place = locs.length ? locs.join(' · ') : 'מסגרת';
+        tagHtml = '<span class="cc-ther cc-framework">' + escapeHtml(place) + '</span>';
+      } else {
+        var ther = therByType[r.treatmentType];
+        tagHtml = ther
+          ? '<span class="cc-ther">' + escapeHtml(ther) + '</span>'
+          : '<span class="cc-ther cc-unassigned">טרם שובץ</span>';
+      }
       return '<div class="cc-line cc-stack">' +
         '<span class="cc-k">' + escapeHtml(svc(r.treatmentType) || '—') + '</span>' +
         '<span class="cc-v">' + escapeHtml(freqTxt) + '</span>' +
-        therHtml +
+        tagHtml +
         '</div>';
     }).join('');
     if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
@@ -748,6 +770,21 @@
   // Compact patient list for the שיבוץ tab — ensures a newly registered patient
   // (local intake) is immediately available for assignment/scheduling here, not
   // only on the dashboard. Filterable by therapist (assigned) AND patient name.
+  // A patient "needs assignment" (is a NEW LEAD) when at least one NON-framework
+  // plan type still has no therapist. Framework types (ליווי יומי בקהילה) never
+  // count — they're a setting, not a therapist session.
+  function needsAssignment(p) {
+    var assignedTypes = {};
+    (p.assignments || []).forEach(function (a) {
+      if (a.therapist && a.treatmentType) assignedTypes[a.treatmentType] = true;
+    });
+    var types = (p.planTypes && p.planTypes.length) ? p.planTypes : (p.assignments || []);
+    return types.some(function (t) {
+      var tt = t.treatmentType;
+      return tt && !isFrameworkType(tt) && !assignedTypes[tt];
+    });
+  }
+
   function renderAssign() {
     var list = activePatients().filter(function (p) {
       var byTher = !state.workflowTherapist || p.therapists.indexOf(state.workflowTherapist) !== -1;
@@ -755,7 +792,7 @@
     }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
 
     function rowHtml(p) {
-      var unassigned = !p.therapists.length;
+      var unassigned = needsAssignment(p);
       var thers = unassigned ? '<em class="assign-pending">טרם שובץ</em>' : escapeHtml(p.therapists.join(', '));
       var assignBtn = unassigned
         ? '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שבץ מטפל</button>'
@@ -774,8 +811,8 @@
 
     // New leads = approved plan, ZERO assignments. Two side-by-side columns:
     // unassigned leads on one side, assigned patients on the other.
-    var leads = list.filter(function (p) { return !p.therapists.length; });
-    var assigned = list.filter(function (p) { return p.therapists.length; });
+    var leads = list.filter(needsAssignment);
+    var assigned = list.filter(function (p) { return !needsAssignment(p); });
     var leadsCol =
       '<div class="assign-col assign-col-leads">' +
         '<div class="assign-section-title assign-title-leads">לידים חדשים — טרם שובצו (' + leads.length + ')</div>' +
