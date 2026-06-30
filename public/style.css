@@ -1,5 +1,8 @@
 :root {
   --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
+  --card:      #43204a;  --card-hover: #512659; --card-border: #9a4f8a;
+  --panel-plan:  #4a1c3d; --panel-plan-border:  #b3477f;
+  --panel-sched: #3a2358; --panel-sched-border: #8b5cf6;
   --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
   --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
   --purple:    #a855f7;
@@ -861,6 +864,9 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 
 :root {
   --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
+  --card:      #43204a;  --card-hover: #512659; --card-border: #9a4f8a;
+  --panel-plan:  #4a1c3d; --panel-plan-border:  #b3477f;
+  --panel-sched: #3a2358; --panel-sched-border: #8b5cf6;
   --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
   --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
   --purple:    #a855f7;
@@ -1601,9 +1607,10 @@ button.month-pay-btn:active { filter: brightness(0.88); }
     "type    type";
   gap: 4px 12px; align-items: center;
   padding: 14px 16px; margin-bottom: 10px;
-  background: var(--panel); border: 1px solid var(--border);
+  background: var(--card); border: 1px solid var(--card-border);
   border-right: 4px solid var(--accent);
   border-radius: 12px;
+  box-shadow: 0 5px 16px rgba(0,0,0,0.32);
 }
 .assign-row.stopped-row { border-right-color: var(--amber); opacity: 0.85; }
 
@@ -1635,15 +1642,17 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   padding: 1px 9px; border-radius: 999px; font-size: 12px;
 }
 .assign-row-pending {
-  border-right-color: var(--amber);
-  border-color: rgba(242, 195, 85, 0.55);
-  background: linear-gradient(180deg, rgba(242,195,85,0.10), rgba(242,195,85,0.03));
-  box-shadow: 0 0 0 1px rgba(242,195,85,0.12), 0 4px 14px rgba(0,0,0,0.25);
+  border-right: 6px solid var(--amber);
+  border-color: rgba(242, 195, 85, 0.7);
+  background: linear-gradient(180deg, rgba(242,195,85,0.22), rgba(242,195,85,0.06)), var(--card);
+  box-shadow: 0 0 0 1px rgba(242,195,85,0.25), 0 8px 22px rgba(0,0,0,0.4);
 }
 .assign-row-pending .assign-name { color: #ffe6a6; }
 .assign-row-assigned {
-  border-right-color: var(--purple);
-  background: var(--bg-elev); opacity: 0.92;
+  border-right: 4px solid var(--purple);
+  border-color: var(--panel-sched-border);
+  background: var(--panel-sched);
+  opacity: 1;
 }
 .assign-row-assigned .assign-name { font-size: 17px; font-weight: 700; }
 
@@ -1721,11 +1730,12 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    «תוכנית טיפול» panel with one line per treatment type
    (type · frequency · therapist). No money panel here — billing lives in OUT. */
 .client-card {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 12px;
   display: flex; flex-direction: column; gap: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
-.client-card:hover { border-color: var(--accent); }
+.client-card:hover { border-color: var(--accent); background: var(--card-hover); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
 .client-card .cc-top { display: flex; flex-direction: column; gap: 6px; }
 .client-card .client-head {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -1742,8 +1752,8 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   border-radius: 10px; padding: 10px 12px;
 }
 /* Distinct panel tints so the two halves read as separate (like OUT). */
-.client-card .cc-plan  { background: #3d1430; border-color: var(--accent-deep); }
-.client-card .cc-sched { background: #2e1840; border-color: var(--purple); }
+.client-card .cc-plan  { background: var(--panel-plan);  border-color: var(--panel-plan-border); }
+.client-card .cc-sched { background: var(--panel-sched); border-color: var(--panel-sched-border); }
 .client-card .cc-plan .cc-panel-title  { color: var(--accent-2); }
 .client-card .cc-sched .cc-panel-title { color: #c89bf5; }
 .client-card .cc-panel-title {
