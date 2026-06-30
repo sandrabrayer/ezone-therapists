@@ -1848,3 +1848,10 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .assign-title-assigned {
   color: #c89bf5; border-bottom-color: var(--panel-sched-border);
 }
+
+/* Framework type row in the assignment modal: location instead of therapist. */
+.assignment-row .a-framework-tag {
+  font-size: 12px; font-weight: 600; color: #b9a9f5;
+  margin-inline-start: 8px;
+}
+.assignment-row .a-location { min-width: 150px; }
