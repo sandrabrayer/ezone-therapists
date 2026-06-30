@@ -904,9 +904,35 @@
       }).join('');
   }
 
+  // Export the selected therapist's patients (plan + weekly schedule) and their
+  // upcoming sessions to a CSV (UTF-8 BOM so Excel renders Hebrew correctly).
+  function exportMyPatients() {
+    if (!hasTherapist()) { toast('בחר/י את שמך כדי לייצא', true); return; }
+    var myPatients = activePatients().filter(function (p) {
+      return (p.therapists || []).indexOf(state.therapist) !== -1;
+    });
+    var sessions = state.schedule
+      .filter(function (r) { return r.therapist === state.therapist; })
+      .concat(buildOccurrences());
+    var csv = Exporter.buildCsv({
+      therapistName: state.therapist,
+      patients: myPatients,
+      sessions: sessions,
+      svc: svc, locationLabel: locationLabel, freqUnit: freqUnit, isFramework: isFrameworkType
+    });
+    // Prepend UTF-8 BOM so Excel opens Hebrew correctly.
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = Exporter.fileName(state.therapist);
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    toast('הקובץ יוצא');
+  }
+
   function renderMine() {
-    renderNotifications();
-    var panels = ['#myPatientsPanel', '#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
+    renderNotifications();    var panels = ['#myPatientsPanel', '#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'];
 
     // No name picked yet → prompt, hide everything else (notifications still show).
     if (!hasTherapist()) {
@@ -2095,6 +2121,7 @@
 
     on('#newPatientBtn', 'click', openNewPatient);          // Vered (שיבוץ)
     on('#mineScheduleBtn', 'click', function () { openScheduleModal(); }); // therapist (מ)
+    on('#mineExportBtn', 'click', exportMyPatients);
 
     // Delegated patient actions — shared by the dashboard list and the שיבוץ
     // assign list (so a newly registered patient is actionable in both).
