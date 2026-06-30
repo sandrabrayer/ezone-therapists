@@ -287,13 +287,15 @@
   }
 
   // --- loading -----------------------------------------------------------
-  async function loadAll() {
+  // Re-read ONLY this app's own data (schedule/approvals/patients/assignments/
+  // therapists/types/notifications). Used after a SAVE — debt and plans live in
+  // the outpatient app and don't change when we write here, so we skip those two
+  // slow cross-app round-trips. Initial load and manual refresh use loadAll().
+  async function loadOwn() {
     try {
       var data = await apiLoad();
       state.schedule = (data.schedule || []).map(normalizeScheduleRow);
       state.approvals = data.approvals || [];
-      // Repair any phone Sheets mangled (lost leading zero) — mirrors the
-      // server's read-side recovery so the UI is correct even before redeploy.
       state.patients = (data.patients || []).map(function (p) {
         if (p && p.phone != null) p.phone = Phone.recoverStored(p.phone);
         return p;
@@ -313,6 +315,12 @@
       toast('שגיאה בטעינת הנתונים: ' + e.message, true);
       throw e;
     }
+    recomputeAlerts();
+    render();
+  }
+
+  async function loadAll() {
+    await loadOwn();
     // Cross-app reads are best-effort and independent; never block the app.
     await Promise.all([loadDebtRoster(), loadPlans()]);
     recomputeAlerts();
@@ -995,7 +1003,7 @@
   function syncNow() {
     toast('מסנכרן…');
     apiSyncPending()
-      .then(function () { return loadAll(); })
+      .then(function () { return loadOwn(); })
       .then(function () {
         var left = pendingSyncCount();
         toast(left ? (left + ' עדיין ממתינים לסנכרון') : 'סונכרן');
@@ -1445,7 +1453,7 @@
           });
           toast('בקשת אישור לטיפול נוסף נשלחה לוורד', false);
         }
-        return loadAll();
+        return loadOwn();
       })
       .then(function () { closeScheduleModal(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); sub.disabled = false; });
@@ -1671,7 +1679,7 @@
     if (!fields.scheduledDate) { toast('יש לבחור תאריך', true); return; }
     btn.disabled = true;
     apiUpdateBooking(bookingEditId, fields)
-      .then(function () { toast('הטיפול עודכן'); return loadAll(); })
+      .then(function () { toast('הטיפול עודכן'); return loadOwn(); })
       .then(function () { closeBookingModal(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); })
       .finally(function () { btn.disabled = false; });
@@ -1684,7 +1692,7 @@
     }
     if (!window.confirm('לבטל את הטיפול של ' + row.patientName + ' בתאריך ' + displayDate(row.scheduledDate) + '?')) return;
     apiRemoveSchedule(id)
-      .then(function () { toast('הטיפול בוטל'); return loadAll(); })
+      .then(function () { toast('הטיפול בוטל'); return loadOwn(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); });
   }
 
@@ -1699,7 +1707,7 @@
     var note = window.prompt('הערה (לא חובה):', '');
     if (note === null) return;                       // prompt cancelled → abort
     apiMarkPatientStopped({ phone: rec.phone, name: rec.name, reportedBy: state.therapist || 'עורך', note: note || '' })
-      .then(function () { toast('נשלחה בקשת הפסקה לאישור ורד'); return loadAll(); })
+      .then(function () { toast('נשלחה בקשת הפסקה לאישור ורד'); return loadOwn(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); });
   }
 
@@ -1719,7 +1727,7 @@
     var name = stoppedNameByPhone(phone);
     if (!window.confirm('להחזיר את ' + name + ' לרשימת הפעילים?\nבקשת ההפסקה תבוטל אצל ורד. הטיפולים שבוטלו לא ישוחזרו — יש לקבוע מחדש לפי הצורך.')) return;
     apiRestorePatient({ phone: phone, reportedBy: state.therapist || 'עורך' })
-      .then(function () { toast('המטופל/ת הוחזר/ה לפעילים'); return loadAll(); })
+      .then(function () { toast('המטופל/ת הוחזר/ה לפעילים'); return loadOwn(); })
       .catch(function (err) { toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true); });
   }
 
@@ -1730,7 +1738,7 @@
     var name = stoppedNameByPhone(phone);
     if (!window.confirm('למחוק לצמיתות את ' + name + '?\nפעולה זו מסירה את רשומת המטופל/ת המקומית, מבטלת בקשת הפסקה ומשביתה את המטופל/ת במטופלי חוץ. אין לבטל.')) return;
     apiRemovePatient({ phone: phone, reportedBy: state.therapist || 'עורך' })
-      .then(function () { toast('המטופל/ת נמחק/ה'); return loadAll(); })
+      .then(function () { toast('המטופל/ת נמחק/ה'); return loadOwn(); })
       .catch(function (err) { toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true); });
   }
 
@@ -1819,7 +1827,7 @@
           if (w) initSyncWarning = svc(initType) + ': ' + w;
         });
       })
-      .then(function () { return loadAll(); })
+      .then(function () { return loadOwn(); })
       .then(function () {
         closePatientModal();
         if (initSyncWarning) toast('נשמר, אך סנכרון סוג החיוב נכשל — ' + initSyncWarning, true);
@@ -2001,7 +2009,7 @@
     }
     if (btn) btn.disabled = true;
     Promise.all(toSave.map(function (a) { return apiSaveAssignment(a); }))
-      .then(function () { closeWeeklyModal(); return loadAll(); })
+      .then(function () { closeWeeklyModal(); return loadOwn(); })
       .then(function () { toast('הלוז השבועי נשמר'); })
       .catch(function () { toast('שמירה נכשלה', true); })
       .then(function () { if (btn) btn.disabled = false; });
@@ -2070,7 +2078,7 @@
     });
     toRemove.forEach(function (id) { chain = chain.then(function () { return apiRemoveAssignment(id); }); });
     chain
-      .then(function () { return loadAll(); })
+      .then(function () { return loadOwn(); })
       .then(function () {
         closeAssignmentsModal();
         if (syncWarnings.length) {
