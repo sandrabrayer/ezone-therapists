@@ -1851,9 +1851,20 @@
     var freq = entry.frequencyPerWeek;
     var freqText = freq ? (freq + '× בשבוע') : '—';
     var slotsAttr = a.slots ? escapeHtml(typeof a.slots === 'string' ? a.slots : JSON.stringify(a.slots)) : '';
-    return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '" data-type="' + escapeHtml(entry.treatmentType || '') + '" data-slots="' + slotsAttr + '">' +
+    var framework = isFrameworkType(entry.treatmentType);
+    // For a framework type (מסגרת, e.g. ליווי יומי בקהילה) Yarden sets WHERE it
+    // happens, not a therapist. The current location is read from the stored slots.
+    var control;
+    if (framework) {
+      var curLoc = (Recurring.parseSlots(a.slots)[0] || {}).location || '';
+      control = '<select class="a-location">' + locationOptions(curLoc) + '</select>' +
+        '<span class="a-framework-tag">מסגרת — ללא מטפל/ת</span>';
+    } else {
+      control = '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>';
+    }
+    return '<div class="assignment-row" data-aid="' + escapeHtml(a.id || '') + '" data-type="' + escapeHtml(entry.treatmentType || '') + '" data-slots="' + slotsAttr + '" data-framework="' + (framework ? '1' : '0') + '">' +
       '<div class="assignment-head">' +
-        '<select class="a-therapist">' + optionList(activeTherapistNames(), a.therapist || '') + '</select>' +
+        control +
         '<span class="a-plan-lock" title="נקבע בתוכנית הטיפול המאושרת (קריאה בלבד)">' +
           '<span class="a-type-lock">' + escapeHtml(svc(entry.treatmentType) || '—') + '</span>' +
           '<span class="a-freq-lock">' + escapeHtml(freqText) + '</span>' +
@@ -1972,21 +1983,31 @@
     var keptIds = {};
     for (var i = 0; i < rows.length; i++) {
       var el = rows[i];
-      var ther = (el.querySelector('.a-therapist').value || '').trim();
-      // The row is pinned (data-type) to ONE plan-type entry — its type + locked
-      // frequency come from there, never from any input.
       var typeName = el.getAttribute('data-type') || '';
       var entry = types.filter(function (t) { return t.treatmentType === typeName; })[0] ||
                   { treatmentType: typeName, frequencyPerWeek: 0 };
-      // Yarden assigns ONLY the therapist here. The weekly days/hours are set by
-      // the therapist in «המטופלים שלי», so we PRESERVE any existing slots stored
-      // on this assignment (carried on data-slots) and pass them through unchanged.
-      var slotsJson = el.getAttribute('data-slots') || '';
-      if (!ther) continue;                               // type left unassigned -> skip (removes existing)
+      var isFw = el.getAttribute('data-framework') === '1';
       var aid = el.getAttribute('data-aid') || '';
+      var slotsJson = el.getAttribute('data-slots') || '';
+
+      if (isFw) {
+        // Framework (מסגרת): no therapist. Yarden picks WHERE it happens; store it
+        // as the location on a single slot so the card can show it. The row is kept
+        // even with no location (it's a real plan type), so the patient isn't
+        // mis-flagged as needing assignment.
+        var loc = (el.querySelector('.a-location') ? el.querySelector('.a-location').value : '').trim();
+        var fwSlots = loc ? JSON.stringify([{ weekday: '', time: '', location: loc, room: '' }]) : slotsJson;
+        if (aid) keptIds[aid] = true;
+        toSave.push(Plan.assignmentPayload({
+          entry: entry, id: aid || uid(), patientPhone: phone, therapist: '',
+          slots: fwSlots, updatedBy: state.therapist || 'עורך'
+        }));
+        continue;
+      }
+
+      var ther = (el.querySelector('.a-therapist') ? el.querySelector('.a-therapist').value : '').trim();
+      if (!ther) continue;                               // type left unassigned -> skip (removes existing)
       if (aid) keptIds[aid] = true;
-      // treatmentType + frequencyPerWeek are FORCED from the plan-type entry, never
-      // from any input (assignmentPayload takes no type/freq argument by design).
       toSave.push(Plan.assignmentPayload({
         entry: entry, id: aid || uid(), patientPhone: phone, therapist: ther,
         slots: slotsJson, updatedBy: state.therapist || 'עורך'
