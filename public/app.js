@@ -760,7 +760,7 @@
       var assignBtn = unassigned
         ? '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">שבץ מטפל</button>'
         : '<button class="btn btn-primary btn-sm" data-assignments-patient="' + escapeHtml(p.phone) + '">עריכה</button>';
-      return '<div class="assign-row' + (unassigned ? ' assign-row-pending' : '') + '">' +
+      return '<div class="assign-row' + (unassigned ? ' assign-row-pending' : ' assign-row-assigned') + '">' +
         '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
         '<span class="assign-ther"><span class="assign-ther-label">מטפל</span>' + thers + '</span>' +
         '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
@@ -784,47 +784,59 @@
     $('#assignList').innerHTML = list.length ? html : '<div class="billing-empty">אין מטופלים</div>';
   }
 
-  // --- my treatments (tab 3) — friendly per-therapist session-outcome view --
-  function mineRow(r) {
-    // A VIRTUAL recurring occurrence has no sheet row yet → marking it materializes
-    // the booking first; edit/cancel apply only once it's a real booking.
-    // iteration 18 step 2 — a 3-state outcome picker (storage-only) replaces the
-    // old happened/didn't pair. Buttons are generated from Outcome.VALUES so the
-    // UI can never drift from the allowed set; the chosen one is highlighted.
+  // Outcome/report + edit buttons for ONE session row (shared by the therapist
+  // card's per-session lines). Extracted so the card can reuse it.
+  function sessionOutcomeButtons(r) {
     var outcomeBtns = Outcome.VALUES.map(function (v) {
       var on = r.outcome === v;
       return '<button class="btn btn-ghost btn-sm outcome-btn outcome-' + v + (on ? ' is-active' : '') +
         '" data-mine-outcome="' + v + '" data-id="' + escapeHtml(r.id) + '" aria-pressed="' + on + '">' +
         escapeHtml(Outcome.labelFor(v)) + '</button>';
     }).join('');
-    var attBtns = '<span class="att-btns outcome-picker" role="group" aria-label="תוצאת הטיפול">' +
+    return '<span class="att-btns outcome-picker" role="group" aria-label="תוצאת הטיפול">' +
       outcomeBtns +
       (r.recurring ? '' :
         '<button class="btn btn-ghost btn-sm" data-edit-booking="' + escapeHtml(r.id) + '">עריכה</button>' +
-        // Cancel only while the booking hasn't been reported (keeps outpatient pay consistent).
-        (Scheduling.canCancelBooking(r) ? '<button class="btn btn-ghost btn-sm btn-danger" data-cancel-booking="' + escapeHtml(r.id) + '">ביטול טיפול</button>' : '')) +
+        (Scheduling.canCancelBooking(r) ? '<button class="btn btn-ghost btn-sm btn-danger" data-cancel-booking="' + escapeHtml(r.id) + '">ביטול</button>' : '')) +
       '</span>';
-    return '<div class="billing-row mine-row">' +
-      '<div class="p-name">' + escapeHtml(r.patientName) + (r.recurring ? ' <span class="recurring-tag">קבוע</span>' : '') + '</div>' +
-      '<div><span class="p-label">תאריך</span><span class="p-val">' + escapeHtml(displayDateTime(r.scheduledDate, r.time)) + '</span></div>' +
-      '<div><span class="p-label">טיפול</span><span class="p-val">' + escapeHtml(svc(r.treatmentType)) + '</span></div>' +
-      '<div><span class="p-label">מיקום</span><span class="p-val">' + escapeHtml(locationLabel(r.location)) + '</span></div>' +
-      '<div>' + outcomeChip(r) + syncBadge(r) + '</div>' +
-      '<div class="row-actions">' + attBtns + '</div>' +
-      '</div>';
   }
 
-  // The therapist's own assigned patients (with a «קבע טיפול» action each).
-  function myPatientsRow(p) {
-    return '<div class="assign-row">' +
-      '<span class="assign-name">' + escapeHtml(p.name) + '</span>' +
-      '<span class="assign-type">' + (assignmentSummary(p, false) ? escapeHtml(assignmentSummary(p, false)) : '—') + '</span>' +
-      '<span class="assign-actions">' +
-        '<button class="btn btn-primary btn-sm" data-weekly-patient="' + escapeHtml(p.phone) + '">לוז שבועי קבוע</button>' +
-        '<button class="btn btn-ghost btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
-        '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
-      '</span>' +
+  // The therapist's full patient card: dashboard-style plan + weekly schedule
+  // panels, then this patient's upcoming sessions each with report buttons
+  // (התקיים / לא התקיים …) so the therapist manages everything in one place.
+  function myPatientCard(p, sessions) {
+    var phoneChip = p.phone ? '<span class="chip">📞 ' + escapeHtml(p.phone) + '</span>' : '';
+    var head =
+      '<div class="cc-top">' +
+        '<div class="client-head">' +
+          '<div class="client-name">' + escapeHtml(p.name) + '</div>' +
+          debtChip(p.debtStatus, p.amountOwed) +
+        '</div>' +
+        '<div class="client-meta">' + phoneChip + '</div>' +
       '</div>';
+    var panels = '<div class="cc-body cc-body-2">' + planPanelHtml(p) + schedulePanelHtml(p) + '</div>';
+    var sess = (sessions || []).slice().sort(function (a, b) {
+      return String(a.scheduledDate).localeCompare(String(b.scheduledDate));
+    });
+    var sessHtml = '';
+    if (sess.length) {
+      sessHtml = '<div class="cc-panel cc-sessions"><div class="cc-panel-title">מפגשים לדיווח</div>' +
+        sess.map(function (r) {
+          return '<div class="cc-session-row">' +
+            '<span class="cc-session-when">' + escapeHtml(displayDateTime(r.scheduledDate, r.time)) +
+              (r.recurring ? ' <span class="recurring-tag">קבוע</span>' : '') + '</span>' +
+            '<span class="cc-session-type">' + escapeHtml(svc(r.treatmentType)) + '</span>' +
+            sessionOutcomeButtons(r) +
+            '</div>';
+        }).join('') +
+        '</div>';
+    }
+    var actions = '<div class="cc-card-actions">' +
+      '<button class="btn btn-primary btn-sm" data-weekly-patient="' + escapeHtml(p.phone) + '">לוז שבועי קבוע</button>' +
+      '<button class="btn btn-ghost btn-sm" data-schedule-patient="' + escapeHtml(p.phone) + '">+ קביעת טיפול</button>' +
+      '<button class="btn btn-ghost btn-sm btn-danger" data-stop-patient="' + escapeHtml(p.phone) + '">הפסקת טיפול</button>' +
+      '</div>';
+    return '<div class="client-card">' + head + panels + sessHtml + actions + '</div>';
   }
 
   // New-assignment alerts everyone sees, each dismissible («ראיתי»). Global:
@@ -867,8 +879,24 @@
       return p.therapists.indexOf(state.therapist) !== -1 && matchName(p.name, state.mineSearch);
     }).sort(function (a, b) { return String(a.name).localeCompare(b.name, 'he'); });
     var mpList = $('#myPatientsList');
-    if (mpList) mpList.innerHTML = myPatients.length ? myPatients.map(myPatientsRow).join('')
-      : '<div class="billing-empty">אין מטופלים משויכים אליך עדיין.</div>';
+    // My assigned patients → one full card each (plan + schedule + sessions to
+    // report). Sessions for the coming week (real bookings + virtual recurring
+    // occurrences) are grouped per patient and shown inside their card.
+    state.occurrences = buildOccurrences();
+    var sessions = state.schedule
+      .filter(function (r) { return r.therapist === state.therapist; })
+      .concat(state.occurrences);
+    var byPhone = {};
+    sessions.forEach(function (r) {
+      var k = normPhone(r.patientPhone);
+      (byPhone[k] = byPhone[k] || []).push(r);
+    });
+    var mpList = $('#myPatientsList');
+    if (mpList) {
+      mpList.innerHTML = myPatients.length
+        ? myPatients.map(function (p) { return myPatientCard(p, byPhone[normPhone(p.phone)] || []); }).join('')
+        : '<div class="billing-empty">אין מטופלים משויכים אליך עדיין.</div>';
+    }
 
     var pending = pendingSyncCount();
     var banner = $('#syncBanner');
@@ -877,29 +905,10 @@
       banner.innerHTML = '⚠️ ' + pending + ' סימוני טיפול ממתינים לסנכרון למערכת התשלומים. ' +
         '<button id="syncNowBtn" class="btn btn-ghost btn-sm">סנכרן עכשיו</button>';
     } else { banner.hidden = true; banner.innerHTML = ''; }
-
-    // My treatments = treatments I perform. «קרובים» is the COMING WEEK (next 7
-    // days); everything else unmarked falls into «שנקבעו».
-    var mine = state.schedule.filter(function (r) {
-      return r.therapist === state.therapist && matchName(r.patientName, state.mineSearch);
+    // Legacy bucket panels are retired in favour of per-patient cards.
+    ['#mineScheduledPanel', '#mineUpcomingPanel', '#minePerformedPanel', '#mineNotPerformedPanel'].forEach(function (s) {
+      if ($(s)) $(s).hidden = true;
     });
-    // Plus the coming week's RECURRING occurrences (virtual until reported). They
-    // bucket as normal upcoming rows; an occurrence already materialized as a real
-    // Schedule row is dropped by generateOccurrences (idempotent by id).
-    state.occurrences = buildOccurrences();
-    var occ = state.occurrences.filter(function (o) { return matchName(o.patientName, state.mineSearch); });
-    mine = mine.concat(occ);
-    var byDate = function (a, b) { return String(a.scheduledDate).localeCompare(String(b.scheduledDate)); };
-    var b = Scheduling.bucketMine(mine, today(), daysFromToday(7));
-
-    function fill(panelSel, listSel, rows) {
-      $(panelSel).hidden = rows.length === 0;
-      $(listSel).innerHTML = rows.sort(byDate).map(mineRow).join('');
-    }
-    fill('#mineScheduledPanel', '#mineScheduled', b.scheduled);
-    fill('#mineUpcomingPanel', '#mineUpcoming', b.upcoming);
-    fill('#minePerformedPanel', '#minePerformed', b.performed);
-    fill('#mineNotPerformedPanel', '#mineNotPerformed', b.notPerformed);
   }
 
   function syncNow() {
