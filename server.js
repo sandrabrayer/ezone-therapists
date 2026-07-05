@@ -17,6 +17,10 @@ const PORT = process.env.PORT || 3000;
 // DASHBOARD_SHEETS_URL    — the E-Zone-Dashboard Apps Script /exec URL, source
 //                           of the admitted/occupancy roster (getAdmittedRoster).
 // OCCUPANCY_SECRET        — shared secret for the dashboard getAdmittedRoster.
+// STOP_ALERTS_SECRET      — shared secret for the outpatient stop-treatment
+//                           alerts (getStopAlerts / markStopAlertRead), read on
+//                           OUTPATIENT_SHEETS_URL. Fail-closed: the /api/stop-alerts
+//                           routes return a clear 500 when this is unset.
 //
 // Secrets are NEVER sent to the browser. The frontend calls relative /api/...
 // routes; this server injects the secret and forwards to the sibling Apps
@@ -27,6 +31,7 @@ const DEBT_STATUS_SECRET = process.env.DEBT_STATUS_SECRET || '';
 const TREATMENT_PLANS_SECRET = process.env.TREATMENT_PLANS_SECRET || '';
 const DASHBOARD_SHEETS_URL = process.env.DASHBOARD_SHEETS_URL || '';
 const OCCUPANCY_SECRET = process.env.OCCUPANCY_SECRET || '';
+const STOP_ALERTS_SECRET = process.env.STOP_ALERTS_SECRET || '';
 // APP_PASSWORD — optional shared UI-gate password. When set, the frontend shows
 // a password screen on open and verifies it here (server-side); when empty, the
 // gate is OFF and the app opens directly. NEVER sent to the browser.
@@ -263,6 +268,59 @@ app.get('/api/treatment-plans', (req, res) =>
 app.get('/api/admitted', (req, res) =>
   proxyGet(DASHBOARD_SHEETS_URL, 'getAdmittedRoster', OCCUPANCY_SECRET, res, 'dashboard admitted roster'));
 
+// --- Stop-treatment alerts (outpatient-authored, persistent) ----------------
+// Fail-closed like the other cross-app proxies: the secret is injected here and
+// NEVER sent to the browser. When either OUTPATIENT_SHEETS_URL or the dedicated
+// STOP_ALERTS_SECRET is missing we refuse with a clear 500 rather than calling
+// the sibling unauthenticated — the alerts are never fetched or cleared without
+// the configured secret.
+function requireStopAlertsConfig(res) {
+  if (!OUTPATIENT_SHEETS_URL) {
+    res.status(500).json({
+      ok: false,
+      error: 'OUTPATIENT_SHEETS_URL env var is not configured on the server (stop alerts).'
+    });
+    return false;
+  }
+  if (!STOP_ALERTS_SECRET) {
+    res.status(500).json({
+      ok: false,
+      error: 'STOP_ALERTS_SECRET env var is not configured on the server.'
+    });
+    return false;
+  }
+  return true;
+}
+
+// GET — the persistent stop-treatment alerts the outpatient app has raised.
+app.get('/api/stop-alerts', (req, res) => {
+  if (!requireStopAlertsConfig(res)) return;
+  proxyGet(OUTPATIENT_SHEETS_URL, 'getStopAlerts', STOP_ALERTS_SECRET, res, 'outpatient stop alerts');
+});
+
+// POST { id } — mark ONE alert read (the only thing that clears an alert). The
+// secret is injected server-side; only the id crosses from the browser.
+app.post('/api/stop-alerts/read', async (req, res) => {
+  if (!requireStopAlertsConfig(res)) return;
+  const id = req.body && req.body.id;
+  if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+  try {
+    const r = await fetch(OUTPATIENT_SHEETS_URL, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'markStopAlertRead', secret: STOP_ALERTS_SECRET, id: id })
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch (_) { throw new Error('Non-JSON from outpatient stop alerts: ' + text.slice(0, 200)); }
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: String(err) });
+  }
+});
+
 app.get('/api/debug/env', (req, res) => {
   res.json({
     ok: true,
@@ -275,6 +333,7 @@ app.get('/api/debug/env', (req, res) => {
     treatmentPlansSecretConfigured: !!TREATMENT_PLANS_SECRET,
     dashboardUrlConfigured: !!DASHBOARD_SHEETS_URL,
     occupancySecretConfigured: !!OCCUPANCY_SECRET,
+    stopAlertsSecretConfigured: !!STOP_ALERTS_SECRET,
     appPasswordConfigured: !!APP_PASSWORD
   });
 });
@@ -327,6 +386,7 @@ function start(port) {
     console.log(`SHEETS_URL configured: ${!!SHEETS_URL}`);
     console.log(`OUTPATIENT_SHEETS_URL configured: ${!!OUTPATIENT_SHEETS_URL} (debt gate + treatment plans)`);
     console.log(`DASHBOARD_SHEETS_URL configured: ${!!DASHBOARD_SHEETS_URL} (admitted roster)`);
+    console.log(`STOP_ALERTS_SECRET configured: ${!!STOP_ALERTS_SECRET} (stop-treatment alerts)`);
     console.log(`Cache TTL: ${CACHE_TTL_MS}ms, stale fallback: ${STALE_FALLBACK_MS}ms`);
   });
 }

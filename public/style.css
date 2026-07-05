@@ -1927,3 +1927,52 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 @media (pointer: coarse) {
   .btn, .tab, select, input { min-height: 40px; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   «עצירת טיפול» — stop-treatment alerts tab. The tab badge is RED (attention),
+   distinct from the fuchsia leads badge. Unread alerts are full-strength cards;
+   read alerts collapse into a dimmed group and lose the action button. */
+.tab-badge-stop {
+  background: var(--red); color: #3a0d0d;
+  box-shadow: 0 0 0 2px rgba(255,118,118,0.30);
+}
+
+.stop-alert-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "main   action"
+    "note   action";
+  gap: 4px 12px; align-items: center;
+  padding: 14px 16px; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-right: 4px solid var(--red);
+  border-radius: 12px;
+}
+.stop-alert-main {
+  grid-area: main;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.stop-alert-name { font-weight: 700; font-size: 16px; color: var(--text); }
+.stop-alert-date { color: var(--muted); font-size: 0.9rem; }
+.stop-alert-note {
+  grid-area: note; color: var(--text-soft); font-size: 0.95rem;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.stop-alert-action { grid-area: action; }
+.stop-alert-readmeta { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.stop-alert-btn { min-height: 40px; }
+
+/* Read group — dimmed history; the border goes neutral so it reads as settled. */
+.stop-alert-read { opacity: 0.6; border-right-color: var(--border); }
+.stop-alerts-read-title { color: var(--muted); }
+.stop-alerts-read-list { margin-top: 2px; }
+
+@media (max-width: 560px) {
+  .stop-alert-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main" "note" "action";
+  }
+  .stop-alert-action { margin-top: 8px; }
+  .stop-alert-btn { width: 100%; }
+}

@@ -10,6 +10,9 @@
  *   - המטופלים שלי (mine)          — a therapist picks their name IN THE TAB
  *                                     (fresh each open, not persisted) and sees
  *                                     only their own patients/treatments.
+ *   - עצירת טיפול (stopAlerts)      — persistent stop-treatment alerts the
+ *                                     outpatient app raised; Yarden marks each
+ *                                     one read explicitly (they never auto-clear).
  *
  * Framework-free; runs in the browser and under `node --test`.
  * `test/access.test.js` guards it.
@@ -25,7 +28,7 @@
   'use strict';
 
   // All tabs, in order. The first is the default view on open.
-  var TABS = ['dashboard', 'workflow', 'mine'];
+  var TABS = ['dashboard', 'workflow', 'mine', 'stopAlerts'];
 
   function tabs() { return TABS.slice(); }
   function defaultView() { return TABS[0]; }
