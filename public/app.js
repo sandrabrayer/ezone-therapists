@@ -25,6 +25,7 @@
   var Writeback = window.Writeback;
   var Access = window.Access;
   var Plan = window.Plan;
+  var StopAlerts = window.StopAlerts;
 
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
@@ -93,6 +94,7 @@
     plans: [], plansOk: false,
     alerts: [],
     notifications: [],
+    stopAlerts: [], stopAlertsOk: true,   // «עצירת טיפול» tab — persistent, outpatient-authored
     dashboardSearch: '',
     workflowSearch: '',
     workflowTherapist: '',
@@ -255,6 +257,45 @@
     return data;
   }
 
+  // «עצירת טיפול» — the outpatient-authored persistent stop-treatment alerts,
+  // and the one-by-one mark-read. Secrets are injected server-side; the browser
+  // only ever calls these relative paths.
+  async function apiStopAlerts() {
+    var r = await fetch('/api/stop-alerts', { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiMarkStopAlertRead(id) {
+    var r = await fetch('/api/stop-alerts/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+
+  // The alert shape is defensive: the outpatient app owns these rows, so accept
+  // the likely field aliases (name/patient, note/reason/message, created*/date)
+  // and derive a single boolean `read` (StopAlerts.isRead recognises the rest).
+  function normalizeStopAlert(a) {
+    a = a || {};
+    var readAt = a.readAt || a.read_at || a.readOn || '';
+    return {
+      id: a.id || a.alertId || a.rowId || '',
+      patientName: a.patientName || a.name || a.patient || '',
+      patientPhone: Phone.recoverStored(a.patientPhone || a.phone || ''),
+      created: a.created || a.createdDate || a.createdAt || a.date || '',
+      note: a.note || a.reason || a.message || '',
+      read: StopAlerts.isRead(a),
+      readAt: readAt
+    };
+  }
+
   function normalizeScheduleRow(row) {
     return {
       id: row.id || uid(),
@@ -322,9 +363,25 @@
   async function loadAll() {
     await loadOwn();
     // Cross-app reads are best-effort and independent; never block the app.
-    await Promise.all([loadDebtRoster(), loadPlans()]);
+    await Promise.all([loadDebtRoster(), loadPlans(), loadStopAlerts()]);
     recomputeAlerts();
     render();
+  }
+  // Load the persistent stop-treatment alerts and refresh the tab badge. On
+  // failure we KEEP whatever alerts we already had (an alert never disappears on
+  // its own) and only flag the endpoint as down so the tab can say so.
+  async function loadStopAlerts() {
+    try {
+      var d = await apiStopAlerts();
+      var raw = Array.isArray(d.alerts) ? d.alerts
+        : (Array.isArray(d.stopAlerts) ? d.stopAlerts : []);
+      state.stopAlerts = raw.map(normalizeStopAlert);
+      state.stopAlertsOk = true;
+    } catch (e) {
+      console.warn('[ezone-therapists] stop alerts unavailable:', e.message);
+      state.stopAlertsOk = false;
+    }
+    updateStopAlertsBadge();
   }
   async function loadDebtRoster() {
     try {
@@ -489,7 +546,9 @@
     renderAssign();
     renderSchedule();
     renderMine();
+    renderStopAlerts();
     updateLeadsBadge();
+    updateStopAlertsBadge();
   }
 
   // Live count of waiting leads (patients needing a non-framework therapist) on
@@ -500,6 +559,77 @@
     var n = activePatients().filter(needsAssignment).length;
     el.textContent = n;
     el.hidden = n === 0;
+  }
+
+  // «עצירת טיפול» tab badge — count of UNREAD stop-treatment alerts (red,
+  // attention style). Hidden at zero. Refreshed on load, on tab open, and after
+  // every mark-read (incl. optimistic + rollback).
+  function updateStopAlertsBadge() {
+    var el = $('#stopAlertsBadge');
+    if (!el) return;
+    var n = StopAlerts.unreadCount(state.stopAlerts);
+    el.textContent = n;
+    el.hidden = n === 0;
+  }
+
+  // One alert row: patient name, created date, note. Unread rows carry a «נקראה»
+  // (mark-read) button; read rows are dimmed and buttonless (history).
+  function stopAlertCard(a, isReadGroup) {
+    var action = isReadGroup
+      ? '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>'
+      : '<button class="btn btn-primary btn-sm stop-alert-btn" data-stop-alert-read="' + escapeHtml(a.id) + '">נקראה</button>';
+    return '<div class="stop-alert-row' + (isReadGroup ? ' stop-alert-read' : '') + '">' +
+      '<div class="stop-alert-main">' +
+        '<span class="stop-alert-name">' + escapeHtml(a.patientName || '—') + '</span>' +
+        (a.created ? '<span class="stop-alert-date">' + escapeHtml(displayDate(a.created)) + '</span>' : '') +
+      '</div>' +
+      '<div class="stop-alert-note">' + escapeHtml(a.note || '') + '</div>' +
+      '<div class="stop-alert-action">' + action + '</div>' +
+      '</div>';
+  }
+
+  function renderStopAlerts() {
+    var unreadHost = $('#stopAlertsUnread');
+    if (!unreadHost) return;
+    var notice = $('#stopAlertsNotice');
+    if (notice) {
+      if (!state.stopAlertsOk) {
+        notice.hidden = false;
+        notice.textContent = 'התראות עצירת הטיפול אינן זמינות כרגע (תלוי בנקודת הקצה של מטופלי החוץ).';
+      } else { notice.hidden = true; }
+    }
+    var groups = StopAlerts.partition(state.stopAlerts);
+    unreadHost.innerHTML = groups.unread.length
+      ? groups.unread.map(function (a) { return stopAlertCard(a, false); }).join('')
+      : '<div class="billing-empty">אין התראות חדשות</div>';
+
+    var readPanel = $('#stopAlertsReadPanel');
+    var readHost = $('#stopAlertsRead');
+    if (readPanel && readHost) {
+      readPanel.hidden = !groups.read.length;
+      readHost.innerHTML = groups.read.map(function (a) { return stopAlertCard(a, true); }).join('');
+    }
+  }
+
+  // Mark ONE alert read — OPTIMISTIC: flip it locally (it moves to the dimmed
+  // «נקראו» group and the badge drops) then persist; on failure ROLL BACK.
+  function markStopAlertRead(id) {
+    var a = null;
+    for (var i = 0; i < state.stopAlerts.length; i++) {
+      if (state.stopAlerts[i].id === id) { a = state.stopAlerts[i]; break; }
+    }
+    if (!a || a.read) return;
+    a.read = true;                    // optimistic
+    renderStopAlerts();
+    updateStopAlertsBadge();
+    apiMarkStopAlertRead(id)
+      .then(function () { /* persisted; the read state stays */ })
+      .catch(function () {
+        a.read = false;               // rollback
+        renderStopAlerts();
+        updateStopAlertsBadge();
+        toast('סימון «נקראה» נכשל — נסו שוב', true);
+      });
   }
 
   function pendingSyncCount() {
@@ -2105,6 +2235,11 @@
     document.body.classList.add('view-' + view);
     $$('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === view); });
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + view); });
+    // Opening «עצירת טיפול» re-pulls the alerts so the list + badge are current
+    // (alerts are raised by the outpatient app between loads). Best-effort.
+    if (view === 'stopAlerts' && state.loaded) {
+      loadStopAlerts().then(renderStopAlerts).catch(function () {});
+    }
   }
 
   function on(sel, ev, fn) {
@@ -2209,6 +2344,12 @@
     on('#workflowTherapistFilter', 'change', function (e) {
       state.workflowTherapist = e.target.value || '';
       renderAssign(); renderSchedule();
+    });
+
+    // «עצירת טיפול»: the only action is «נקראה» (mark one alert read).
+    on('#stopAlertsUnread', 'click', function (e) {
+      var b = e.target.closest('[data-stop-alert-read]');
+      if (b) markStopAlertRead(b.getAttribute('data-stop-alert-read'));
     });
 
     // Schedule modal: group toggle, add/remove patients.
