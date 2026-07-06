@@ -1966,9 +1966,14 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   grid-area: note; color: var(--text-soft); font-size: 0.95rem;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.stop-alert-action { grid-area: action; }
+.stop-alert-action {
+  grid-area: action;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+}
 .stop-alert-readmeta { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .stop-alert-btn { min-height: 40px; }
+/* «החזר ללא נקראה» — reverse a mark-read; low-prominence (ghost) beside the meta. */
+.stop-alert-unread-btn { min-height: 36px; white-space: nowrap; }
 
 /* Read group — dimmed history; the border goes neutral so it reads as settled. */
 .stop-alert-read { opacity: 0.6; border-right-color: var(--border); }
@@ -1980,6 +1985,8 @@ button.month-pay-btn:active { filter: brightness(0.88); }
     grid-template-columns: 1fr;
     grid-template-areas: "main" "note" "action";
   }
-  .stop-alert-action { margin-top: 8px; }
+  .stop-alert-action { margin-top: 8px; align-items: stretch; }
   .stop-alert-btn { width: 100%; }
+  .stop-alert-unread-btn { width: 100%; }
+  .stop-alert-readmeta { align-self: flex-end; }
 }

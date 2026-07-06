@@ -95,6 +95,27 @@ test('POST /api/stop-alerts/read without an id is rejected 400 and never calls u
   assert.equal(captured, null, 'must not call the sibling with no id');
 });
 
+test('POST /api/stop-alerts/unread posts markStopAlertUnread + secret + id to the outpatient URL', async () => {
+  await waitForListen();
+  captured = null;
+  const res = await httpReq('POST', '/api/stop-alerts/unread', { id: 'alert-123' });
+  assert.equal(res.status, 200);
+  assert.equal(captured.opts.method, 'POST');
+  assert.equal(captured.url, OUTPATIENT_SHEETS_URL);
+  const sent = JSON.parse(captured.opts.body);
+  assert.equal(sent.action, 'markStopAlertUnread');
+  assert.equal(sent.secret, STOP_ALERTS_SECRET);
+  assert.equal(sent.id, 'alert-123');
+});
+
+test('POST /api/stop-alerts/unread without an id is rejected 400 and never calls upstream', async () => {
+  await waitForListen();
+  captured = null;
+  const res = await httpReq('POST', '/api/stop-alerts/unread', {});
+  assert.equal(res.status, 400);
+  assert.equal(captured, null, 'must not call the sibling with no id');
+});
+
 test('the stop-alerts secret is bound to its routes only (not leaked to the debt route)', async () => {
   await waitForListen();
   captured = null;

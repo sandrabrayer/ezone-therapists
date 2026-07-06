@@ -84,3 +84,38 @@ test('reasonLabel tolerates whitespace and case (keys stay stable on the wire)',
   assert.equal(StopAlerts.reasonLabel('MISMATCH'), 'אי התאמה');
   assert.equal(StopAlerts.reasonLabel('Other'), 'אחר');
 });
+
+test('normalize maps a realistic outpatient payload — clientName becomes the name', () => {
+  // The outpatient backend stores the patient name as `clientName` and the
+  // timestamp as `createdAt`. Regression: the card must NOT render a nameless «—».
+  const raw = {
+    id: 'row-42',
+    clientId: 'c-7',
+    clientName: 'דנה כהן',
+    createdAt: '2026-07-05T09:30:00Z',
+    status: 'stopped',
+    reason: 'no_payment',
+    note: 'שלושה חודשים ללא תשלום'
+  };
+  const n = StopAlerts.normalize(raw);
+  assert.equal(n.patientName, 'דנה כהן');   // was '' before clientName was added
+  assert.equal(n.id, 'row-42');
+  assert.equal(n.created, '2026-07-05T09:30:00Z');
+  assert.equal(n.reason, 'no_payment');      // stable key kept verbatim
+  assert.equal(n.note, 'שלושה חודשים ללא תשלום');
+  assert.equal(n.read, false);
+});
+
+test('normalize keeps the older name aliases and tolerates a missing name', () => {
+  assert.equal(StopAlerts.normalize({ patientName: 'א' }).patientName, 'א');
+  assert.equal(StopAlerts.normalize({ name: 'ב' }).patientName, 'ב');
+  assert.equal(StopAlerts.normalize({ patient: 'ג' }).patientName, 'ג');
+  assert.equal(StopAlerts.normalize({ clientId: 'c-1' }).patientName, '');
+  assert.equal(StopAlerts.normalize(null).patientName, '');
+});
+
+test('normalize derives read/readAt from a read payload', () => {
+  const n = StopAlerts.normalize({ id: 'x', clientName: 'ד', readAt: '2026-07-06T00:00:00Z' });
+  assert.equal(n.read, true);
+  assert.equal(n.readAt, '2026-07-06T00:00:00Z');
+});
