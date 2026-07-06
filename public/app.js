@@ -280,8 +280,10 @@
   }
 
   // The alert shape is defensive: the outpatient app owns these rows, so accept
-  // the likely field aliases (name/patient, note/reason/message, created*/date)
-  // and derive a single boolean `read` (StopAlerts.isRead recognises the rest).
+  // the likely field aliases (name/patient, note/message, created*/date) and
+  // derive a single boolean `read` (StopAlerts.isRead recognises the rest). The
+  // stable stop `reason` key (no_payment/mismatch/other) is kept as-is, separate
+  // from the free-text note — it is localized to a chip only at render time.
   function normalizeStopAlert(a) {
     a = a || {};
     var readAt = a.readAt || a.read_at || a.readOn || '';
@@ -290,7 +292,8 @@
       patientName: a.patientName || a.name || a.patient || '',
       patientPhone: Phone.recoverStored(a.patientPhone || a.phone || ''),
       created: a.created || a.createdDate || a.createdAt || a.date || '',
-      note: a.note || a.reason || a.message || '',
+      note: a.note || a.message || '',
+      reason: a.reason || '',
       read: StopAlerts.isRead(a),
       readAt: readAt
     };
@@ -572,16 +575,23 @@
     el.hidden = n === 0;
   }
 
-  // One alert row: patient name, created date, note. Unread rows carry a «נקראה»
-  // (mark-read) button; read rows are dimmed and buttonless (history).
+  // One alert row: patient name, created date, an optional Hebrew reason chip,
+  // and the note. Unread rows carry a «נקראה» (mark-read) button; read rows are
+  // dimmed and buttonless (history). The chip is a render-time localization of
+  // the stable reason key; legacy alerts with no/unknown reason get no chip.
   function stopAlertCard(a, isReadGroup) {
     var action = isReadGroup
       ? '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>'
       : '<button class="btn btn-primary btn-sm stop-alert-btn" data-stop-alert-read="' + escapeHtml(a.id) + '">נקראה</button>';
+    var reasonText = StopAlerts.reasonLabel(a.reason);
+    var chip = reasonText
+      ? '<span class="stop-alert-reason">' + escapeHtml(reasonText) + '</span>'
+      : '';
     return '<div class="stop-alert-row' + (isReadGroup ? ' stop-alert-read' : '') + '">' +
       '<div class="stop-alert-main">' +
         '<span class="stop-alert-name">' + escapeHtml(a.patientName || '—') + '</span>' +
         (a.created ? '<span class="stop-alert-date">' + escapeHtml(displayDate(a.created)) + '</span>' : '') +
+        chip +
       '</div>' +
       '<div class="stop-alert-note">' + escapeHtml(a.note || '') + '</div>' +
       '<div class="stop-alert-action">' + action + '</div>' +

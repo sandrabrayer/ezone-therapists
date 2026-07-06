@@ -68,9 +68,26 @@
     return { unread: unread, read: read };
   }
 
+  // Render-time Hebrew label for a stable reason key. The outpatient backend
+  // tags each alert with a STABLE key (no_payment / mismatch / other); ONLY the
+  // display text is localized here so the keys stay stable across the wire.
+  // Blank-tolerant: unknown or blank reasons (legacy alerts predate the field)
+  // yield '' — the tab then renders no chip for them.
+  var REASON_LABELS = {
+    no_payment: 'חוסר תשלום',
+    mismatch: 'אי התאמה',
+    other: 'אחר'
+  };
+  function reasonLabel(reason) {
+    if (reason == null) return '';
+    var key = String(reason).trim().toLowerCase();
+    return REASON_LABELS[key] || '';
+  }
+
   return {
     isRead: isRead,
     unreadCount: unreadCount,
-    partition: partition
+    partition: partition,
+    reasonLabel: reasonLabel
   };
 });
