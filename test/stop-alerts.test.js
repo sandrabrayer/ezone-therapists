@@ -64,3 +64,23 @@ test('partition tolerates non-array input', () => {
   assert.deepEqual(StopAlerts.partition(null), { unread: [], read: [] });
   assert.deepEqual(StopAlerts.partition(undefined), { unread: [], read: [] });
 });
+
+test('reasonLabel maps each stable key to its Hebrew label', () => {
+  assert.equal(StopAlerts.reasonLabel('no_payment'), 'חוסר תשלום');
+  assert.equal(StopAlerts.reasonLabel('mismatch'), 'אי התאמה');
+  assert.equal(StopAlerts.reasonLabel('other'), 'אחר');
+});
+
+test('reasonLabel is blank-tolerant — no chip for missing/unknown reasons', () => {
+  assert.equal(StopAlerts.reasonLabel(''), '');
+  assert.equal(StopAlerts.reasonLabel(null), '');
+  assert.equal(StopAlerts.reasonLabel(undefined), '');
+  assert.equal(StopAlerts.reasonLabel('legacy_reason'), '');
+  assert.equal(StopAlerts.reasonLabel('paid'), '');
+});
+
+test('reasonLabel tolerates whitespace and case (keys stay stable on the wire)', () => {
+  assert.equal(StopAlerts.reasonLabel('  no_payment  '), 'חוסר תשלום');
+  assert.equal(StopAlerts.reasonLabel('MISMATCH'), 'אי התאמה');
+  assert.equal(StopAlerts.reasonLabel('Other'), 'אחר');
+});

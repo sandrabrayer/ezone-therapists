@@ -1955,6 +1955,13 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .stop-alert-name { font-weight: 700; font-size: 16px; color: var(--text); }
 .stop-alert-date { color: var(--muted); font-size: 0.9rem; }
+/* Render-time reason chip (חוסר תשלום / אי התאמה / אחר) — red-tinted to match
+   the tab's attention accent; absent for legacy alerts with no/unknown reason. */
+.stop-alert-reason {
+  font-size: 12px; padding: 2px 10px; border-radius: 999px;
+  background: #3a1a1a; color: #ff9b9b; border: 1px solid #6b2a2a;
+  white-space: nowrap;
+}
 .stop-alert-note {
   grid-area: note; color: var(--text-soft); font-size: 0.95rem;
   white-space: pre-wrap; overflow-wrap: anywhere;
