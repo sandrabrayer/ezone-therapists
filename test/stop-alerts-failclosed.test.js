@@ -81,3 +81,14 @@ test('POST /api/stop-alerts/read is a clear 500 (fail-closed) when STOP_ALERTS_S
   assert.ok(/STOP_ALERTS_SECRET/.test(body.error), `error should name the missing var: ${body.error}`);
   assert.equal(called, false, 'must not call the sibling Apps Script');
 });
+
+test('POST /api/stop-alerts/unread is a clear 500 (fail-closed) when STOP_ALERTS_SECRET is unset', async () => {
+  await waitForListen();
+  called = false;
+  const res = await httpReq('POST', '/api/stop-alerts/unread', { id: 'x' });
+  assert.equal(res.status, 500);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, false);
+  assert.ok(/STOP_ALERTS_SECRET/.test(body.error), `error should name the missing var: ${body.error}`);
+  assert.equal(called, false, 'must not call the sibling Apps Script');
+});

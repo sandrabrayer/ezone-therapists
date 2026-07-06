@@ -321,6 +321,31 @@ app.post('/api/stop-alerts/read', async (req, res) => {
   }
 });
 
+// POST { id } — return ONE alert to unread (reverses a mark-read). Same
+// fail-closed proxy pattern as …/read; the secret is injected server-side and
+// only the id crosses from the browser. Requires the outpatient app to expose a
+// matching `markStopAlertUnread` action (mirror of markStopAlertRead).
+app.post('/api/stop-alerts/unread', async (req, res) => {
+  if (!requireStopAlertsConfig(res)) return;
+  const id = req.body && req.body.id;
+  if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+  try {
+    const r = await fetch(OUTPATIENT_SHEETS_URL, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'markStopAlertUnread', secret: STOP_ALERTS_SECRET, id: id })
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch (_) { throw new Error('Non-JSON from outpatient stop alerts: ' + text.slice(0, 200)); }
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: String(err) });
+  }
+});
+
 app.get('/api/debug/env', (req, res) => {
   res.json({
     ok: true,

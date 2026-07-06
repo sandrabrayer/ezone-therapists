@@ -84,10 +84,33 @@
     return REASON_LABELS[key] || '';
   }
 
+  // Normalize ONE raw outpatient alert into the shape the tab renders. The
+  // outpatient app owns these rows, so accept the field aliases it may send:
+  // the patient name arrives as `clientName` (the outpatient store's own column)
+  // but older/other shapes used name/patient/patientName — try them all so the
+  // card never renders a nameless «—». `created` tolerates createdAt likewise.
+  // The stable `reason` key is kept verbatim (localized to a chip at render
+  // time); the free-text note stays separate from it. `read` is derived by
+  // isRead. This is the PURE part — the browser wrapper adds the phone (which
+  // needs the Phone module) on top of this.
+  function normalize(a) {
+    a = a || {};
+    return {
+      id: a.id || a.alertId || a.rowId || '',
+      patientName: a.patientName || a.clientName || a.name || a.patient || '',
+      created: a.created || a.createdDate || a.createdAt || a.date || '',
+      note: a.note || a.message || '',
+      reason: a.reason || '',
+      read: isRead(a),
+      readAt: a.readAt || a.read_at || a.readOn || ''
+    };
+  }
+
   return {
     isRead: isRead,
     unreadCount: unreadCount,
     partition: partition,
-    reasonLabel: reasonLabel
+    reasonLabel: reasonLabel,
+    normalize: normalize
   };
 });

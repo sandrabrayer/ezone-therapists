@@ -278,25 +278,29 @@
     if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
+  // Return ONE alert to unread — the mirror of the read call (same proxy
+  // pattern). Requires the outpatient `markStopAlertUnread` backend action.
+  async function apiMarkStopAlertUnread(id) {
+    var r = await fetch('/api/stop-alerts/unread', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
 
-  // The alert shape is defensive: the outpatient app owns these rows, so accept
-  // the likely field aliases (name/patient, note/message, created*/date) and
-  // derive a single boolean `read` (StopAlerts.isRead recognises the rest). The
-  // stable stop `reason` key (no_payment/mismatch/other) is kept as-is, separate
-  // from the free-text note — it is localized to a chip only at render time.
+  // The alert shape is defensive: the outpatient app owns these rows. The field
+  // aliasing (name incl. clientName, created, note, stable reason key, read) is
+  // the PURE StopAlerts.normalize; here we only add the patient phone, which
+  // needs the browser-only Phone module.
   function normalizeStopAlert(a) {
     a = a || {};
-    var readAt = a.readAt || a.read_at || a.readOn || '';
-    return {
-      id: a.id || a.alertId || a.rowId || '',
-      patientName: a.patientName || a.name || a.patient || '',
-      patientPhone: Phone.recoverStored(a.patientPhone || a.phone || ''),
-      created: a.created || a.createdDate || a.createdAt || a.date || '',
-      note: a.note || a.message || '',
-      reason: a.reason || '',
-      read: StopAlerts.isRead(a),
-      readAt: readAt
-    };
+    var out = StopAlerts.normalize(a);
+    out.patientPhone = Phone.recoverStored(a.patientPhone || a.phone || '');
+    return out;
   }
 
   function normalizeScheduleRow(row) {
@@ -577,11 +581,14 @@
 
   // One alert row: patient name, created date, an optional Hebrew reason chip,
   // and the note. Unread rows carry a «נקראה» (mark-read) button; read rows are
-  // dimmed and buttonless (history). The chip is a render-time localization of
-  // the stable reason key; legacy alerts with no/unknown reason get no chip.
+  // dimmed, show when they were read, and carry a «החזר ללא נקראה» (return to
+  // unread) button so a mark-read is reversible. The chip is a render-time
+  // localization of the stable reason key; legacy alerts with no/unknown reason
+  // get no chip.
   function stopAlertCard(a, isReadGroup) {
     var action = isReadGroup
-      ? '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>'
+      ? '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>' +
+        '<button class="btn btn-ghost btn-sm stop-alert-unread-btn" data-stop-alert-unread="' + escapeHtml(a.id) + '">החזר ללא נקראה</button>'
       : '<button class="btn btn-primary btn-sm stop-alert-btn" data-stop-alert-read="' + escapeHtml(a.id) + '">נקראה</button>';
     var reasonText = StopAlerts.reasonLabel(a.reason);
     var chip = reasonText
@@ -639,6 +646,31 @@
         renderStopAlerts();
         updateStopAlertsBadge();
         toast('סימון «נקראה» נכשל — נסו שוב', true);
+      });
+  }
+
+  // Return ONE alert to unread — OPTIMISTIC mirror of markStopAlertRead: clear
+  // BOTH read and readAt (isRead treats a lingering readAt as read), so the
+  // alert moves back into the unread group and the badge rises; on failure ROLL
+  // BACK to the prior read/readAt. Needs the outpatient markStopAlertUnread action.
+  function markStopAlertUnread(id) {
+    var a = null;
+    for (var i = 0; i < state.stopAlerts.length; i++) {
+      if (state.stopAlerts[i].id === id) { a = state.stopAlerts[i]; break; }
+    }
+    if (!a || !StopAlerts.isRead(a)) return;
+    var prevRead = a.read;
+    var prevReadAt = a.readAt;
+    a.read = false; a.readAt = '';    // optimistic
+    renderStopAlerts();
+    updateStopAlertsBadge();
+    apiMarkStopAlertUnread(id)
+      .then(function () { /* persisted; the unread state stays */ })
+      .catch(function () {
+        a.read = prevRead; a.readAt = prevReadAt;   // rollback
+        renderStopAlerts();
+        updateStopAlertsBadge();
+        toast('החזרה ל«לא נקראה» נכשלה — נסו שוב', true);
       });
   }
 
@@ -2356,10 +2388,15 @@
       renderAssign(); renderSchedule();
     });
 
-    // «עצירת טיפול»: the only action is «נקראה» (mark one alert read).
+    // «עצירת טיפול»: «נקראה» (mark one read) in the unread group, and «החזר ללא
+    // נקראה» (return one to unread) in the read group — a reversible mark-read.
     on('#stopAlertsUnread', 'click', function (e) {
       var b = e.target.closest('[data-stop-alert-read]');
       if (b) markStopAlertRead(b.getAttribute('data-stop-alert-read'));
+    });
+    on('#stopAlertsRead', 'click', function (e) {
+      var b = e.target.closest('[data-stop-alert-unread]');
+      if (b) markStopAlertUnread(b.getAttribute('data-stop-alert-unread'));
     });
 
     // Schedule modal: group toggle, add/remove patients.
