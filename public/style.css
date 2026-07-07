@@ -1929,9 +1929,12 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   «עצירת טיפול» — stop-treatment alerts tab. The tab badge is RED (attention),
-   distinct from the fuchsia leads badge. Unread alerts are full-strength cards;
-   read alerts collapse into a dimmed group and lose the action button. */
+   «התראות טיפול» — treatment alerts tab (action inbox + collapsed history).
+   The tab badge is RED (attention), distinct from the fuchsia leads badge. The
+   primary list holds UNREAD alerts as full-strength cards; a stop alert accents
+   RED, a resume alert accents GREEN (positive). Read/cancelled rows collapse
+   into a dimmed 14-day history — read rows keep the reverse action, cancelled
+   rows lose all controls. */
 .tab-badge-stop {
   background: var(--red); color: #3a0d0d;
   box-shadow: 0 0 0 2px rgba(255,118,118,0.30);
@@ -1949,17 +1952,31 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   border-right: 4px solid var(--red);
   border-radius: 12px;
 }
+/* Direction accent on the leading edge: stop = red (halt), resume = green. */
+.stop-alert-stop   { border-right-color: var(--red); }
+.stop-alert-resume { border-right-color: var(--green); }
 .stop-alert-main {
   grid-area: main;
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
 }
+/* Direction title (עצירת טיפול / חידוש טיפול) — colour-coded to the accent. */
+.stop-alert-title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; }
+.stop-alert-stop   .stop-alert-title { color: var(--red); }
+.stop-alert-resume .stop-alert-title { color: var(--green-2); }
 .stop-alert-name { font-weight: 700; font-size: 16px; color: var(--text); }
 .stop-alert-date { color: var(--muted); font-size: 0.9rem; }
 /* Render-time reason chip (חוסר תשלום / אי התאמה / אחר) — red-tinted to match
-   the tab's attention accent; absent for legacy alerts with no/unknown reason. */
+   the stop accent; absent for legacy alerts with no/unknown reason and for all
+   resume alerts (a resume carries no reason). */
 .stop-alert-reason {
   font-size: 12px; padding: 2px 10px; border-radius: 999px;
   background: #3a1a1a; color: #ff9b9b; border: 1px solid #6b2a2a;
+  white-space: nowrap;
+}
+/* «בוטלה» chip — the alert was voided outpatient-side; neutral/subdued. */
+.stop-alert-cancelled-chip {
+  font-size: 12px; padding: 2px 10px; border-radius: 999px;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
   white-space: nowrap;
 }
 .stop-alert-note {
@@ -1972,13 +1989,25 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 }
 .stop-alert-readmeta { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .stop-alert-btn { min-height: 40px; }
-/* «החזר ללא נקראה» — reverse a mark-read; low-prominence (ghost) beside the meta. */
+/* «סמן כלא נקראה» — reverse a mark-read; low-prominence (ghost) beside the meta. */
 .stop-alert-unread-btn { min-height: 36px; white-space: nowrap; }
 
-/* Read group — dimmed history; the border goes neutral so it reads as settled. */
+/* History rows — dimmed so they read as settled; the accent goes neutral.
+   Cancelled rows dim further and, having no control, drop the action column. */
 .stop-alert-read { opacity: 0.6; border-right-color: var(--border); }
-.stop-alerts-read-title { color: var(--muted); }
+.stop-alert-cancelled { opacity: 0.45; }
 .stop-alerts-read-list { margin-top: 2px; }
+
+/* Collapsed history section — closed by default, subdued. */
+.stop-alerts-history { padding: 12px 16px; }
+.stop-alerts-history-summary {
+  cursor: pointer; color: var(--muted); font-weight: 600;
+  list-style: none; user-select: none;
+}
+.stop-alerts-history-summary::-webkit-details-marker { display: none; }
+.stop-alerts-history-summary::before { content: '▸ '; }
+.stop-alerts-history[open] .stop-alerts-history-summary::before { content: '▾ '; }
+.stop-alerts-history[open] .stop-alerts-history-summary { margin-bottom: 10px; }
 
 @media (max-width: 560px) {
   .stop-alert-row {

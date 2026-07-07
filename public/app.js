@@ -568,9 +568,9 @@
     el.hidden = n === 0;
   }
 
-  // «עצירת טיפול» tab badge — count of UNREAD stop-treatment alerts (red,
-  // attention style). Hidden at zero. Refreshed on load, on tab open, and after
-  // every mark-read (incl. optimistic + rollback).
+  // «התראות טיפול» tab badge — count of UNREAD alerts in BOTH directions (stop +
+  // resume; read and cancelled excluded). Hidden at zero. Refreshed on load, on
+  // tab open, and after every mark-read (incl. optimistic + rollback).
   function updateStopAlertsBadge() {
     var el = $('#stopAlertsBadge');
     if (!el) return;
@@ -579,32 +579,55 @@
     el.hidden = n === 0;
   }
 
-  // One alert row: patient name, created date, an optional Hebrew reason chip,
-  // and the note. Unread rows carry a «נקראה» (mark-read) button; read rows are
-  // dimmed, show when they were read, and carry a «החזר ללא נקראה» (return to
-  // unread) button so a mark-read is reversible. The chip is a render-time
-  // localization of the stable reason key; legacy alerts with no/unknown reason
-  // get no chip.
-  function stopAlertCard(a, isReadGroup) {
-    var action = isReadGroup
-      ? '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>' +
-        '<button class="btn btn-ghost btn-sm stop-alert-unread-btn" data-stop-alert-unread="' + escapeHtml(a.id) + '">החזר ללא נקראה</button>'
-      : '<button class="btn btn-primary btn-sm stop-alert-btn" data-stop-alert-read="' + escapeHtml(a.id) + '">נקראה</button>';
-    var reasonText = StopAlerts.reasonLabel(a.reason);
-    var chip = reasonText
+  // One alert row. Its look and controls follow the alert's DIRECTION and STATUS:
+  //   - type 'stop'   → red accent, title «עצירת טיפול», reason chip.
+  //     type 'resume' → green accent, title «חידוש טיפול», NO reason chip.
+  //   - status 'unread'    → «נקראה» (mark-read) button.
+  //     status 'read'      → dimmed, read-meta + «סמן כלא נקראה» (reversible).
+  //     status 'cancelled' → dimmed, «בוטלה» chip, NO action.
+  // The reason chip is a render-time localization of the stable reason key;
+  // stop alerts with no/unknown reason get no chip, resume alerts never do.
+  function stopAlertCard(a) {
+    var isResume = StopAlerts.alertType(a) === 'resume';
+    var status = StopAlerts.statusOf(a);
+    var isCancelled = status === 'cancelled';
+
+    var reasonText = isResume ? '' : StopAlerts.reasonLabel(a.reason);
+    var reasonChip = reasonText
       ? '<span class="stop-alert-reason">' + escapeHtml(reasonText) + '</span>'
       : '';
-    return '<div class="stop-alert-row' + (isReadGroup ? ' stop-alert-read' : '') + '">' +
+    var stateChip = isCancelled ? '<span class="stop-alert-cancelled-chip">בוטלה</span>' : '';
+
+    var action;
+    if (status === 'unread') {
+      action = '<button class="btn btn-primary btn-sm stop-alert-btn" data-stop-alert-read="' + escapeHtml(a.id) + '">נקראה</button>';
+    } else if (status === 'read') {
+      action = '<span class="stop-alert-readmeta">נקראה' + (a.readAt ? ' · ' + escapeHtml(displayDate(a.readAt)) : '') + '</span>' +
+        '<button class="btn btn-ghost btn-sm stop-alert-unread-btn" data-stop-alert-unread="' + escapeHtml(a.id) + '">סמן כלא נקראה</button>';
+    } else {
+      action = '';                       // cancelled — voided outpatient-side, no control
+    }
+
+    var cls = 'stop-alert-row' +
+      (isResume ? ' stop-alert-resume' : ' stop-alert-stop') +
+      (status !== 'unread' ? ' stop-alert-read' : '') +
+      (isCancelled ? ' stop-alert-cancelled' : '');
+
+    return '<div class="' + cls + '">' +
       '<div class="stop-alert-main">' +
+        '<span class="stop-alert-title">' + escapeHtml(StopAlerts.typeTitle(a)) + '</span>' +
         '<span class="stop-alert-name">' + escapeHtml(a.patientName || '—') + '</span>' +
         (a.created ? '<span class="stop-alert-date">' + escapeHtml(displayDate(a.created)) + '</span>' : '') +
-        chip +
+        reasonChip + stateChip +
       '</div>' +
       '<div class="stop-alert-note">' + escapeHtml(a.note || '') + '</div>' +
       '<div class="stop-alert-action">' + action + '</div>' +
       '</div>';
   }
 
+  // Render the action inbox: the primary list is UNREAD only (both directions);
+  // the collapsed 14-day history holds read (reversible) and cancelled (dimmed)
+  // rows. Older-than-14-day rows aren't rendered — the data stays in the sheet.
   function renderStopAlerts() {
     var unreadHost = $('#stopAlertsUnread');
     if (!unreadHost) return;
@@ -612,62 +635,65 @@
     if (notice) {
       if (!state.stopAlertsOk) {
         notice.hidden = false;
-        notice.textContent = 'התראות עצירת הטיפול אינן זמינות כרגע (תלוי בנקודת הקצה של מטופלי החוץ).';
+        notice.textContent = 'התראות הטיפול אינן זמינות כרגע (תלוי בנקודת הקצה של מטופלי החוץ).';
       } else { notice.hidden = true; }
     }
-    var groups = StopAlerts.partition(state.stopAlerts);
-    unreadHost.innerHTML = groups.unread.length
-      ? groups.unread.map(function (a) { return stopAlertCard(a, false); }).join('')
+    var groups = StopAlerts.inbox(state.stopAlerts, Date.now());
+    unreadHost.innerHTML = groups.primary.length
+      ? groups.primary.map(stopAlertCard).join('')
       : '<div class="billing-empty">אין התראות חדשות</div>';
 
-    var readPanel = $('#stopAlertsReadPanel');
-    var readHost = $('#stopAlertsRead');
-    if (readPanel && readHost) {
-      readPanel.hidden = !groups.read.length;
-      readHost.innerHTML = groups.read.map(function (a) { return stopAlertCard(a, true); }).join('');
+    var histPanel = $('#stopAlertsHistoryPanel');
+    var histHost = $('#stopAlertsHistory');
+    if (histPanel && histHost) {
+      histPanel.hidden = !groups.history.length;
+      histHost.innerHTML = groups.history.map(stopAlertCard).join('');
     }
   }
 
-  // Mark ONE alert read — OPTIMISTIC: flip it locally (it moves to the dimmed
-  // «נקראו» group and the badge drops) then persist; on failure ROLL BACK.
+  // Mark ONE alert read — OPTIMISTIC: flip it locally (it drops out of the
+  // primary list into the collapsed history and the badge drops) then persist;
+  // on failure ROLL BACK. Flips both `status` and the legacy read flag so
+  // statusOf agrees whichever the row was keyed on.
   function markStopAlertRead(id) {
     var a = null;
     for (var i = 0; i < state.stopAlerts.length; i++) {
       if (state.stopAlerts[i].id === id) { a = state.stopAlerts[i]; break; }
     }
-    if (!a || a.read) return;
-    a.read = true;                    // optimistic
+    if (!a || StopAlerts.statusOf(a) !== 'unread') return;
+    var prevStatus = a.status, prevRead = a.read;
+    a.status = 'read'; a.read = true;   // optimistic
     renderStopAlerts();
     updateStopAlertsBadge();
     apiMarkStopAlertRead(id)
       .then(function () { /* persisted; the read state stays */ })
       .catch(function () {
-        a.read = false;               // rollback
+        a.status = prevStatus; a.read = prevRead;   // rollback
         renderStopAlerts();
         updateStopAlertsBadge();
         toast('סימון «נקראה» נכשל — נסו שוב', true);
       });
   }
 
-  // Return ONE alert to unread — OPTIMISTIC mirror of markStopAlertRead: clear
-  // BOTH read and readAt (isRead treats a lingering readAt as read), so the
-  // alert moves back into the unread group and the badge rises; on failure ROLL
-  // BACK to the prior read/readAt. Needs the outpatient markStopAlertUnread action.
+  // Return ONE alert to unread — OPTIMISTIC mirror of markStopAlertRead: reset
+  // status to 'unread' and clear the legacy read/readAt flags, so the alert
+  // moves back into the primary list and the badge rises; on failure ROLL BACK
+  // to the prior status/read/readAt. Needs the outpatient markStopAlertUnread
+  // action. Only read rows revert (cancelled rows carry no control).
   function markStopAlertUnread(id) {
     var a = null;
     for (var i = 0; i < state.stopAlerts.length; i++) {
       if (state.stopAlerts[i].id === id) { a = state.stopAlerts[i]; break; }
     }
-    if (!a || !StopAlerts.isRead(a)) return;
-    var prevRead = a.read;
-    var prevReadAt = a.readAt;
-    a.read = false; a.readAt = '';    // optimistic
+    if (!a || StopAlerts.statusOf(a) !== 'read') return;
+    var prevStatus = a.status, prevRead = a.read, prevReadAt = a.readAt;
+    a.status = 'unread'; a.read = false; a.readAt = '';    // optimistic
     renderStopAlerts();
     updateStopAlertsBadge();
     apiMarkStopAlertUnread(id)
       .then(function () { /* persisted; the unread state stays */ })
       .catch(function () {
-        a.read = prevRead; a.readAt = prevReadAt;   // rollback
+        a.status = prevStatus; a.read = prevRead; a.readAt = prevReadAt;   // rollback
         renderStopAlerts();
         updateStopAlertsBadge();
         toast('החזרה ל«לא נקראה» נכשלה — נסו שוב', true);
@@ -2388,13 +2414,13 @@
       renderAssign(); renderSchedule();
     });
 
-    // «עצירת טיפול»: «נקראה» (mark one read) in the unread group, and «החזר ללא
-    // נקראה» (return one to unread) in the read group — a reversible mark-read.
+    // «התראות טיפול»: «נקראה» (mark one read) in the primary inbox, and «סמן
+    // כלא נקראה» (return one to unread) in the history — a reversible mark-read.
     on('#stopAlertsUnread', 'click', function (e) {
       var b = e.target.closest('[data-stop-alert-read]');
       if (b) markStopAlertRead(b.getAttribute('data-stop-alert-read'));
     });
-    on('#stopAlertsRead', 'click', function (e) {
+    on('#stopAlertsHistory', 'click', function (e) {
       var b = e.target.closest('[data-stop-alert-unread]');
       if (b) markStopAlertUnread(b.getAttribute('data-stop-alert-unread'));
     });

@@ -1,21 +1,28 @@
 /**
  * stop-alerts.js
  * -----------------------------------------------------------------------------
- * The «עצירת טיפול» (stop-treatment) alerts tab — PURE part.
+ * The «התראות טיפול» (treatment alerts) tab — PURE part.
  *
- * The OUTPATIENT app raises a persistent stop-treatment alert whenever a
- * patient's treatment must be halted. Those alerts are read here (getStopAlerts)
- * so Yarden sees them, and are cleared ONE-BY-ONE by an explicit "נקראה"
- * (mark-read) press (markStopAlertRead). They are PERSISTENT: an alert NEVER
- * disappears on its own — the only thing that moves an alert out of the unread
- * list is an explicit mark-read, which drops it into the dimmed "נקראו" group.
- * A read alert stays visible (history), it is never deleted from the view.
+ * The OUTPATIENT app raises a persistent alert whenever a patient's treatment
+ * changes direction: a `type:'stop'` (עצירת טיפול) when treatment must be
+ * halted, or a `type:'resume'` (חידוש טיפול) when it resumes. Legacy alerts
+ * predate the field and carry no/blank type — those read as 'stop'. Each alert
+ * also carries a `status`: 'unread' (needs attention), 'read' (acknowledged), or
+ * 'cancelled' (voided by the outpatient side). Read-state on legacy rows is still
+ * derived from the read / readAt flags.
  *
- * This module is the framework-free logic: decide read/unread, count the unread
- * (the tab badge), and split a list into the unread-first / read groups the tab
- * renders. The network round-trips (fetch getStopAlerts / POST markStopAlertRead)
- * live in app.js and the proxy in server.js. Runs in the browser AND under
- * `node --test`; `test/stop-alerts.test.js` guards it.
+ * The tab is an ACTION INBOX + collapsed HISTORY:
+ *   - PRIMARY LIST — status 'unread' only, both directions. A «נקראה» press
+ *     (markStopAlertRead) acknowledges one and drops it into history.
+ *   - HISTORY — a collapsed 14-day window of 'read' (reversible via
+ *     markStopAlertUnread) and 'cancelled' (dimmed, no action) rows. Older rows
+ *     are not rendered; the data stays in the sheet.
+ *
+ * This module is the framework-free logic: classify type/status, count the
+ * unread (the tab badge), and split a list into the primary / history groups the
+ * tab renders (with the history date window). The network round-trips live in
+ * app.js and the proxy in server.js. Runs in the browser AND under `node --test`;
+ * `test/stop-alerts.test.js` guards it.
  */
 (function (root, factory) {
   var api = factory();
@@ -39,11 +46,41 @@
     return !!(a.readAt && String(a.readAt).trim());
   }
 
-  // The tab badge — how many alerts still need Yarden's attention.
+  // The direction of an alert: 'resume' (חידוש טיפול) or, for anything else
+  // incl. the legacy blank/unknown type, 'stop' (עצירת טיפול). Kept blank-
+  // tolerant so legacy stop alerts (predating the field) never mis-render.
+  function alertType(a) {
+    if (!a) return 'stop';
+    var t = String(a.type == null ? '' : a.type).trim().toLowerCase();
+    return t === 'resume' ? 'resume' : 'stop';
+  }
+
+  // Canonical lifecycle status: 'cancelled' (voided outpatient-side), 'read'
+  // (acknowledged), or 'unread' (needs attention). 'cancelled' wins; an explicit
+  // 'read'/'unread' status is honoured; otherwise we fall back to the legacy
+  // read / readAt flags (isRead) so old rows and optimistic flips stay correct.
+  // Any other/legacy status string (e.g. the old 'stopped') derives from isRead.
+  function statusOf(a) {
+    if (!a) return 'unread';
+    var s = String(a.status == null ? '' : a.status).trim().toLowerCase();
+    if (s === 'cancelled' || s === 'canceled') return 'cancelled';
+    if (s === 'unread') return 'unread';
+    if (s === 'read') return 'read';
+    return isRead(a) ? 'read' : 'unread';
+  }
+
+  // Render-time Hebrew title for an alert's direction. Pure so the tab and the
+  // tests agree on it.
+  function typeTitle(a) {
+    return alertType(a) === 'resume' ? 'חידוש טיפול' : 'עצירת טיפול';
+  }
+
+  // The tab badge — how many alerts still need Yarden's attention. Counts
+  // BOTH directions (stop + resume); read and cancelled are excluded.
   function unreadCount(alerts) {
     if (!Array.isArray(alerts)) return 0;
     var n = 0;
-    for (var i = 0; i < alerts.length; i++) if (!isRead(alerts[i])) n++;
+    for (var i = 0; i < alerts.length; i++) if (statusOf(alerts[i]) === 'unread') n++;
     return n;
   }
 
@@ -66,6 +103,58 @@
       }
     }
     return { unread: unread, read: read };
+  }
+
+  // Parse an alert timestamp to epoch-ms, or NaN when absent/unparseable.
+  function toMs(v) {
+    if (!v) return NaN;
+    var t = new Date(v).getTime();
+    return t !== t ? NaN : t;   // NaN-safe (isNaN without the global)
+  }
+
+  // Is this history row within the `windowMs` lookback from `now`? Uses the most
+  // recent of created / readAt (and their raw aliases). Defensive: with no clock
+  // reference (now falsy) or no parseable date we KEEP the row rather than
+  // silently drop it — hiding is only ever done on a confident out-of-window.
+  function withinWindow(a, now, windowMs) {
+    if (!now) return true;
+    a = a || {};
+    var stamps = [a.readAt, a.read_at, a.created, a.createdAt, a.cancelledAt];
+    var newest = -Infinity;
+    for (var i = 0; i < stamps.length; i++) {
+      var t = toMs(stamps[i]);
+      if (t === t && t > newest) newest = t;   // t===t skips NaN
+    }
+    if (newest === -Infinity) return true;
+    return (now - newest) <= windowMs;
+  }
+
+  /**
+   * Split the alerts into the ACTION INBOX the tab renders:
+   *   - primary: status 'unread' (both directions), backend order preserved.
+   *   - history: status 'read' or 'cancelled' whose newest stamp (created/readAt)
+   *     is within `windowDays` (default 14) of `now`. Older rows are dropped from
+   *     the view only — the data stays in the sheet.
+   * `now` is epoch-ms (the browser passes Date.now(); tests pass a fixed clock).
+   * When `now` is 0/absent the whole history is kept (no clock → no hiding).
+   * @param {Array} alerts
+   * @param {number} [now]         epoch-ms reference clock
+   * @param {number} [windowDays]  history lookback in days (default 14)
+   * @returns {{primary: Array, history: Array}}
+   */
+  function inbox(alerts, now, windowDays) {
+    var primary = [];
+    var history = [];
+    if (!Array.isArray(alerts)) return { primary: primary, history: history };
+    var days = (typeof windowDays === 'number' && windowDays > 0) ? windowDays : 14;
+    var windowMs = days * 24 * 60 * 60 * 1000;
+    for (var i = 0; i < alerts.length; i++) {
+      var a = alerts[i];
+      var st = statusOf(a);
+      if (st === 'unread') { primary.push(a); continue; }
+      if (withinWindow(a, now, windowMs)) history.push(a);   // 'read' or 'cancelled'
+    }
+    return { primary: primary, history: history };
   }
 
   // Render-time Hebrew label for a stable reason key. The outpatient backend
@@ -97,6 +186,8 @@
     a = a || {};
     return {
       id: a.id || a.alertId || a.rowId || '',
+      type: alertType(a),
+      status: statusOf(a),
       patientName: a.patientName || a.clientName || a.name || a.patient || '',
       created: a.created || a.createdDate || a.createdAt || a.date || '',
       note: a.note || a.message || '',
@@ -108,8 +199,12 @@
 
   return {
     isRead: isRead,
+    alertType: alertType,
+    statusOf: statusOf,
+    typeTitle: typeTitle,
     unreadCount: unreadCount,
     partition: partition,
+    inbox: inbox,
     reasonLabel: reasonLabel,
     normalize: normalize
   };

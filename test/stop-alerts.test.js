@@ -119,3 +119,137 @@ test('normalize derives read/readAt from a read payload', () => {
   assert.equal(n.read, true);
   assert.equal(n.readAt, '2026-07-06T00:00:00Z');
 });
+
+// ── action-inbox redesign: type (stop/resume) + status (unread/read/cancelled),
+//    unread-only primary list, and a 14-day collapsed history ────────────────
+
+const DAY = 24 * 60 * 60 * 1000;
+const NOW = new Date('2026-07-15T12:00:00Z').getTime();   // fixed clock for windows
+
+test('alertType reads the direction; legacy/blank/unknown → stop', () => {
+  assert.equal(StopAlerts.alertType({ type: 'resume' }), 'resume');
+  assert.equal(StopAlerts.alertType({ type: 'stop' }), 'stop');
+  assert.equal(StopAlerts.alertType({ type: '  RESUME ' }), 'resume');   // case/space tolerant
+  assert.equal(StopAlerts.alertType({ type: 'stopped' }), 'stop');       // unknown → stop
+  assert.equal(StopAlerts.alertType({}), 'stop');                        // legacy blank
+  assert.equal(StopAlerts.alertType(null), 'stop');
+});
+
+test('typeTitle gives the Hebrew direction title', () => {
+  assert.equal(StopAlerts.typeTitle({ type: 'stop' }), 'עצירת טיפול');
+  assert.equal(StopAlerts.typeTitle({ type: 'resume' }), 'חידוש טיפול');
+  assert.equal(StopAlerts.typeTitle({}), 'עצירת טיפול');                 // legacy → stop title
+});
+
+test('statusOf: cancelled wins, explicit read/unread honoured, legacy derives from read', () => {
+  assert.equal(StopAlerts.statusOf({ status: 'unread' }), 'unread');
+  assert.equal(StopAlerts.statusOf({ status: 'read' }), 'read');
+  assert.equal(StopAlerts.statusOf({ status: 'cancelled' }), 'cancelled');
+  assert.equal(StopAlerts.statusOf({ status: 'canceled' }), 'cancelled');   // spelling tolerance
+  assert.equal(StopAlerts.statusOf({ status: 'CANCELLED' }), 'cancelled');  // case tolerance
+  assert.equal(StopAlerts.statusOf({ readAt: '2026-07-01' }), 'read');      // legacy read flag
+  assert.equal(StopAlerts.statusOf({ read: true }), 'read');
+  assert.equal(StopAlerts.statusOf({ status: 'stopped' }), 'unread');       // legacy status → derive
+  assert.equal(StopAlerts.statusOf({ status: 'stopped', readAt: '2026-07-01' }), 'read');
+  assert.equal(StopAlerts.statusOf({}), 'unread');
+  assert.equal(StopAlerts.statusOf(null), 'unread');
+});
+
+test('inbox primary is UNREAD only — both directions, backend order preserved', () => {
+  const alerts = [
+    { id: 'u-stop', type: 'stop', status: 'unread' },
+    { id: 'r', status: 'read', readAt: '2026-07-14T00:00:00Z' },
+    { id: 'u-resume', type: 'resume', status: 'unread' },
+    { id: 'c', status: 'cancelled', created: '2026-07-14T00:00:00Z' }
+  ];
+  const { primary } = StopAlerts.inbox(alerts, NOW);
+  assert.deepEqual(primary.map((x) => x.id), ['u-stop', 'u-resume']);   // read + cancelled excluded
+});
+
+test('inbox history holds read + cancelled within 14 days; older rows are dropped', () => {
+  const alerts = [
+    { id: 'u', status: 'unread' },
+    { id: 'r-recent', status: 'read', readAt: new Date(NOW - 5 * DAY).toISOString() },
+    { id: 'r-old', status: 'read', readAt: new Date(NOW - 25 * DAY).toISOString() },
+    { id: 'c-recent', status: 'cancelled', created: new Date(NOW - 10 * DAY).toISOString() },
+    { id: 'c-old', status: 'cancelled', created: new Date(NOW - 40 * DAY).toISOString() }
+  ];
+  const { primary, history } = StopAlerts.inbox(alerts, NOW);
+  assert.deepEqual(primary.map((x) => x.id), ['u']);
+  assert.deepEqual(history.map((x) => x.id), ['r-recent', 'c-recent']);   // window keeps recent only
+});
+
+test('inbox window edge — exactly 14 days is kept, just past it is dropped', () => {
+  const alerts = [
+    { id: 'edge', status: 'read', readAt: new Date(NOW - 14 * DAY).toISOString() },
+    { id: 'past', status: 'read', readAt: new Date(NOW - 14 * DAY - 1000).toISOString() }
+  ];
+  const { history } = StopAlerts.inbox(alerts, NOW);
+  assert.deepEqual(history.map((x) => x.id), ['edge']);
+});
+
+test('inbox uses the NEWEST of created/readAt for the window', () => {
+  // Created long ago but read yesterday → still inside the 14-day window.
+  const alerts = [
+    { id: 'x', status: 'read', created: new Date(NOW - 90 * DAY).toISOString(), readAt: new Date(NOW - 1 * DAY).toISOString() }
+  ];
+  assert.equal(StopAlerts.inbox(alerts, NOW).history.length, 1);
+});
+
+test('inbox with no clock keeps the whole history (no silent drop), tolerates non-array', () => {
+  const all = StopAlerts.inbox([{ id: 'r', status: 'read', readAt: '2000-01-01' }], 0);
+  assert.equal(all.history.length, 1);
+  assert.deepEqual(StopAlerts.inbox(null), { primary: [], history: [] });
+  assert.deepEqual(StopAlerts.inbox(undefined), { primary: [], history: [] });
+});
+
+test('unreadCount counts BOTH directions, excludes read + cancelled', () => {
+  const alerts = [
+    { status: 'unread', type: 'stop' },
+    { status: 'unread', type: 'resume' },
+    { status: 'read' },
+    { status: 'cancelled' },
+    { readAt: '2026-07-01' }        // legacy read
+  ];
+  assert.equal(StopAlerts.unreadCount(alerts), 2);
+});
+
+test('cancelled row: in history, never primary, and unread-count-invisible', () => {
+  const c = { id: 'c', status: 'cancelled', created: new Date(NOW - 2 * DAY).toISOString() };
+  const { primary, history } = StopAlerts.inbox([c], NOW);
+  assert.equal(primary.length, 0);
+  assert.deepEqual(history.map((x) => x.id), ['c']);
+  assert.equal(StopAlerts.unreadCount([c]), 0);
+});
+
+test('mark-read → mark-unread round-trip moves a row between primary and history', () => {
+  // Mirrors the optimistic app.js flips: status is the source of truth.
+  const a = StopAlerts.normalize({ id: 'x', clientName: 'ד', type: 'stop', status: 'unread' });
+  assert.equal(a.status, 'unread');
+  assert.equal(StopAlerts.inbox([a], NOW).primary.length, 1);
+
+  a.status = 'read'; a.read = true;                       // optimistic mark-read
+  assert.equal(StopAlerts.statusOf(a), 'read');
+  let inb = StopAlerts.inbox([a], NOW);
+  assert.equal(inb.primary.length, 0);
+  assert.equal(inb.history.length, 1);
+
+  a.status = 'unread'; a.read = false; a.readAt = '';     // optimistic mark-unread
+  assert.equal(StopAlerts.statusOf(a), 'unread');
+  inb = StopAlerts.inbox([a], NOW);
+  assert.equal(inb.primary.length, 1);
+  assert.equal(inb.history.length, 0);
+});
+
+test('normalize carries type + canonical status; legacy payloads still resolve', () => {
+  const n = StopAlerts.normalize({ id: 'r', clientName: 'ד', type: 'resume', status: 'unread', createdAt: '2026-07-05' });
+  assert.equal(n.type, 'resume');
+  assert.equal(n.status, 'unread');
+
+  const legacy = StopAlerts.normalize({ id: 'l', clientName: 'ה', readAt: '2026-07-06' });
+  assert.equal(legacy.type, 'stop');       // no type field → stop
+  assert.equal(legacy.status, 'read');     // derived from readAt
+
+  const cancelled = StopAlerts.normalize({ id: 'c', clientName: 'ו', type: 'stop', status: 'cancelled' });
+  assert.equal(cancelled.status, 'cancelled');
+});
