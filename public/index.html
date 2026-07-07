@@ -35,7 +35,7 @@
         <button class="tab active" data-view="dashboard">דשבורד מטופלים</button>
         <button class="tab" data-view="workflow">שיבוץ מטפלים<span id="leadsBadge" class="tab-badge" hidden>0</span></button>
         <button class="tab" data-view="mine">המטופלים שלי</button>
-        <button class="tab" data-view="stopAlerts">עצירת טיפול<span id="stopAlertsBadge" class="tab-badge tab-badge-stop" hidden>0</span></button>
+        <button class="tab" data-view="stopAlerts">התראות טיפול<span id="stopAlertsBadge" class="tab-badge tab-badge-stop" hidden>0</span></button>
       </nav>
       <div class="topbar-right">
         <button id="refreshBtn" class="btn btn-ghost" title="רענון">↻</button>
@@ -122,18 +122,20 @@
         </div>
       </section>
 
-      <!-- Stop-treatment alerts: persistent, outpatient-authored. Unread first,
-           each cleared only by an explicit «נקראה»; read ones collapse (dimmed). -->
+      <!-- Treatment alerts: persistent, outpatient-authored, both directions
+           (stop + resume). Action inbox = unread only, each cleared by an
+           explicit «נקראה»; a collapsed 14-day history holds read (reversible)
+           and cancelled (dimmed, no action) rows. -->
       <section id="view-stopAlerts" class="view">
         <div id="stopAlertsNotice" class="billing-empty" hidden></div>
         <div class="panel">
-          <div class="panel-title">התראות עצירת טיפול</div>
+          <div class="panel-title">התראות טיפול</div>
           <div id="stopAlertsUnread" class="billing-list"></div>
         </div>
-        <div class="panel" id="stopAlertsReadPanel" hidden>
-          <div class="panel-title stop-alerts-read-title">נקראו</div>
-          <div id="stopAlertsRead" class="billing-list stop-alerts-read-list"></div>
-        </div>
+        <details class="panel stop-alerts-history" id="stopAlertsHistoryPanel" hidden>
+          <summary class="stop-alerts-history-summary">היסטוריה — 14 ימים אחרונים</summary>
+          <div id="stopAlertsHistory" class="billing-list stop-alerts-read-list"></div>
+        </details>
       </section>
     </main>
 
