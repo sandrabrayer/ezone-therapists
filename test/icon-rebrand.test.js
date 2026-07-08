@@ -1,12 +1,17 @@
 'use strict';
 
 /**
- * Guards for the PWA icon rebrand (bold fuchsia "E" on white).
+ * Guards for the PWA icon rebrand — the ORIGINAL E-ZONE brand logo (the stylised
+ * "e" glyph), recolored via blend-remap onto a fluorescent-fuchsia-on-dark
+ * palette. The glyph is NOT redrawn, so these guards assert palette + presence,
+ * not stroke geometry.
  *
- *  1. Cache-version floor — public/sw.js must be at least v4, so a rebrand can
+ *  1. Cache-version floor — public/sw.js must be at least v5, so a rebrand can
  *     never ship without busting the old cached home-screen icon.
- *  2. Boldness guard — decodes each committed PNG and asserts the glyph is a
- *     thick, well-covered, correctly-coloured E (not a thin/hollow/blank icon).
+ *  2. Palette assertions — the dominant background is #071410 and the logo ink
+ *     is #ff2fd6; no stray third colour dominates.
+ *  3. Logo-presence guard — the coloured (fuchsia) ink covers > 5% of each icon,
+ *     proving the recolored logo is actually present and not washed out.
  *
  * Run with:  npm test   (Node >= 18, built-in test runner)
  */
@@ -17,12 +22,17 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 
 const PUB = path.join(__dirname, '..', 'public');
-const CACHE_FLOOR = 4;
+const CACHE_FLOOR = 5;
 
-const WHITE = [0xff, 0xff, 0xff];
-const FUCHSIA = [0xe5, 0x00, 0xa4];
+const BG = [0x07, 0x14, 0x10];    // #071410 — dark background
+const LOGO = [0xff, 0x2f, 0xd6];  // #ff2fd6 — fluorescent fuchsia logo
 
-// ---- minimal PNG decoder (truecolor 8-bit RGB, non-interlaced) -------------
+// ---- minimal PNG decoder (8-bit RGB/RGBA, non-interlaced) ------------------
+
+function paeth(a, b, c) {
+  const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+}
 
 function decodePNG(file) {
   const b = fs.readFileSync(file);
@@ -34,7 +44,8 @@ function decodePNG(file) {
   const bitDepth = b[24];
   const colorType = b[25];
   assert.equal(bitDepth, 8, `${file}: expected 8-bit`);
-  assert.equal(colorType, 2, `${file}: expected truecolor RGB`);
+  const ch = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
+  assert.ok(ch, `${file}: expected truecolor RGB/RGBA`);
   assert.equal(width, height, `${file}: expected a square icon`);
 
   const parts = [];
@@ -48,8 +59,7 @@ function decodePNG(file) {
   const raw = zlib.inflateSync(Buffer.concat(parts));
 
   const N = width;
-  const bpp = 3;
-  const stride = N * bpp;
+  const stride = N * ch;
   const px = Buffer.alloc(N * stride);
   let prev = Buffer.alloc(stride);
   for (let y = 0; y < N; y++) {
@@ -57,66 +67,28 @@ function decodePNG(file) {
     const line = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
     const cur = Buffer.alloc(stride);
     for (let i = 0; i < stride; i++) {
-      const a = i >= bpp ? cur[i - bpp] : 0;
+      const a = i >= ch ? cur[i - ch] : 0;
       const up = prev[i];
-      const ul = i >= bpp ? prev[i - bpp] : 0;
+      const ul = i >= ch ? prev[i - ch] : 0;
       const x = line[i];
       let v;
       if (ft === 0) v = x;
       else if (ft === 1) v = x + a;
       else if (ft === 2) v = x + up;
       else if (ft === 3) v = x + ((a + up) >> 1);
-      else {
-        const p = a + up - ul;
-        const pa = Math.abs(p - a), pb = Math.abs(p - up), pc = Math.abs(p - ul);
-        v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? up : ul);
-      }
+      else v = x + paeth(a, up, ul);
       cur[i] = v & 0xff;
     }
     cur.copy(px, y * stride);
     prev = cur;
   }
-  return { N, px };
+  return { N, ch, px };
 }
 
-// A pixel counts as "ink" when it is at least half-covered by the fuchsia glyph
-// (fuchsia has green=0, white green=255; the AA midpoint is 128).
-function isInk(px, N, x, y) {
-  return px[(y * N + x) * 3 + 1] < 128;
-}
-
-// Measures glyph geometry: coverage fraction, thinnest stroke, widest bar, and
-// the farthest ink pixel from centre (maskable safe-zone check).
-function analyze(icon) {
-  const { N, px } = icon;
-  let ink = 0, minStroke = Infinity, maxRun = 0, maxRadius = 0;
-  const cx = N / 2, cy = N / 2;
-  for (let y = 0; y < N; y++) {
-    let run = 0, initRun = -1, sawInk = false;
-    for (let x = 0; x < N; x++) {
-      if (isInk(px, N, x, y)) {
-        ink++;
-        run++;
-        sawInk = true;
-        const dx = x - cx, dy = y - cy, r = Math.sqrt(dx * dx + dy * dy);
-        if (r > maxRadius) maxRadius = r;
-      } else {
-        if (run > maxRun) maxRun = run;
-        if (initRun < 0 && run > 0) initRun = run; // first contiguous ink run = stroke
-        run = 0;
-      }
-    }
-    if (run > maxRun) maxRun = run;
-    if (initRun < 0 && run > 0) initRun = run;
-    if (sawInk) minStroke = Math.min(minStroke, initRun);
-  }
-  return {
-    N,
-    coverage: ink / (N * N),
-    minStroke: minStroke / N,
-    maxRun: maxRun / N,
-    maxRadius: maxRadius / N
-  };
+function near(px, i, ch, target, tol) {
+  return Math.abs(px[i * ch] - target[0]) <= tol &&
+    Math.abs(px[i * ch + 1] - target[1]) <= tol &&
+    Math.abs(px[i * ch + 2] - target[2]) <= tol;
 }
 
 // ---- 1. cache-version floor ------------------------------------------------
@@ -132,7 +104,7 @@ test('sw.js cache version is at or above the rebrand floor', () => {
   );
 });
 
-// ---- 2. boldness guard -----------------------------------------------------
+// ---- 2 & 3. palette + logo-presence ---------------------------------------
 
 const ICONS = [
   { file: 'icon-v2-192.png', size: 192, maskable: false },
@@ -141,55 +113,45 @@ const ICONS = [
 ];
 
 for (const spec of ICONS) {
-  test(`${spec.file} is a bold, correctly-coloured E`, () => {
-    const icon = decodePNG(path.join(PUB, spec.file));
-    assert.equal(icon.N, spec.size, `${spec.file}: wrong dimensions`);
+  test(`${spec.file} uses the #071410 / #ff2fd6 brand palette with the logo present`, () => {
+    const { N, ch, px } = decodePNG(path.join(PUB, spec.file));
+    assert.equal(N, spec.size, `${spec.file}: wrong dimensions`);
 
-    // Opaque white background: all four corners must be pure white.
-    for (const [cx, cy] of [[0, 0], [icon.N - 1, 0], [0, icon.N - 1], [icon.N - 1, icon.N - 1]]) {
-      const o = (cy * icon.N + cx) * 3;
-      assert.deepEqual(
-        [icon.px[o], icon.px[o + 1], icon.px[o + 2]],
-        WHITE,
-        `${spec.file}: corner (${cx},${cy}) is not white`
-      );
+    const total = N * N;
+    let bg = 0, logo = 0;
+    for (let i = 0; i < total; i++) {
+      const opaque = ch === 4 ? px[i * ch + 3] > 128 : true;
+      if (!opaque) continue;                       // transparent squircle corners
+      if (near(px, i, ch, BG, 6)) bg++;
+      else if (near(px, i, ch, LOGO, 24)) logo++;  // widen for anti-aliased edges
     }
 
-    // The ink must be fuchsia, not some other colour: the most saturated ink
-    // pixel should match #e500a4 closely.
-    let best = 1e9, bestRGB = null;
-    for (let i = 0; i < icon.N * icon.N; i++) {
-      const g = icon.px[i * 3 + 1];
-      if (g < 40) {
-        const r = icon.px[i * 3], bl = icon.px[i * 3 + 2];
-        const d = Math.abs(r - FUCHSIA[0]) + Math.abs(g - FUCHSIA[1]) + Math.abs(bl - FUCHSIA[2]);
-        if (d < best) { best = d; bestRGB = [r, g, bl]; }
-      }
-    }
-    assert.ok(best <= 12, `${spec.file}: ink colour ${bestRGB} is not fuchsia ${FUCHSIA}`);
-
-    const g = analyze(icon);
-
-    // Coverage: a real E fills a good chunk of the canvas — not blank, not solid.
-    assert.ok(g.coverage >= 0.15, `${spec.file}: coverage ${g.coverage.toFixed(3)} too low (icon too thin/blank)`);
-    assert.ok(g.coverage <= 0.45, `${spec.file}: coverage ${g.coverage.toFixed(3)} too high (icon too heavy/solid)`);
-
-    // Boldness: the thinnest stroke must be at least ~13% of the canvas.
+    // Palette: the exact background colour must dominate the opaque area.
     assert.ok(
-      g.minStroke >= 0.13,
-      `${spec.file}: thinnest stroke ${g.minStroke.toFixed(3)}·N is not bold (need >= 0.13·N)`
+      bg / total > 0.30,
+      `${spec.file}: #071410 background covers only ${(bg / total * 100).toFixed(1)}% — wrong palette`
     );
 
-    // A wide horizontal bar (the E's arms) proves it is an E, not a stripe.
-    assert.ok(g.maxRun >= 0.40, `${spec.file}: widest bar ${g.maxRun.toFixed(3)}·N too narrow for an E arm`);
+    // Logo-presence guard: fuchsia ink must cover more than 5% of the canvas.
+    assert.ok(
+      logo / total > 0.05,
+      `${spec.file}: fuchsia #ff2fd6 ink covers only ${(logo / total * 100).toFixed(1)}% (need > 5%) — logo missing/washed out`
+    );
 
-    // Maskable safe zone: the whole glyph must sit inside the central 80% circle
-    // (radius 0.40·N) with white padding to the edge.
+    // The exact brand colours must both appear as solid pixels somewhere.
+    let exactBg = false, exactLogo = false;
+    for (let i = 0; i < total && !(exactBg && exactLogo); i++) {
+      if (near(px, i, ch, BG, 0)) exactBg = true;
+      if (near(px, i, ch, LOGO, 0)) exactLogo = true;
+    }
+    assert.ok(exactBg, `${spec.file}: exact #071410 background pixels not found`);
+    assert.ok(exactLogo, `${spec.file}: exact #ff2fd6 logo pixels not found`);
+
+    // Maskable padding stays dark: the extreme corners (inside the safe area)
+    // must be the dark background, not fuchsia.
     if (spec.maskable) {
-      assert.ok(
-        g.maxRadius <= 0.40,
-        `${spec.file}: glyph reaches ${g.maxRadius.toFixed(3)}·N from centre — outside the maskable safe zone (0.40·N)`
-      );
+      const corner = px[(0 * N + 0) * ch] + px[(0 * N + 0) * ch + 1] + px[(0 * N + 0) * ch + 2];
+      assert.ok(corner < 120, `${spec.file}: maskable corner is not dark padding`);
     }
   });
 }

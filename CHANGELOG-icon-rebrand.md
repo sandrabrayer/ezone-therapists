@@ -39,3 +39,41 @@ E-ZONE fuchsia identity. The app name is unchanged.
 - Frontend only — Railway auto-deploy. On a device that already has the app
   installed, the cache bump refreshes the shell; remove and re-add the app to
   force the OS to re-fetch the home-screen icon.
+
+---
+
+# Correction — restore the original brand logo, recolor only (not a block E)
+
+## Why
+The previous pass drew a block-letter "E" from scratch. That was wrong: the app
+has an established E-ZONE brand mark (the stylised "e" glyph + Hebrew wordmark).
+This correction discards the drawn E and instead recovers the **original
+brand-logo icons** and recolors them — the glyph shape and anti-aliasing are
+preserved exactly; only the palette changes.
+
+## What changed
+- **scripts/gen-icons.js** — removed (the block-E generator).
+- **scripts/recolor-icons.js** (new) — a self-contained, no-dependency recolor.
+  It reads the untouched original logos (`public/icon-192.png`,
+  `public/icon-512.png`, `public/icon-maskable.png`) and writes the recolored
+  `public/icon-v2-*.png`. Each pixel's background→logo blend factor is recovered
+  by projecting it onto the old `#1a0d18`→`#bc5586` line and remixed between the
+  new colours; the **alpha channel is copied through untouched**, so the
+  silhouette and every soft edge are identical — only the hue changes.
+    - background `#1a0d18` → **`#071410`** (dark)
+    - logo `#bc5586` → **`#ff2fd6`** (fluorescent fuchsia)
+- **public/icon-v2-{192,512,maskable}.png** (regenerated) — original glyph,
+  recolored. Maskable padding stays dark `#071410`.
+- **public/sw.js** — bumped the cache name `ezone-therapists-v4` → `-v5`.
+- **test/icon-rebrand.test.js** — removed the block-E boldness guard; now
+  asserts the palette (`#071410` background dominates, exact `#071410` and
+  `#ff2fd6` pixels present) and a logo-presence guard (fuchsia ink > 5%).
+- App name unchanged.
+
+## Verification
+- Rendered the recolored logo at 48/64/96px and confirmed the original "e" glyph
+  is intact and legible in fluorescent fuchsia on dark.
+- `npm test` — full suite green (305 tests).
+
+## Security
+- No data/endpoint/secret change. Frontend assets + cache-versioning only.
