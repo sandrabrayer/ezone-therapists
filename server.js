@@ -400,6 +400,16 @@ app.post('/api/debug/cache/clear', (req, res) => {
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
+// TEMPORARY — /theme-lab: dev-only palette comparison page. Direct URL only
+// (not linked from any menu); the page itself enforces the shared password
+// gate client-side via /api/gate exactly like index.html. Client-only, no
+// persistence, no API writes. DELETE this route together with
+// public/theme-lab.html in the follow-up PR that applies the chosen palette.
+app.get('/theme-lab', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'theme-lab.html'));
+});
+
 app.get('*', (req, res) => sendIndex(res));
 
 // Start only when run directly (`node server.js`). When required by a test the
