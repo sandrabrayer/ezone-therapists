@@ -61,8 +61,16 @@ test('PWA theme colors match the new background', () => {
 
 test('service-worker cache was bumped for the restyle', () => {
   const sw = fs.readFileSync(path.join(PUB, 'sw.js'), 'utf8');
-  assert.match(sw, /ezone-therapists-v6/);
-  assert.ok(!sw.includes('ezone-therapists-v5'), 'old cache name must be gone');
+  assert.match(sw, /ezone-therapists-v7/);
+  assert.ok(!sw.includes('ezone-therapists-v5') && !sw.includes('ezone-therapists-v6'), 'old cache names must be gone');
+});
+
+test('pop layer: vivid headline + hot badge vars exist and badges use them', () => {
+  assert.strictEqual((CSS.match(/--accent-vivid:\s*#e873bc/g) || []).length, 2);
+  assert.strictEqual((CSS.match(/--accent-hot:\s*#e33ba3/g) || []).length, 2);
+  assert.strictEqual((CSS.match(/--green-2:\s*var\(--accent-vivid\)/g) || []).length, 2);
+  assert.match(CSS, /\.tab-badge \{[\s\S]*?var\(--accent-hot\)/);
+  assert.match(CSS, /\.assign-row-pending \.assign-name \{ color: #ffffff; \}/);
 });
 
 test('theme-lab is fully deleted (page, route, tests, changelog)', () => {

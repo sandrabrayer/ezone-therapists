@@ -5,6 +5,7 @@
   --panel-sched: #3d5770; --panel-sched-border: #38bdf8;
   --border:    #826478;  --text: #ffffff;     --text-soft: #ede4ea;  --muted: #ceb5c5;
   --accent:    #9d6b8a;  --accent-2: #b38ca4; --accent-deep: #6e4b61;
+  --accent-vivid: #e873bc; --accent-hot: #e33ba3;
   --purple:    #38bdf8;
   --red:       #ff7676;  --amber: #f2c355;
   --shadow:    0 10px 26px rgba(0,0,0,0.45);
@@ -19,7 +20,7 @@
      every component renders pink without touching the shared markup. The
      .chip-paid/partial/unpaid semantic payment colors are left untouched. */
   --green:      var(--accent);
-  --green-2:    var(--accent-2);
+  --green-2:    var(--accent-vivid); /* headline role: KPI numbers, brand, titles — vivid so they pop */
   --green-deep: var(--accent-deep);
 }
 
@@ -760,7 +761,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    is unmistakable. Rendered as a pill via the «מטפל:» prefix in the markup. */
 .assign-ther {
   grid-area: ther;
-  font-size: 14px; font-weight: 700; color: var(--accent-2);
+  font-size: 14px; font-weight: 700; color: #ffffff;
 }
 .assign-ther .assign-ther-label {
   color: var(--muted); font-weight: 600; font-size: 12px;
@@ -789,7 +790,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* Treatment plan — quiet secondary line, full width, no longer competing. */
 .assign-type {
   grid-area: type;
-  color: var(--muted); font-size: 12.5px; line-height: 1.5;
+  color: #ffffff; font-size: 12.5px; font-weight: 700; line-height: 1.5;
   padding-top: 6px; margin-top: 4px;
   border-top: 1px dashed var(--border);
 }
@@ -869,6 +870,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   --panel-sched: #3d5770; --panel-sched-border: #38bdf8;
   --border:    #826478;  --text: #ffffff;     --text-soft: #ede4ea;  --muted: #ceb5c5;
   --accent:    #9d6b8a;  --accent-2: #b38ca4; --accent-deep: #6e4b61;
+  --accent-vivid: #e873bc; --accent-hot: #e33ba3;
   --purple:    #38bdf8;
   --red:       #ff7676;  --amber: #f2c355;
   --shadow:    0 10px 26px rgba(0,0,0,0.45);
@@ -883,7 +885,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
      every component renders pink without touching the shared markup. The
      .chip-paid/partial/unpaid semantic payment colors are left untouched. */
   --green:      var(--accent);
-  --green-2:    var(--accent-2);
+  --green-2:    var(--accent-vivid); /* headline role: KPI numbers, brand, titles — vivid so they pop */
   --green-deep: var(--accent-deep);
 }
 
@@ -1625,7 +1627,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
    is unmistakable. Rendered as a pill via the «מטפל:» prefix in the markup. */
 .assign-ther {
   grid-area: ther;
-  font-size: 14px; font-weight: 700; color: var(--accent-2);
+  font-size: 14px; font-weight: 700; color: #ffffff;
 }
 .assign-ther .assign-ther-label {
   color: var(--muted); font-weight: 600; font-size: 12px;
@@ -1647,7 +1649,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: linear-gradient(180deg, rgba(157,107,138,0.22), rgba(157,107,138,0.06)), var(--card);
   box-shadow: 0 0 0 1px rgba(157,107,138,0.3), 0 8px 22px rgba(0,0,0,0.4);
 }
-.assign-row-pending .assign-name { color: #dac7d3; }
+.assign-row-pending .assign-name { color: #ffffff; }
 .assign-row-assigned {
   border-right: 4px solid var(--purple);
   border-color: var(--panel-sched-border);
@@ -1667,7 +1669,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* Treatment plan — quiet secondary line, full width, no longer competing. */
 .assign-type {
   grid-area: type;
-  color: var(--text-soft); font-size: 13.5px; font-weight: 600; line-height: 1.6;
+  color: #ffffff; font-size: 13.5px; font-weight: 700; line-height: 1.6;
   padding-top: 6px; margin-top: 4px;
   border-top: 1px dashed var(--border);
 }
@@ -1860,14 +1862,14 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .tab-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px;
-  border-radius: 999px; background: var(--accent); color: #fff;
+  border-radius: 999px; background: var(--accent-hot); color: #fff;
   font-size: 11px; font-weight: 800; line-height: 1; vertical-align: middle;
-  box-shadow: 0 0 0 2px rgba(157,107,138,0.25);
+  box-shadow: 0 0 0 2px rgba(227,59,163,0.35);
 }
 /* «חדש» tag on a not-yet-assigned lead. */
 .lead-new-tag {
   font-size: 11px; font-weight: 800; color: #fff;
-  background: var(--accent); padding: 1px 8px; border-radius: 999px;
+  background: var(--accent-hot); padding: 1px 8px; border-radius: 999px;
   margin-inline-start: 6px; vertical-align: middle;
 }
 
