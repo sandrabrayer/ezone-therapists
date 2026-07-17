@@ -1,19 +1,19 @@
 :root {
-  --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
-  --card:      #52214c;  --card-hover: #5f2657; --card-border: #c052a0;
-  --panel-plan:  #5e1f48; --panel-plan-border:  #e0559b;
-  --panel-sched: #432a66; --panel-sched-border: #a06cf2;
-  --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
-  --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
-  --purple:    #a855f7;
+  --bg:        #2c1a28;  --bg-elev: #3f2b3a;  --panel: #4a3644;  --panel-2: #503c4a;
+  --card:      #564150;  --card-hover: #624e5c; --card-border: #8e6780;
+  --panel-plan:  #3a5d60; --panel-plan-border:  #2dd4bf;
+  --panel-sched: #3d5770; --panel-sched-border: #38bdf8;
+  --border:    #826478;  --text: #ffffff;     --text-soft: #ede4ea;  --muted: #ceb5c5;
+  --accent:    #9d6b8a;  --accent-2: #b38ca4; --accent-deep: #6e4b61;
+  --purple:    #38bdf8;
   --red:       #ff7676;  --amber: #f2c355;
   --shadow:    0 10px 26px rgba(0,0,0,0.45);
 
-  /* FUCHSIA is this app's dominant color — each E-ZONE app has its own signature
-     accent (outpatient = green, dashboard = indigo, therapists = fuchsia/pink)
-     over the SAME shared structure (cards, panels, badges, layout). Pink-magenta
-     primary (--accent #ec4899) leads, with violet (--purple) kept as the deep
-     secondary tone, on a dark plum base. The component CSS below references
+  /* PALETTE (chosen via the theme-lab, July 17 2026): muted-rose primary
+     (--accent #9d6b8a) with a per-section scheme — teal (#2dd4bf) for the
+     treatment plan, sky blue (#38bdf8) for scheduling — on a warm dark plum
+     base (bg #2c1a28, tint 40%). --purple now carries the SCHEDULING accent
+     (secondary role). The component CSS below references
      --green / --green-2 / --green-deep (carried over verbatim from the shared
      house stylesheet); those legacy names are aliased to the fuchsia accent so
      every component renders pink without touching the shared markup. The
@@ -28,7 +28,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #3a1530 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #5b4153 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Rubik", "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -79,7 +79,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #3a1530, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #5b4153, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -863,21 +863,21 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .slot-row .s-room::placeholder { color: var(--muted); }
 
 :root {
-  --bg:        #1a0d18;  --bg-elev: #271227;  --panel: #371a36;  --panel-2: #452041;
-  --card:      #52214c;  --card-hover: #5f2657; --card-border: #c052a0;
-  --panel-plan:  #5e1f48; --panel-plan-border:  #e0559b;
-  --panel-sched: #432a66; --panel-sched-border: #a06cf2;
-  --border:    #7a3d6e;  --text: #ffffff;     --text-soft: #faebf5;  --muted: #ddb8d3;
-  --accent:    #ec4899;  --accent-2: #f871b0; --accent-deep: #a21d6b;
-  --purple:    #a855f7;
+  --bg:        #2c1a28;  --bg-elev: #3f2b3a;  --panel: #4a3644;  --panel-2: #503c4a;
+  --card:      #564150;  --card-hover: #624e5c; --card-border: #8e6780;
+  --panel-plan:  #3a5d60; --panel-plan-border:  #2dd4bf;
+  --panel-sched: #3d5770; --panel-sched-border: #38bdf8;
+  --border:    #826478;  --text: #ffffff;     --text-soft: #ede4ea;  --muted: #ceb5c5;
+  --accent:    #9d6b8a;  --accent-2: #b38ca4; --accent-deep: #6e4b61;
+  --purple:    #38bdf8;
   --red:       #ff7676;  --amber: #f2c355;
   --shadow:    0 10px 26px rgba(0,0,0,0.45);
 
-  /* FUCHSIA is this app's dominant color — each E-ZONE app has its own signature
-     accent (outpatient = green, dashboard = indigo, therapists = fuchsia/pink)
-     over the SAME shared structure (cards, panels, badges, layout). Pink-magenta
-     primary (--accent #ec4899) leads, with violet (--purple) kept as the deep
-     secondary tone, on a dark plum base. The component CSS below references
+  /* PALETTE (chosen via the theme-lab, July 17 2026): muted-rose primary
+     (--accent #9d6b8a) with a per-section scheme — teal (#2dd4bf) for the
+     treatment plan, sky blue (#38bdf8) for scheduling — on a warm dark plum
+     base (bg #2c1a28, tint 40%). --purple now carries the SCHEDULING accent
+     (secondary role). The component CSS below references
      --green / --green-2 / --green-deep (carried over verbatim from the shared
      house stylesheet); those legacy names are aliased to the fuchsia accent so
      every component renders pink without touching the shared markup. The
@@ -892,7 +892,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 70% -10%, #3a1530 0%, var(--bg) 60%) fixed;
+  background: radial-gradient(1200px 600px at 70% -10%, #5b4153 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font-family: "Rubik", "Assistant", "Heebo", "Segoe UI", Arial, sans-serif;
   direction: rtl;
@@ -943,7 +943,7 @@ select option { background: var(--bg-elev); color: var(--text); }
 /* PIN screen */
 .pin-screen {
   position: fixed; inset: 0; display: grid; place-items: center;
-  background: radial-gradient(800px 400px at 50% 20%, #3a1530, var(--bg));
+  background: radial-gradient(800px 400px at 50% 20%, #5b4153, var(--bg));
   z-index: 50;
 }
 .pin-card {
@@ -1644,10 +1644,10 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .assign-row-pending {
   border-right: 6px solid var(--accent);
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(236,72,153,0.22), rgba(236,72,153,0.06)), var(--card);
-  box-shadow: 0 0 0 1px rgba(236,72,153,0.3), 0 8px 22px rgba(0,0,0,0.4);
+  background: linear-gradient(180deg, rgba(157,107,138,0.22), rgba(157,107,138,0.06)), var(--card);
+  box-shadow: 0 0 0 1px rgba(157,107,138,0.3), 0 8px 22px rgba(0,0,0,0.4);
 }
-.assign-row-pending .assign-name { color: #ffd0e6; }
+.assign-row-pending .assign-name { color: #dac7d3; }
 .assign-row-assigned {
   border-right: 4px solid var(--purple);
   border-color: var(--panel-sched-border);
@@ -1755,7 +1755,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .client-card .cc-plan  { background: var(--panel-plan);  border-color: var(--panel-plan-border); }
 .client-card .cc-sched { background: var(--panel-sched); border-color: var(--panel-sched-border); }
 .client-card .cc-plan .cc-panel-title  { color: var(--accent-2); }
-.client-card .cc-sched .cc-panel-title { color: #c89bf5; }
+.client-card .cc-sched .cc-panel-title { color: #92dbfb; }
 .client-card .cc-panel-title {
   font-size: 11px; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 8px;
 }
@@ -1766,7 +1766,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .client-card .cc-line:first-of-type { border-top: 0; }
 .client-card .cc-stack { display: flex; flex-direction: column; gap: 2px; }
 .client-card .cc-line .cc-k { font-size: 15px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px; }
-.client-card .cc-line .cc-v { font-size: 14px; font-weight: 800; color: #ffd0e6; direction: ltr; }
+.client-card .cc-line .cc-v { font-size: 14px; font-weight: 800; color: #dac7d3; direction: ltr; }
 .client-card .cc-line.cc-muted { font-size: 12px; color: var(--muted); }
 .client-card .cc-ther {
   align-self: flex-start; margin-top: 2px;
@@ -1775,14 +1775,14 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: var(--panel-2); border: 1px solid var(--border);
 }
 .client-card .cc-ther.cc-unassigned { color: var(--amber); border-color: #5a4818; }
-.client-card .cc-ther.cc-framework { color: #b9a9f5; border-color: var(--panel-sched-border); background: rgba(160,108,242,0.15); }
+.client-card .cc-ther.cc-framework { color: #a5e1fc; border-color: var(--panel-sched-border); background: rgba(56,189,248,0.15); }
 /* Schedule panel — per type, ordered day/time + location/room rows. */
 .client-card .cc-sched-type { margin-bottom: 8px; }
 .client-card .cc-sched-type:last-child { margin-bottom: 0; }
-.client-card .cc-sched-type-name { font-size: 14px; font-weight: 800; color: #ffd0e6; margin-bottom: 3px; }
+.client-card .cc-sched-type-name { font-size: 14px; font-weight: 800; color: #dac7d3; margin-bottom: 3px; }
 .client-card .cc-sched-line { display: flex; justify-content: space-between; gap: 10px; border-top: 0; padding: 3px 0; }
 .client-card .cc-sched-line .cc-k { font-size: 14px; font-weight: 800; color: #ffffff; }
-.client-card .cc-sched-line .cc-v { font-size: 13px; font-weight: 700; color: #ffd0e6; direction: rtl; }
+.client-card .cc-sched-line .cc-v { font-size: 13px; font-weight: 700; color: #dac7d3; direction: rtl; }
 .client-card .alert-row { margin-top: 2px; }
 
 /* ── Therapist weekly fixed-schedule modal ──────────────────────────────────
@@ -1804,10 +1804,10 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 /* New-assignment notifications banner (therapists tab) — everyone sees; each
    row dismissible with «ראיתי». */
 .notif-banner {
-  background: #2e1840; border: 1px solid var(--purple);
+  background: #3e4157; border: 1px solid var(--purple);
   border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
 }
-.notif-banner .notif-title { font-weight: 700; color: #c89bf5; margin-bottom: 6px; }
+.notif-banner .notif-title { font-weight: 700; color: #92dbfb; margin-bottom: 6px; }
 .notif-banner .notif-item {
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
   padding: 4px 0; border-top: 1px solid var(--border);
@@ -1846,12 +1846,12 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   color: var(--accent-2); border-bottom-color: var(--accent);
 }
 .assign-title-assigned {
-  color: #c89bf5; border-bottom-color: var(--panel-sched-border);
+  color: #92dbfb; border-bottom-color: var(--panel-sched-border);
 }
 
 /* Framework type row in the assignment modal: location instead of therapist. */
 .assignment-row .a-framework-tag {
-  font-size: 12px; font-weight: 600; color: #b9a9f5;
+  font-size: 12px; font-weight: 600; color: #a5e1fc;
   margin-inline-start: 8px;
 }
 .assignment-row .a-location { min-width: 150px; }
@@ -1862,7 +1862,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px;
   border-radius: 999px; background: var(--accent); color: #fff;
   font-size: 11px; font-weight: 800; line-height: 1; vertical-align: middle;
-  box-shadow: 0 0 0 2px rgba(236,72,153,0.25);
+  box-shadow: 0 0 0 2px rgba(157,107,138,0.25);
 }
 /* «חדש» tag on a not-yet-assigned lead. */
 .lead-new-tag {
