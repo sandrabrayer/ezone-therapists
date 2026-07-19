@@ -1,5 +1,24 @@
 # Changelog
 
+## CI — auto-deploy Apps Script via clasp (new version of the existing deployment)
+
+Added a GitHub Actions workflow (`.github/workflows/deploy-apps-script.yml`) that,
+on every push to the deployed branch `claude/inspiring-tesla-jipobw` touching
+`apps-script/**`, runs `clasp push -f` then `clasp deploy -i <DEPLOYMENT_ID>` —
+publishing a **new version of the EXISTING deployment** so the `/exec` URL never
+changes and the outpatient/dashboard consumers keep working. This automates the
+previously manual (and occasionally mis-done) redeploy step from
+`EZONE-ECOSYSTEM-STATUS.md`. New `.clasp.json` (Script ID + `rootDir: apps-script`)
+and `apps-script/appsscript.json` (manifest). Credentials come **only** from the
+GitHub Secrets `CLASPRC_JSON` and `DEPLOYMENT_ID`; the workflow fails loudly before
+touching the live deployment if either is missing, deletes the runner's credential
+file afterwards, and `.clasprc.json` is git-ignored. A second workflow
+(`.github/workflows/validate-workflows.yml`) validates that all workflow YAML is
+parseable. Full flow + one-time secret setup in the new `DEPLOY.md`; details in
+[`CHANGELOG-apps-script-ci.md`](CHANGELOG-apps-script-ci.md). **CI/tooling + docs
+only — no app code/schema/runtime change.** ⚠️ The deploy workflow will fail until
+both secrets are added (see `DEPLOY.md`).
+
 ## Docs — EZONE-ECOSYSTEM-STATUS.md at repo root
 
 Added `EZONE-ECOSYSTEM-STATUS.md` at the repo root — the July 4 merged cross-app ecosystem status doc, distributed to the root of all six E-Zone repos so every project/session starts from the true state. Docs-only; no code, schema, or Apps Script change.
