@@ -1,5 +1,15 @@
 # Changelog
 
+## CI — Apps Script deploy: guard against clasp 3.x false-green redeploy
+
+Hardened the redeploy step: clasp 3.x can print a rejection (e.g. `Invalid
+deployment ID`) and still exit 0, which made a **no-op redeploy report success**.
+The step now trims stray whitespace from `DEPLOYMENT_ID`, requires clasp's
+`Deployed …@<version>` confirmation, and on failure prints `clasp list-deployments`
+and exits non-zero — so a rejected/incorrect deployment ID fails loudly instead of
+passing as green. `DEPLOY.md` gains guidance for finding the correct `AKfyc…` ID.
+CI/tooling + docs only.
+
 ## CI — Apps Script deploy: manual trigger + pin clasp 3.x
 
 Added a `workflow_dispatch` trigger to `deploy-apps-script.yml` for on-demand
