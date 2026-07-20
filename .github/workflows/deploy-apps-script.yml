@@ -8,6 +8,8 @@ name: Deploy Apps Script
 # branch. Requires two GitHub secrets — see DEPLOY.md:
 #   - CLASPRC_JSON  : contents of ~/.clasprc.json from a local `clasp login`
 #   - DEPLOYMENT_ID : the existing Web App deployment ID (starts with "AKfyc")
+#
+# Verified end-to-end on clasp 3.3.0 after enabling the account's Apps Script API.
 
 on:
   push:
