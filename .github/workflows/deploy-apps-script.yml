@@ -8,8 +8,6 @@ name: Deploy Apps Script
 # branch. Requires two GitHub secrets — see DEPLOY.md:
 #   - CLASPRC_JSON  : contents of ~/.clasprc.json from a local `clasp login`
 #   - DEPLOYMENT_ID : the existing Web App deployment ID (starts with "AKfyc")
-#
-# Verified end-to-end on clasp 3.3.0 after enabling the account's Apps Script API.
 
 on:
   push:
@@ -90,7 +88,24 @@ jobs:
         # In clasp 3.x `deploy` is an alias of `create-deployment`; -i
         # <deploymentId> updates that one deployment to a freshly-created
         # version. It NEVER mints a new deployment, so the /exec URL is stable.
-        run: clasp deploy -i "$DEPLOYMENT_ID" -d "CI deploy ${GITHUB_SHA} on ${GITHUB_REF_NAME}"
+        #
+        # IMPORTANT: clasp 3.x can print a rejection (e.g. "Invalid deployment
+        # ID") and STILL exit 0, which would make a no-op look green. So we
+        # require clasp's "Deployed …@<version>" success line and fail loudly
+        # otherwise — a silent non-deploy must never pass as success.
+        run: |
+          set +e
+          dep="$(printf '%s' "$DEPLOYMENT_ID" | tr -d '[:space:]')"   # strip stray whitespace/newlines
+          out="$(clasp deploy -i "$dep" -d "CI deploy ${GITHUB_SHA} on ${GITHUB_REF_NAME}" 2>&1)"
+          rc=$?
+          set -e
+          echo "$out"
+          if [ "$rc" -ne 0 ] || ! printf '%s\n' "$out" | grep -q 'Deployed'; then
+            echo "::error::clasp did NOT redeploy the existing deployment (no 'Deployed …@<version>' confirmation). The DEPLOYMENT_ID secret must be the EXISTING Web App deployment ID (starts with 'AKfyc') — not the /exec URL, the Script ID, or a value with quotes/whitespace. Existing deployments for this project:"
+            clasp list-deployments || true
+            exit 1
+          fi
+          echo "Redeploy confirmed — new version of the EXISTING deployment (same /exec URL)."
 
       - name: Remove credentials from the runner
         if: always()

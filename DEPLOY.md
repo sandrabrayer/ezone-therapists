@@ -88,6 +88,17 @@ In the Apps Script editor for **E-ZONE Therapists**:
 
 Reusing this ID is what keeps the URL stable. **Do not** create a new deployment.
 
+> **Paste exactly the `AKfyc…` ID — nothing else.** If clasp reports
+> `Invalid deployment ID`, the secret is wrong: it's usually the `/exec` URL, the
+> Script ID, or has stray quotes/whitespace. To list the real IDs, run
+> `clasp list-deployments` locally (or read the deploy job's failure output — the
+> workflow prints the deployment list when the ID is rejected). Pick the AKfyc… id
+> of the Web App deployment whose `@<version>` is your live one.
+>
+> Note: clasp 3.x can print `Invalid deployment ID` and still exit 0. The workflow
+> guards against this — it requires clasp's `Deployed …@<version>` confirmation and
+> fails loudly otherwise, so a rejected ID can never pass as a green (no-op) deploy.
+
 ### 3. Add both as GitHub repository secrets
 
 **Settings → Secrets and variables → Actions → New repository secret** (or, with the
