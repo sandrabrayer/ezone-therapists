@@ -18,6 +18,9 @@ on:
       - 'apps-script/**'
       - '.clasp.json'
       - '.github/workflows/deploy-apps-script.yml'
+  # Manual on-demand deploy from the Actions tab (Run workflow → pick the branch).
+  # Uses the same secrets and the same push→deploy steps as the push trigger.
+  workflow_dispatch:
 
 # Never let two deploys race on the same Apps Script project.
 concurrency:
