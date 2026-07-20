@@ -40,7 +40,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Verify required secrets are present (fail loudly if not)
         env:
@@ -62,9 +62,11 @@ jobs:
           fi
 
       - name: Install clasp
-        # Pinned to 2.x so the ~/.clasprc.json auth-file path documented in
-        # DEPLOY.md stays correct (clasp 3.x moved/renamed the credentials file).
-        run: npm install -g @google/clasp@2.4.2
+        # Pinned to 3.x to match the clasp version that produced the credential
+        # secret (clasp 3.x's ~/.clasprc.json is a different, per-user-keyed
+        # format that clasp 2.x cannot read). Keep this in lockstep with the
+        # local clasp version documented in DEPLOY.md.
+        run: npm install -g @google/clasp@3.3.0
 
       - name: Write clasp credentials
         env:
@@ -83,7 +85,8 @@ jobs:
       - name: Redeploy the EXISTING deployment (new version, same /exec URL)
         env:
           DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
-        # -i <deploymentId> updates that one deployment to a freshly-created
+        # In clasp 3.x `deploy` is an alias of `create-deployment`; -i
+        # <deploymentId> updates that one deployment to a freshly-created
         # version. It NEVER mints a new deployment, so the /exec URL is stable.
         run: clasp deploy -i "$DEPLOYMENT_ID" -d "CI deploy ${GITHUB_SHA} on ${GITHUB_REF_NAME}"
 

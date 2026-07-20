@@ -19,7 +19,7 @@ the other, or both.
 On every push to **`claude/inspiring-tesla-jipobw`** that changes `apps-script/**`
 (or `.clasp.json` / the workflow itself), CI:
 
-1. Installs `@google/clasp` (pinned to `2.4.2`).
+1. Installs `@google/clasp` (pinned to `3.3.0`).
 2. Writes `~/.clasprc.json` from the **`CLASPRC_JSON`** secret (OAuth tokens).
 3. `clasp push -f` — uploads `apps-script/Code.gs` + `apps-script/appsscript.json`
    to the Apps Script project (Script ID lives in [`.clasp.json`](.clasp.json)).
@@ -51,9 +51,16 @@ On your own machine (one time), log clasp into the Google account that **owns th
 Apps Script project**:
 
 ```bash
-npm install -g @google/clasp@2.4.2
+npm install -g @google/clasp@3.3.0
 clasp login
 ```
+
+> **Version alignment matters.** CI installs **clasp `3.3.0`**, and clasp 3.x's
+> `~/.clasprc.json` is a different (per-user-keyed) format than clasp 2.x. Log in
+> with a **3.x** clasp so the credential file CI writes is one CI can read. If you
+> ever see `Error retrieving access token: Cannot read properties of undefined
+> (reading 'access_token')` in the deploy log, it means the secret was produced by
+> a mismatched clasp major — re-login with `@google/clasp@3.3.0` and re-copy.
 
 `clasp login` opens a browser, you approve, and it writes your OAuth tokens to
 **`~/.clasprc.json`**. Copy that file's **entire contents** into the secret:
@@ -62,6 +69,8 @@ clasp login
 cat ~/.clasprc.json      # macOS/Linux
 # then copy the whole JSON blob
 ```
+
+On **Windows (PowerShell)**: `Get-Content "$HOME\.clasprc.json" -Raw | Set-Clipboard`.
 
 > The account you `clasp login` with must have **edit** access to the Script ID in
 > `.clasp.json`. If you can open the project in the Apps Script editor and deploy
@@ -148,10 +157,10 @@ therefore *is* the live Web App configuration:
 ## Manual fallback (if CI is unavailable)
 
 ```bash
-npm install -g @google/clasp@2.4.2
+npm install -g @google/clasp@3.3.0
 clasp login
 clasp push -f
-clasp deploy -i <DEPLOYMENT_ID> -d "manual deploy"
+clasp deploy -i <DEPLOYMENT_ID> -d "manual deploy"   # `deploy` is a 3.x alias of `create-deployment`
 ```
 
 Run from the repo root (where `.clasp.json` lives). Same effect as CI: new version
