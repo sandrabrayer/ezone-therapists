@@ -1,5 +1,19 @@
 # Changelog
 
+## CI — Apps Script deploy: manual trigger + pin clasp 3.x
+
+Added a `workflow_dispatch` trigger to `deploy-apps-script.yml` for on-demand
+runs, and switched the pinned clasp version from `2.4.2` to **`3.3.0`** so CI
+matches the clasp 3.x major that produced the `CLASPRC_JSON` secret (clasp 3.x's
+`~/.clasprc.json` is a different, per-user-keyed format that clasp 2.x cannot
+read — the mismatch surfaced as `Error retrieving access token: Cannot read
+properties of undefined (reading 'access_token')`). `clasp push -f` and
+`clasp deploy -i <DEPLOYMENT_ID>` are unchanged (`deploy` is a 3.x alias of
+`create-deployment`, still `-i/--deploymentId` + `-d/--description`), so the
+deploy still publishes a **new version of the existing deployment** and the
+`/exec` URL stays stable. Runner Node bumped 20→22. `DEPLOY.md` updated for the
+3.x version + credential-format note. CI/tooling + docs only.
+
 ## CI — auto-deploy Apps Script via clasp (new version of the existing deployment)
 
 Added a GitHub Actions workflow (`.github/workflows/deploy-apps-script.yml`) that,
