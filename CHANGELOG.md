@@ -1,5 +1,30 @@
 # Changelog
 
+## CI — Apps Script deploy: post-deploy anonymous smoke check
+
+Added a guardrail after the redeploy step in `deploy-apps-script.yml` so a lost
+**"Anyone, even anonymous"** access on the Web App fails CI immediately instead
+of shipping silently. Context: the sibling **ezone-staffing** app had exactly
+this outage on 2026-07-30 — ~12 min after a green `clasp deploy`, its `/exec`
+started serving Google's sign-in HTML instead of JSON (consumers got the
+`accounts.google.com` login page); root cause is a Google-side side effect of
+minting a **new Web App version programmatically**, which does not reliably
+carry over anonymous access even though the committed `appsscript.json`
+(`ANYONE_ANONYMOUS` / `USER_DEPLOYING`) is correct. This repo's deploy is the
+same shape (`clasp push -f` → `clasp deploy -i <DEPLOYMENT_ID>`), so it has the
+same exposure. The new step `curl`s the `/exec` URL **anonymously** (follows
+redirects) and requires a JSON body — a healthy app returns JSON even
+unauthenticated (e.g. `{"error":"unauthorized"}`), while a broken one redirects
+to `accounts.google.com` / `ServiceLogin` and returns HTML. It **retries up to
+3× with 20s gaps** (propagation lags a deploy) and, on failure, prints a loud
+`::error::` with the exact click-path to restore access (script.google.com →
+open the project → Deploy → Manage deployments → pencil → Version = New version
+→ Who has access = Anyone → Deploy) and exits 1. The `/exec` URL is read from a
+non-secret repository **variable** `APPS_SCRIPT_EXEC_URL` (Settings → Secrets
+and variables → Actions → Variables tab), never hardcoded; if it is unset the
+step fails loudly telling you to add it. **The `clasp push` and `clasp deploy`
+steps are UNCHANGED.** CI/tooling only.
+
 ## CI — Apps Script deploy: guard against clasp 3.x false-green redeploy
 
 Hardened the redeploy step: clasp 3.x can print a rejection (e.g. `Invalid
