@@ -1,5 +1,29 @@
 # Changelog
 
+## Dashboard — outpatient treatment start/end dates on the patient card
+
+Each patient card's «תוכנית טיפול» panel now shows the outpatient **treatment
+period**: «תחילת טיפול» (start) and «סיום טיפול» (end), formatted **DD/MM/YYYY**.
+Missing or unparseable dates render the «—» placeholder (never blank,
+`undefined`, or `null`) — an active patient has no end date yet, so «סיום טיפול»
+shows «—» until discharge.
+
+Data path: the dates are the outpatient Clients `startDate` / `exitDate`,
+delivered by `getTreatmentPlans` and surfaced on the roster item as
+`treatmentStartDate` / `treatmentEndDate`. New pure module
+`public/treatmentdates.js` does the display formatting (guarded by
+`test/treatmentdates.test.js`: valid, ISO, missing, malformed, out-of-range);
+`public/roster.js` carries the two dates from the plan source through the
+phone-keyed merge (new passthrough tests in `test/roster.test.js`).
+
+**Backend dependency (outpatient Apps Script):** the `_getTreatmentPlans()`
+projection must add `startDate` and `exitDate` to its `out.push({…})` object —
+both columns already exist on the Clients sheet and are already read into `cl`,
+so it is a two-line addition with no sheet schema change. See
+`docs/DEPENDENCIES.md`. Until that ships and the outpatient Web App is
+redeployed, both dates display «—» harmlessly — the frontend is safe to deploy
+first.
+
 ## CI — Apps Script deploy: post-deploy anonymous smoke check
 
 Added a guardrail after the redeploy step in `deploy-apps-script.yml` so a lost

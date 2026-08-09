@@ -9,7 +9,7 @@ deployed on the sibling side for the corresponding feature to work end-to-end.
 | # | Dependency | Sibling repo | Status | Blocks |
 | - | ---------- | ------------ | ------ | ------ |
 | 1 | `getDebtStatus` | `ezone-outpatient` | **Open, unmerged** — PR #14 (`claude/nice-edison-5bvwiz`). Must be merged **and the Apps Script redeployed**. | Outpatient debt gate |
-| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. | Treatment-plan / dashboard plan data; **patient status** (active vs `סיים טיפול`) for the stop flow |
+| 2 | `getTreatmentPlans` | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-getTreatmentPlans.patch.md`](outpatient-getTreatmentPlans.patch.md). Apply + redeploy. **Follow-up (treatment dates):** add `startDate` + `exitDate` to the projection — see below. | Treatment-plan / dashboard plan data; **patient status** (active vs `סיים טיפול`) for the stop flow; **treatment start/end dates** on the patient card |
 | 3 | `getAdmittedRoster` | `E-Zone-Dashboard` | **Not started.** Patch + tests ready in [`dashboard-getAdmittedRoster.patch.md`](dashboard-getAdmittedRoster.patch.md). Apply + redeploy. | (no UI consumer since the inpatient tab was removed) |
 | 4 | `recordTreatmentGiven` (**WRITE**) | `ezone-outpatient` | **Not started.** Patch + tests ready in [`outpatient-recordTreatmentGiven.patch.md`](outpatient-recordTreatmentGiven.patch.md). Apply + set the shared secret on **both** Apps Scripts + redeploy. | Did-it-happen → therapist pay / patient billing write-back |
 | 5 | `flagStop` (**WRITE**) | `ezone-outpatient` | **Receiver exists on the outpatient side** (fail-closed, secret `STOP_FLAG_SECRET`). Set the matching `STOP_FLAG_SECRET` Script Property here + redeploy. | «הפסקת טיפול» — sends a stop request (pending Vered's confirmation) |
@@ -83,6 +83,29 @@ above. Set on the therapists Apps Script:
   active on Vered's side. Orphan-safe: a phone matching no Client returns
   `deactivated:0` and the local delete proceeds. Reuses `OUTPATIENT_SHEETS_URL`;
   **no new Node/Railway env var** (Apps Script → Apps Script).
+
+## Treatment start/end dates (outpatient `getTreatmentPlans` projection)
+
+The patient card shows the **treatment period** — «תחילת טיפול» (start) and
+«סיום טיפול» (end), DD/MM/YYYY. The dates are the outpatient Clients
+**`startDate`** and **`exitDate`** columns. Those columns already exist and are
+already read by `_getTreatmentPlans` (via `_readAll`); they are simply not in the
+returned projection. Required change on `sandrabrayer/ezone-outpatient`
+(branch `claude/youthful-volta-laarnk`), `apps-script/Code.gs`, inside
+`_getTreatmentPlans()`'s `out.push({…})`:
+
+```javascript
+startDate: cl.startDate || '',
+exitDate:  cl.exitDate  || '',
+```
+
+`_readAll` normalizes a Date cell to a `yyyy-MM-dd` string, so the projection
+delivers that shape; the therapists frontend reformats to DD/MM/YYYY and renders
+«—» for blank (active patients have no `exitDate`) or malformed values
+(`public/treatmentdates.js`). **No sheet schema change, no new secret, no
+Node/Railway change** — just redeploy the outpatient Web App (new version of the
+existing deployment; same URL). Until it ships, the therapists card shows «—»
+for both dates — the frontend is safe to deploy first.
 
 ## Source-data follow-up (outpatient side)
 

@@ -128,6 +128,53 @@ test('planTypes: empty when there is no parseable plan', () => {
   assert.deepEqual(roster[0].planTypes, []);
 });
 
+// --- treatment-period dates carry from the plan source ----------------------
+// The outpatient plan projection is the ONLY source of the treatment start/end
+// dates (Clients startDate / exitDate). They must reach the built item as
+// treatmentStartDate / treatmentEndDate for the card to render them.
+
+test('plan startDate/exitDate carry through to treatmentStartDate/treatmentEndDate', () => {
+  const roster = Roster.build({ plans: [planClient({
+    startDate: '2026-01-15', exitDate: '2026-06-30'
+  })]});
+  assert.equal(roster[0].treatmentStartDate, '2026-01-15');
+  assert.equal(roster[0].treatmentEndDate, '2026-06-30');
+});
+
+test('an active patient (no exitDate) yields an empty treatmentEndDate, not undefined', () => {
+  const roster = Roster.build({ plans: [planClient({ startDate: '2026-01-15' })]});
+  assert.equal(roster[0].treatmentStartDate, '2026-01-15');
+  assert.equal(roster[0].treatmentEndDate, '');   // formatter renders «—» from this
+});
+
+test('dates absent entirely default to empty strings (never undefined)', () => {
+  const roster = Roster.build({ plans: [planClient()] });   // no date fields
+  assert.equal(roster[0].treatmentStartDate, '');
+  assert.equal(roster[0].treatmentEndDate, '');
+});
+
+test('a debt-only / local-only patient (no plan) has empty treatment dates', () => {
+  const roster = Roster.build({
+    debtRoster: [{ name: 'דנה', phone: '0523659865', debtStatus: 'debt', amountOwed: 100 }],
+    patients: [{ name: 'רון', phone: '0539998888', active: 'true' }]
+  });
+  roster.forEach(function (p) {
+    assert.equal(p.treatmentStartDate, '');
+    assert.equal(p.treatmentEndDate, '');
+  });
+});
+
+test('merge keeps the plan dates even when local/debt sources also match', () => {
+  const roster = Roster.build({
+    plans: [planClient({ phone: '0501234567', startDate: '2026-02-01', exitDate: '2026-05-01' })],
+    debtRoster: [{ name: 'אורי', phone: '+972 50-123-4567', debtStatus: 'clear' }],
+    patients: [{ name: 'אורי לוי', phone: '050-123-4567', active: 'true' }]
+  });
+  assert.equal(roster.length, 1);
+  assert.equal(roster[0].treatmentStartDate, '2026-02-01');
+  assert.equal(roster[0].treatmentEndDate, '2026-05-01');
+});
+
 // --- browser path: Plan resolved from the global, not injected --------------
 // Regression guard: roster.js must resolve Plan via the global object when it is
 // NOT passed in as a Node dependency (the real browser load order). A previous
