@@ -26,6 +26,7 @@
   var Access = window.Access;
   var Plan = window.Plan;
   var StopAlerts = window.StopAlerts;
+  var TreatmentDates = window.TreatmentDates;
 
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
@@ -818,8 +819,22 @@
         '</div>';
     }).join('');
     if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
+    // Treatment period — start + end dates from the outpatient plan. Always shown
+    // (labeled), formatted DD/MM/YYYY; missing/malformed render «—» (an active
+    // patient has no end date yet).
+    var period =
+      '<div class="cc-dates">' +
+        '<div class="cc-line cc-date-line">' +
+          '<span class="cc-k">תחילת טיפול</span>' +
+          '<span class="cc-v">' + escapeHtml(TreatmentDates.format(p.treatmentStartDate)) + '</span>' +
+        '</div>' +
+        '<div class="cc-line cc-date-line">' +
+          '<span class="cc-k">סיום טיפול</span>' +
+          '<span class="cc-v">' + escapeHtml(TreatmentDates.format(p.treatmentEndDate)) + '</span>' +
+        '</div>' +
+      '</div>';
     return '<div class="cc-panel cc-plan">' +
-      '<div class="cc-panel-title">תוכנית טיפול</div>' + lines +
+      '<div class="cc-panel-title">תוכנית טיפול</div>' + lines + period +
       '</div>';
   }
 

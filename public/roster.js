@@ -76,18 +76,22 @@
     state = state || {};
     var byPhone = {};
     var planStatusByPhone = {};
-    function add(name, phone, serviceType, sessions) {
+    function add(name, phone, serviceType, sessions, startDate, exitDate) {
       var key = normPhone(phone);
       if (!key) return;
-      if (!byPhone[key]) byPhone[key] = { name: name || '', phone: phone || '', serviceType: serviceType || '', sessions: sessions };
+      if (!byPhone[key]) byPhone[key] = { name: name || '', phone: phone || '', serviceType: serviceType || '', sessions: sessions, startDate: startDate || '', exitDate: exitDate || '' };
       else {
         if (!byPhone[key].name && name) byPhone[key].name = name;
         if (!byPhone[key].serviceType && serviceType) byPhone[key].serviceType = serviceType;
         if ((byPhone[key].sessions == null || byPhone[key].sessions === '') && sessions != null) byPhone[key].sessions = sessions;
+        // Treatment-period dates come only from the outpatient plan source; keep
+        // the first non-empty value seen for this phone.
+        if (!byPhone[key].startDate && startDate) byPhone[key].startDate = startDate;
+        if (!byPhone[key].exitDate && exitDate) byPhone[key].exitDate = exitDate;
       }
     }
     (state.plans || []).forEach(function (p) {
-      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek);
+      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek, p.startDate, p.exitDate);
       var k = normPhone(p.phone);
       if (k && p.status != null && planStatusByPhone[k] == null) planStatusByPhone[k] = p.status;
     });
@@ -129,6 +133,11 @@
         phone: base.phone,
         serviceType: base.serviceType,
         rosterSessions: planSessionsText(base.sessions),
+        // Treatment-period dates from the outpatient plan (Clients startDate /
+        // exitDate). Raw as received (normally 'yyyy-MM-dd'); formatted for
+        // display by TreatmentDates.format. exitDate is blank for active patients.
+        treatmentStartDate: base.startDate || '',
+        treatmentEndDate: base.exitDate || '',
         // Clean per-type plan breakdown from the approved plan's `sessions` blob
         // (the keys ARE the treatment types). Used for a readable dashboard plan
         // summary INSTEAD of dumping the raw JSON. [{treatmentType,frequencyPerWeek}].
