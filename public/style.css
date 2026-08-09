@@ -2032,3 +2032,48 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   .stop-alert-unread-btn { width: 100%; }
   .stop-alert-readmeta { align-self: flex-end; }
 }
+
+/* --- loading spinners (CSS-only, themed) --------------------------------
+   Inline per-section/tab spinner shown while async data loads (first load in
+   particular — the Apps Script backend can cold-start for 10–30s), plus a
+   busy state for save buttons. No images, no libraries: a bright fuchsia head
+   spinning on a faint fuchsia track over the dark surface. */
+@keyframes ez-spin { to { transform: rotate(360deg); } }
+
+/* Section/tab placeholder — mirrors .billing-empty's surface so it drops into
+   the same list containers without a visual jump. */
+.spinner-wrap {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 22px 14px;
+  background: var(--bg-elev);
+  border: 1px dashed var(--border); border-radius: 10px;
+}
+.spinner {
+  width: 22px; height: 22px; flex: 0 0 auto; box-sizing: border-box;
+  border-radius: 50%;
+  border: 2.5px solid rgba(232, 115, 188, 0.22);   /* faint fuchsia track */
+  border-top-color: var(--accent-vivid);           /* bright fuchsia head (#e873bc) */
+  animation: ez-spin 0.7s linear infinite;
+}
+.spinner-label { font-size: 13px; color: var(--muted); }
+
+/* Save buttons: an inline spinner before the label while the round-trip runs.
+   .is-busy is toggled together with `disabled` in app.js. .btn is inline-flex
+   with a gap, so ::before sits before the text automatically. */
+.btn.is-busy::before {
+  content: ''; width: 14px; height: 14px; flex: 0 0 auto; box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: ez-spin 0.7s linear infinite;
+}
+/* Ghost/light buttons read the fuchsia head instead of white for contrast. */
+.btn-ghost.is-busy::before,
+.btn-sm.btn-ghost.is-busy::before {
+  border-color: rgba(232, 115, 188, 0.30);
+  border-top-color: var(--accent-vivid);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .btn.is-busy::before { animation-duration: 1.8s; }
+}

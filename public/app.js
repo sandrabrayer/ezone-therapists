@@ -99,7 +99,9 @@
     workflowSearch: '',
     workflowTherapist: '',
     mineSearch: '',
-    loaded: false
+    loaded: false,
+    initialLoading: false,   // true only on the very first load (cold Apps Script)
+    stopAlertsLoading: false // true while the «התראות טיפול» tab re-pulls on open
   };
 
   // Per-patient gate decisions pending in the schedule modal (null until check).
@@ -360,9 +362,14 @@
       });
       state.loaded = true;
     } catch (e) {
+      // Clear the initial-load spinner even on failure so sections fall back to
+      // their normal (empty) state under the error toast, not a stuck spinner.
+      state.initialLoading = false;
       toast('שגיאה בטעינת הנתונים: ' + e.message, true);
+      render();
       throw e;
     }
+    state.initialLoading = false;
     recomputeAlerts();
     render();
   }
@@ -548,6 +555,10 @@
 
   // --- render ------------------------------------------------------------
   function render() {
+    // First load only: paint an inline spinner into every section instead of
+    // empty "no data" lists while the (possibly cold, 10–30s) Apps Script call
+    // is still in flight. Once loaded flips true this never runs again.
+    if (Spinner.isInitialLoading(state)) { renderInitialLoading(); return; }
     syncDropdowns();
     renderDashboard();
     renderAssign();
@@ -556,6 +567,22 @@
     renderStopAlerts();
     updateLeadsBadge();
     updateStopAlertsBadge();
+  }
+
+  // The section/tab list containers that get an inline spinner on first load.
+  var LOADING_SECTIONS = ['#patientsList', '#assignList', '#scheduleList', '#myPatientsList', '#stopAlertsUnread'];
+  var LOADING_KPIS = ['#kpiPatients', '#kpiAssigned', '#kpiAlerts', '#kpiScheduled', '#kpiUpcoming', '#kpiScheduleAlerts'];
+  function renderInitialLoading() {
+    LOADING_SECTIONS.forEach(function (sel) { var el = $(sel); if (el) el.innerHTML = Spinner.html('טוען…'); });
+    // Neutral placeholder so KPI tiles don't flash a misleading "0" before data.
+    LOADING_KPIS.forEach(function (sel) { var el = $(sel); if (el) el.textContent = '…'; });
+  }
+
+  // Toggle a button's in-flight state: disabled + a CSS-only inline spinner.
+  function setBtnBusy(el, busy) {
+    if (!el) return;
+    el.disabled = !!busy;
+    el.classList.toggle('is-busy', !!busy);
   }
 
   // Live count of waiting leads (patients needing a non-framework therapist) on
@@ -631,6 +658,12 @@
   function renderStopAlerts() {
     var unreadHost = $('#stopAlertsUnread');
     if (!unreadHost) return;
+    // Re-pull in flight (tab just opened): spinner in the list, keep the notice
+    // and history as-is until the fresh alerts land.
+    if (state.stopAlertsLoading) {
+      unreadHost.innerHTML = Spinner.html('טוען התראות…');
+      return;
+    }
     var notice = $('#stopAlertsNotice');
     if (notice) {
       if (!state.stopAlertsOk) {
@@ -1199,6 +1232,9 @@
   }
 
   function syncNow() {
+    // The sync banner (and its button) is re-rendered by loadOwn → render, so we
+    // only need to mark it busy for the in-flight window; success replaces it.
+    setBtnBusy($('#syncNowBtn'), true);
     toast('מסנכרן…');
     apiSyncPending()
       .then(function () { return loadOwn(); })
@@ -1206,7 +1242,7 @@
         var left = pendingSyncCount();
         toast(left ? (left + ' עדיין ממתינים לסנכרון') : 'סונכרן');
       })
-      .catch(function (err) { toast('שגיאה בסנכרון: ' + err.message, true); });
+      .catch(function (err) { setBtnBusy($('#syncNowBtn'), false); toast('שגיאה בסנכרון: ' + err.message, true); });
   }
 
   // --- dropdown / datalist sync -----------------------------------------
@@ -1434,7 +1470,7 @@
     refreshTypeLock();
     $('#scheduleModal').hidden = false;
   }
-  function closeScheduleModal() { $('#scheduleModal').hidden = true; resetGateResults(); }
+  function closeScheduleModal() { $('#scheduleModal').hidden = true; resetGateResults(); setBtnBusy($('#scheduleSubmit'), false); }
   function resetGateResults() {
     pendingPatients = null;
     var g = $('#gateResults');
@@ -1631,7 +1667,7 @@
     var nameById = {};
     rows.forEach(function (r) { nameById[r.id] = r.patientName; });
     var anyFlagged = patients.some(function (p) { return p.gateStatus === 'flagged'; });
-    sub.disabled = true;
+    setBtnBusy(sub, true);
     apiSaveSession(rows)
       .then(function (res) {
         var failed = (res.results || []).filter(function (r) { return !r.ok; });
@@ -1654,7 +1690,7 @@
         return loadOwn();
       })
       .then(function () { closeScheduleModal(); })
-      .catch(function (err) { toast('שגיאה: ' + err.message, true); sub.disabled = false; });
+      .catch(function (err) { toast('שגיאה: ' + err.message, true); setBtnBusy(sub, false); });
   }
 
   // Friendly Hebrew for the server-authoritative rejection codes (mirrors
@@ -1761,10 +1797,10 @@
         extra.flagged = true; extra.gateReason = g.reason;
       }
     }
-    $('#reportSave').disabled = true;
+    setBtnBusy($('#reportSave'), true);
     commitReport(reportCtx.id, outcome, extra);
   }
-  function closeReportModal() { $('#reportModal').hidden = true; reportCtx = null; }
+  function closeReportModal() { $('#reportModal').hidden = true; reportCtx = null; setBtnBusy($('#reportSave'), false); }
 
   function commitReport(id, attendance, extra) {
     var row = state.schedule.filter(function (r) { return r.id === id; })[0];
@@ -1797,7 +1833,7 @@
       .catch(function (err) {
         row.attendance = prev; recomputeAlerts(); render();
         toast('שגיאה: ' + (SAVE_ERROR_TEXT[err.message] || err.message), true);
-        var s = $('#reportSave'); if (s) s.disabled = false;
+        setBtnBusy($('#reportSave'), false);
       });
   }
 
@@ -1875,12 +1911,12 @@
       room: (fd.get('room') || '').trim()
     };
     if (!fields.scheduledDate) { toast('יש לבחור תאריך', true); return; }
-    btn.disabled = true;
+    setBtnBusy(btn, true);
     apiUpdateBooking(bookingEditId, fields)
       .then(function () { toast('הטיפול עודכן'); return loadOwn(); })
       .then(function () { closeBookingModal(); })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); })
-      .finally(function () { btn.disabled = false; });
+      .finally(function () { setBtnBusy(btn, false); });
   }
   function cancelBooking(id) {
     var row = state.schedule.filter(function (r) { return r.id === id; })[0];
@@ -2011,7 +2047,7 @@
     var initFreq = (fd.get('frequencyPerWeek') || '').trim();
     var wantInitial = !$('#initialAssignmentSection').hidden && (initTher || initType);
 
-    sub.disabled = true;
+    setBtnBusy(sub, true);
     var initSyncWarning = null;
     apiSavePatient(patient, patientModalMode)
       .then(function () {
@@ -2038,7 +2074,7 @@
           : err.message;
         toast('שגיאה: ' + msg, true);
       })
-      .finally(function () { sub.disabled = false; });
+      .finally(function () { setBtnBusy(sub, false); });
   }
 
   // --- assignments modal (one locked row per approved plan type) --------
@@ -2205,12 +2241,12 @@
         slots: slotsJson, updatedBy: state.therapist || 'עורך'
       }));
     }
-    if (btn) btn.disabled = true;
+    setBtnBusy(btn, true);
     Promise.all(toSave.map(function (a) { return apiSaveAssignment(a); }))
       .then(function () { closeWeeklyModal(); return loadOwn(); })
       .then(function () { toast('הלוז השבועי נשמר'); })
       .catch(function () { toast('שמירה נכשלה', true); })
-      .then(function () { if (btn) btn.disabled = false; });
+      .then(function () { setBtnBusy(btn, false); });
   }
   function saveAssignments() {
     var btn = $('#assignmentsSave');
@@ -2260,7 +2296,7 @@
     var existing = (patientByPhone(phone) || { assignments: [] }).assignments;
     var toRemove = existing.filter(function (a) { return a.id && !keptIds[a.id]; }).map(function (a) { return a.id; });
 
-    btn.disabled = true;
+    setBtnBusy(btn, true);
     // Collect any billing-type sync warnings across the saved rows. The saves
     // succeed regardless; a warning means the assignment stuck locally but the
     // outpatient billing-type sync didn't — surfaced, never swallowed.
@@ -2286,7 +2322,7 @@
         }
       })
       .catch(function (err) { toast('שגיאה: ' + err.message, true); })
-      .finally(function () { btn.disabled = false; });
+      .finally(function () { setBtnBusy(btn, false); });
   }
 
   // Scheduling/reporting need a therapist name picked in tab 3 first.
@@ -2306,7 +2342,13 @@
     // Opening «עצירת טיפול» re-pulls the alerts so the list + badge are current
     // (alerts are raised by the outpatient app between loads). Best-effort.
     if (view === 'stopAlerts' && state.loaded) {
-      loadStopAlerts().then(renderStopAlerts).catch(function () {});
+      // Re-pull can hit a cold outpatient endpoint; show a spinner in the list
+      // while it runs (we keep whatever alerts we had until fresh ones arrive).
+      state.stopAlertsLoading = true;
+      renderStopAlerts();
+      loadStopAlerts()
+        .then(function () { state.stopAlertsLoading = false; renderStopAlerts(); })
+        .catch(function () { state.stopAlertsLoading = false; renderStopAlerts(); });
     }
   }
 
@@ -2494,6 +2536,10 @@
     $('#app').hidden = false;
     // The tab-3 therapist pick is a fresh runtime choice each open (not stored).
     setView('dashboard');
+    // Paint section spinners synchronously, BEFORE the (possibly cold) first
+    // Apps Script round-trip — the user sees loading immediately, not after a delay.
+    state.initialLoading = true;
+    render();
     loadAll().catch(function () {});
   }
 
