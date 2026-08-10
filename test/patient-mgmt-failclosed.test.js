@@ -91,3 +91,28 @@ test('POST /api/patient-meta fail-closed when PATIENT_MGMT_SECRET unset', async 
   called = false;
   assertFailClosed(await httpReq('POST', '/api/patient-meta', { phone: '0501234567', fields: {} }));
 });
+
+test('GET /api/followups fail-closed when PATIENT_MGMT_SECRET unset', async () => {
+  await waitForListen();
+  called = false;
+  assertFailClosed(await httpGet('/api/followups/0501234567'));
+});
+
+test('POST /api/followups fail-closed when PATIENT_MGMT_SECRET unset', async () => {
+  await waitForListen();
+  called = false;
+  assertFailClosed(await httpReq('POST', '/api/followups',
+    { phone: '0501234567', dueDate: '2026-08-20', text: 'x' }));
+});
+
+test('POST /api/followups/done fail-closed when PATIENT_MGMT_SECRET unset', async () => {
+  await waitForListen();
+  called = false;
+  assertFailClosed(await httpReq('POST', '/api/followups/done', { phone: '0501234567', id: 'fu_x', done: true }));
+});
+
+test('GET /api/followup-counts fail-closed when PATIENT_MGMT_SECRET unset', async () => {
+  await waitForListen();
+  called = false;
+  assertFailClosed(await httpGet('/api/followup-counts'));
+});

@@ -1,5 +1,48 @@
 # Changelog
 
+## Follow-up tasks (משימות מעקב) — phase 2
+
+Per-patient follow-up tasks with due dates + an overdue badge, inside the
+existing «ניהול מטופל» panel. No financial data anywhere in this feature.
+
+**Backend (`apps-script/Code.gs`)** — new APPEND-ONLY sheet `FollowUps`
+(`phone | id | createdAt | createdBy | dueDate | text | done | doneAt | doneBy`;
+`id` server-generated, timestamp-based). Four actions, gated by the **existing**
+`PATIENT_MGMT_SECRET` (no new secret), fail-closed:
+- `getFollowUps(phone)` → `{ open, done }` — open sorted by dueDate ascending,
+  done by doneAt descending
+- `addFollowUp(phone, createdBy, dueDate, text)` — canonical phone, non-empty
+  text, valid ISO `dueDate`; server stamps `id`/`createdAt`
+- `setFollowUpDone(phone, id, done, doneBy)` — single-row update by id, under
+  `LockService`
+- `getOpenFollowUpCounts()` → `{ phone: {open, overdue} }` for **all** patients
+  in **one** read (the per-card badge source — no N per-card calls)
+
+**Node (`server.js`)** — `GET /api/followups/:phone`, `POST /api/followups`,
+`POST /api/followups/done`, `GET /api/followup-counts`. Secret injected
+server-side; phone validated before forwarding; fail-closed when the secret is
+unset.
+
+**UI** — a «משימות מעקב» subsection in the panel: add form (text + due date),
+open list (overdue rows highlighted, due date DD/MM/YYYY, checkbox to mark done),
+and a collapsed «משימות שהושלמו» list. Empty text / invalid date are blocked
+client-side with inline RTL errors. A per-card **amber-red «מעקב באיחור» badge**
+next to the status chip when overdue > 0, populated from the one bulk
+`/api/followup-counts` fetch at list load. **Overdue = dueDate < today (local)
+and not done** — a task due *today* is not overdue.
+
+**Shared logic** lives in `public/patient-mgmt.js` (validation, `isISODate`, the
+overdue boundary, the counts aggregation) mirrored inline in `Code.gs`, and
+`public/patient-mgmt-ui.js` (DD/MM/YYYY formatting, badge visibility). Service
+worker cache bumped **v13 → v14**.
+
+**Tests** (20 new): backend validation + enum, done-toggle single-row, counts
+aggregation with the due-today boundary, fail-closed on all four routes, the
+`FollowUps` header-order guard, and UI helpers (overdue boundary, DD/MM/YYYY,
+badge visibility). Full suite 400 passing; verified end-to-end in a headless
+Chromium run (badge at load → add task → mark done moves it to done and clears
+the badge).
+
 ## PWA icons — recolored to the app's fuchsia-on-plum identity
 
 The home-screen / PWA icons were the E-ZONE "e" brand glyph in a neon

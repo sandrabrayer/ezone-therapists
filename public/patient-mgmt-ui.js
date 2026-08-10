@@ -141,6 +141,34 @@
     return 'מספר טלפון לא תקין — 10 ספרות המתחילות ב-0 (לדוגמה 0501234567), או השאירו ריק';
   }
 
+  // ---- Follow-up tasks (משימות מעקב) ------------------------------------------
+
+  /** A due date (date-only ISO) formatted DD/MM/YYYY; unparseable → trimmed self. */
+  function formatDate(iso) {
+    var d = toDate(iso);
+    if (!d) return String(iso == null ? '' : iso).trim();
+    return absoluteDate(d);
+  }
+
+  /**
+   * The per-card overdue badge shown next to the status chip. Hidden when the
+   * overdue count is 0; otherwise "מעקב באיחור" (with the count when > 1).
+   * @param {number} overdueCount
+   * @returns {{show:boolean, label?:string, cls?:string}}
+   */
+  function overdueBadge(overdueCount) {
+    var n = Number(overdueCount) || 0;
+    if (n <= 0) return { show: false };
+    return { show: true, label: n > 1 ? ('מעקב באיחור · ' + n) : 'מעקב באיחור', cls: 'cc-followup-badge' };
+  }
+
+  /** Client-side add-follow-up guard: non-empty text + valid ISO due date. */
+  function followUpError(text, dueDate) {
+    if (!String(text == null ? '' : text).trim()) return 'לא ניתן להוסיף משימה ללא טקסט';
+    if (!PatientMgmt.isISODate(dueDate)) return 'יש לבחור תאריך יעד תקין';
+    return null;
+  }
+
   return {
     TYPE_LABELS: TYPE_LABELS,
     STATUS_LABELS: STATUS_LABELS,
@@ -151,6 +179,10 @@
     statusChip: statusChip,
     relativeDate: relativeDate,
     absoluteDateTime: absoluteDateTime,
-    contactPhoneError: contactPhoneError
+    contactPhoneError: contactPhoneError,
+    formatDate: formatDate,
+    overdueBadge: overdueBadge,
+    followUpError: followUpError,
+    isOverdue: PatientMgmt.isFollowUpOverdue
   };
 });

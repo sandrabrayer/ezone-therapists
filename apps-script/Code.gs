@@ -109,6 +109,12 @@ var PATIENT_META_HEADERS = [
   'contactName', 'contactPhone', 'referral', 'goals',
   'updatedBy', 'updatedAt'
 ];
+/* FollowUps (משימות מעקב) — APPEND-ONLY, mirror of public/patient-mgmt.js
+ * FOLLOWUPS_HEADERS. One row per task; `id` is a server-generated timestamp-based
+ * unique string; `done` is a 'true'/'' flag flipped by setFollowUpDone. */
+var FOLLOWUPS_HEADERS = [
+  'phone', 'id', 'createdAt', 'createdBy', 'dueDate', 'text', 'done', 'doneAt', 'doneBy'
+];
 
 /* Seed values. A fresh sheet is seeded with the full list; an existing sheet has
  * any MISSING seed names appended (by name) so additions here reach live sheets
@@ -1939,6 +1945,153 @@ function _setPatientMeta(payload) {
   }
 }
 
+/* ===== Follow-up tasks (משימות מעקב) — phase 2 ==========================
+ * Same secret gate + patterns as the notes/meta actions above. Validation
+ * (canonical phone, non-empty text, valid ISO dueDate, overdue boundary, counts
+ * aggregation) is an inline MIRROR of public/patient-mgmt.js — keep both in sync;
+ * test/patient-mgmt.test.js guards the pure module + the FOLLOWUPS header order. */
+
+var _ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function _isISODate(s) {
+  var v = String(s == null ? '' : s).trim();
+  if (!_ISO_DATE_RE.test(v)) return false;
+  var y = +v.slice(0, 4), m = +v.slice(5, 7), d = +v.slice(8, 10);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  var dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+function _isFollowUpDone(v) {
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+// Overdue = due strictly BEFORE today AND not done (due today is NOT overdue).
+function _isFollowUpOverdue(dueDate, today, done) {
+  if (_isFollowUpDone(done)) return false;
+  var d = String(dueDate == null ? '' : dueDate).trim(), t = String(today == null ? '' : today).trim();
+  if (!_ISO_DATE_RE.test(d) || !_ISO_DATE_RE.test(t)) return false;
+  return d < t;
+}
+// Mirror of public/patient-mgmt.js validateFollowUp.
+function _validateFollowUp(input) {
+  input = input || {};
+  var phone = _toCanonicalPhone(input.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var text = String(input.text == null ? '' : input.text).trim();
+  if (!text) return { ok: false, error: 'empty_text' };
+  var dueDate = String(input.dueDate == null ? '' : input.dueDate).trim();
+  if (!_isISODate(dueDate)) return { ok: false, error: 'invalid_due_date' };
+  return { ok: true, value: { phone: phone, text: text, dueDate: dueDate,
+    createdBy: String(input.createdBy == null ? '' : input.createdBy).trim() } };
+}
+
+// getFollowUps(phone) → { ok, open:[...], done:[...] }. Open sorted by dueDate
+// ascending (soonest first); done sorted by doneAt descending (most recent first).
+function _getFollowUps(params) {
+  var gate = _requirePatientMgmtSecret(params && params.secret);
+  if (gate) return gate;
+  var phone = _toCanonicalPhone(params && params.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var sh = _ensureSheet('FollowUps', FOLLOWUPS_HEADERS);
+  var key = _normalizePhoneForMatch(phone);
+  var rows = _readAll(sh, FOLLOWUPS_HEADERS).filter(function (r) {
+    return _normalizePhoneForMatch(r.phone) === key;
+  });
+  var open = [], done = [];
+  rows.forEach(function (r) { (_isFollowUpDone(r.done) ? done : open).push(r); });
+  open.sort(function (a, b) {
+    var da = String(a.dueDate || ''), db = String(b.dueDate || '');
+    return da < db ? -1 : (da > db ? 1 : 0);
+  });
+  done.sort(function (a, b) {
+    var da = String(a.doneAt || ''), db = String(b.doneAt || '');
+    return da < db ? 1 : (da > db ? -1 : 0);
+  });
+  return { ok: true, open: open, done: done };
+}
+
+// addFollowUp(phone, createdBy, dueDate, text) → appends ONE row. The server sets
+// id (timestamp-based unique), createdAt (ISO), and done=''.
+function _addFollowUp(payload) {
+  var gate = _requirePatientMgmtSecret(payload && payload.secret);
+  if (gate) return gate;
+  var v = _validateFollowUp(payload);
+  if (!v.ok) return v;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = _ensureSheet('FollowUps', FOLLOWUPS_HEADERS);
+    var now = new Date();
+    var id = 'fu_' + now.getTime().toString(36) + '_' + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+    var row = {
+      phone: v.value.phone, id: id, createdAt: now.toISOString(), createdBy: v.value.createdBy,
+      dueDate: v.value.dueDate, text: v.value.text, done: '', doneAt: '', doneBy: ''
+    };
+    sh.appendRow(FOLLOWUPS_HEADERS.map(function (h) { return row[h] == null ? '' : row[h]; }));
+    return { ok: true, followup: row };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+// setFollowUpDone(phone, id, done, doneBy) → single-row update by id. Sets done +
+// doneAt (ISO when done, cleared when un-done) + doneBy. LockService-guarded.
+function _setFollowUpDone(payload) {
+  var gate = _requirePatientMgmtSecret(payload && payload.secret);
+  if (gate) return gate;
+  var p = payload || {};
+  var phone = _toCanonicalPhone(p.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var id = String(p.id == null ? '' : p.id).trim();
+  if (!id) return { ok: false, error: 'missing_id' };
+  var done = _isFollowUpDone(p.done);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = _ensureSheet('FollowUps', FOLLOWUPS_HEADERS);
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { ok: false, error: 'not_found' };
+    var idIdx = FOLLOWUPS_HEADERS.indexOf('id');
+    var ids = sh.getRange(2, idIdx + 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === id) {
+        var rowNum = i + 2;
+        var current = sh.getRange(rowNum, 1, 1, FOLLOWUPS_HEADERS.length).getValues()[0];
+        var obj = {};
+        FOLLOWUPS_HEADERS.forEach(function (h, c) { obj[h] = current[c]; });
+        obj.done = done ? 'true' : '';
+        obj.doneAt = done ? new Date().toISOString() : '';
+        obj.doneBy = done ? String(p.doneBy == null ? '' : p.doneBy).trim() : '';
+        sh.getRange(rowNum, 1, 1, FOLLOWUPS_HEADERS.length)
+          .setValues([FOLLOWUPS_HEADERS.map(function (h) { return obj[h] == null ? '' : obj[h]; })]);
+        return { ok: true, followup: obj };
+      }
+    }
+    return { ok: false, error: 'not_found' };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+// getOpenFollowUpCounts() → { ok, counts: { "<phone>": {open, overdue} } } for
+// ALL patients in ONE read (the per-card badge source — no N per-card calls).
+function _getOpenFollowUpCounts(params) {
+  var gate = _requirePatientMgmtSecret(params && params.secret);
+  if (gate) return gate;
+  var sh = _ensureSheet('FollowUps', FOLLOWUPS_HEADERS);
+  var rows = _readAll(sh, FOLLOWUPS_HEADERS);
+  var today = _todayStr();
+  var counts = {};
+  rows.forEach(function (r) {
+    if (!r || _isFollowUpDone(r.done)) return;
+    var key = _normalizePhoneForMatch(r.phone);
+    if (!key) return;
+    if (!counts[key]) counts[key] = { open: 0, overdue: 0 };
+    counts[key].open++;
+    if (_isFollowUpOverdue(r.dueDate, today, r.done)) counts[key].overdue++;
+  });
+  return { ok: true, counts: counts };
+}
+
 function _json(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
@@ -1951,6 +2104,8 @@ function doGet(e) {
     if (action === 'getData') return _json(_getData());
     if (action === 'getPatientNotes') return _json(_getPatientNotes(e.parameter));
     if (action === 'getPatientMeta') return _json(_getPatientMeta(e.parameter));
+    if (action === 'getFollowUps') return _json(_getFollowUps(e.parameter));
+    if (action === 'getOpenFollowUpCounts') return _json(_getOpenFollowUpCounts(e.parameter));
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });
@@ -1990,6 +2145,10 @@ function doPost(e) {
     if (action === 'addPatientNote') return _json(_addPatientNote(payload));
     if (action === 'getPatientMeta') return _json(_getPatientMeta(payload));
     if (action === 'setPatientMeta') return _json(_setPatientMeta(payload));
+    if (action === 'getFollowUps') return _json(_getFollowUps(payload));
+    if (action === 'addFollowUp') return _json(_addFollowUp(payload));
+    if (action === 'setFollowUpDone') return _json(_setFollowUpDone(payload));
+    if (action === 'getOpenFollowUpCounts') return _json(_getOpenFollowUpCounts(payload));
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });

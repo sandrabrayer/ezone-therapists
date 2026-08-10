@@ -61,8 +61,8 @@ test('PWA theme colors match the new background', () => {
 
 test('service-worker cache was bumped for the restyle', () => {
   const sw = fs.readFileSync(path.join(PUB, 'sw.js'), 'utf8');
-  assert.match(sw, /ezone-therapists-v13/);
-  assert.ok(!sw.includes('ezone-therapists-v6') && !sw.includes('ezone-therapists-v7') && !sw.includes('ezone-therapists-v8') && !sw.includes('ezone-therapists-v9') && !sw.includes('ezone-therapists-v10') && !sw.includes('ezone-therapists-v11') && !sw.includes('ezone-therapists-v12'), 'old cache names must be gone');
+  assert.match(sw, /ezone-therapists-v14/);
+  assert.ok(!sw.includes('ezone-therapists-v6') && !sw.includes('ezone-therapists-v7') && !sw.includes('ezone-therapists-v8') && !sw.includes('ezone-therapists-v9') && !sw.includes('ezone-therapists-v10') && !sw.includes('ezone-therapists-v11') && !sw.includes('ezone-therapists-v12') && !sw.includes('ezone-therapists-v13'), 'old cache names must be gone');
 });
 
 test('pop layer: vivid headline + hot badge vars exist and badges use them', () => {

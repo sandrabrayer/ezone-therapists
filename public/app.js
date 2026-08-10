@@ -110,9 +110,13 @@
     // a card's meta + notes load on FIRST expand and are cached for the session.
     patientMeta: {},          // key -> meta object (single editable row)
     patientNotes: {},         // key -> notes array (newest-first)
+    patientFollowUps: {},     // key -> { open:[...], done:[...] } (lazy, per patient)
     patientMgmtLoading: {},   // key -> bool (fetch in flight)
     patientMgmtError: {},     // key -> string (load error, for inline retry copy)
-    mgmtOpen: {}              // key -> bool (panel expanded; persists across re-render)
+    mgmtOpen: {},             // key -> bool (panel expanded; persists across re-render)
+    followUpCounts: {},       // normPhone -> { open, overdue } (ONE bulk fetch at load)
+    followUpCountsOk: false,
+    followUpDoneCollapsed: {} // key -> bool (per-panel "done" list collapsed)
   };
 
   // Per-patient gate decisions pending in the schedule modal (null until check).
@@ -305,6 +309,39 @@
     if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
+  // Follow-up tasks (משימות מעקב).
+  async function apiFollowUps(phone) {
+    var r = await fetch('/api/followups/' + encodeURIComponent(phone), { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiAddFollowUp(body) {
+    var r = await fetch('/api/followups', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiSetFollowUpDone(body) {
+    var r = await fetch('/api/followups/done', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiFollowUpCounts() {
+    var r = await fetch('/api/followup-counts', { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
 
   // «עצירת טיפול» — the outpatient-authored persistent stop-treatment alerts,
   // and the one-by-one mark-read. Secrets are injected server-side; the browser
@@ -424,9 +461,22 @@
   async function loadAll() {
     await loadOwn();
     // Cross-app reads are best-effort and independent; never block the app.
-    await Promise.all([loadDebtRoster(), loadPlans(), loadStopAlerts()]);
+    await Promise.all([loadDebtRoster(), loadPlans(), loadStopAlerts(), loadFollowUpCounts()]);
     recomputeAlerts();
     render();
+  }
+  // ONE bulk read of every patient's open/overdue follow-up counts — the source
+  // for the per-card «מעקב באיחור» badge. Deliberately a single call at load (the
+  // panel's own per-patient lists are lazy); on failure the badges just don't show.
+  async function loadFollowUpCounts() {
+    try {
+      var d = await apiFollowUpCounts();
+      state.followUpCounts = (d && d.counts) || {};
+      state.followUpCountsOk = true;
+    } catch (e) {
+      console.warn('[ezone-therapists] follow-up counts unavailable:', e.message);
+      state.followUpCounts = {}; state.followUpCountsOk = false;
+    }
   }
   // Load the persistent stop-treatment alerts and refresh the tab badge. On
   // failure we KEEP whatever alerts we already had (an alert never disappears on
@@ -930,6 +980,14 @@
     return chip.show ? '<span class="' + chip.cls + '">' + escapeHtml(chip.label) + '</span>' : '';
   }
 
+  // Overdue-follow-ups badge — from the ONE bulk counts fetch at list load (never
+  // a per-card call). Shown next to the status chip only when overdue > 0.
+  function followUpBadgeHtml(phone) {
+    var c = state.followUpCounts[mgmtKey(phone)];
+    var badge = PatientMgmtUi.overdueBadge(c ? c.overdue : 0);
+    return badge.show ? '<span class="' + badge.cls + '">⏰ ' + escapeHtml(badge.label) + '</span>' : '';
+  }
+
   function mgmtPanelHtml(p) {
     var key = mgmtKey(p.phone);
     var open = !!state.mgmtOpen[key];
@@ -954,7 +1012,7 @@
         ' <button type="button" class="btn btn-sm" data-mgmt-retry="' + escapeHtml(phone) + '">נסו שוב</button></div>';
     }
     var meta = state.patientMeta[key] || PatientMgmt.defaultMeta(phone);
-    return metaFormHtml(phone, meta) + notesHtml(phone);
+    return metaFormHtml(phone, meta) + followUpsHtml(phone) + notesHtml(phone);
   }
 
   // -- meta form --
@@ -1052,6 +1110,71 @@
     '</div>';
   }
 
+  // -- follow-up tasks (משימות מעקב) --
+  function followUpRowHtml(f, done) {
+    var overdue = !done && PatientMgmtUi.isOverdue(f.dueDate, today(), f.done);
+    var due = escapeHtml(PatientMgmtUi.formatDate(f.dueDate));
+    var meta = [];
+    if (done) {
+      if (f.doneBy) meta.push('סומן ע"י ' + escapeHtml(f.doneBy));
+      if (f.doneAt) meta.push(escapeHtml(PatientMgmtUi.relativeDate(f.doneAt, Date.now())));
+    } else if (f.createdBy) {
+      meta.push('נוצר ע"י ' + escapeHtml(f.createdBy));
+    }
+    return '<div class="cc-fu-row' + (overdue ? ' cc-fu-overdue' : '') + (done ? ' cc-fu-done' : '') + '">' +
+      '<label class="cc-fu-check">' +
+        '<input type="checkbox"' + (done ? ' checked' : '') +
+          ' data-followup-done="' + escapeHtml(f.id) + '" data-followup-phone="' + escapeHtml(f.phone) + '" />' +
+      '</label>' +
+      '<div class="cc-fu-main">' +
+        '<div class="cc-fu-text">' + escapeHtml(f.text) + '</div>' +
+        '<div class="cc-fu-meta">' +
+          '<span class="cc-fu-due' + (overdue ? ' cc-fu-due-overdue' : '') + '">📅 ' + due +
+            (overdue ? ' · באיחור' : '') + '</span>' +
+          (meta.length ? '<span class="cc-fu-by">' + meta.join(' · ') + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function openFollowUpsHtml(phone) {
+    var fu = state.patientFollowUps[mgmtKey(phone)] || { open: [], done: [] };
+    return fu.open.length
+      ? fu.open.map(function (f) { return followUpRowHtml(f, false); }).join('')
+      : '<div class="cc-mgmt-empty">אין משימות פתוחות</div>';
+  }
+
+  function doneFollowUpsHtml(phone) {
+    var key = mgmtKey(phone);
+    var fu = state.patientFollowUps[key] || { open: [], done: [] };
+    if (!fu.done.length) return '';
+    var collapsed = state.followUpDoneCollapsed[key] !== false;   // collapsed by default
+    return '<div class="cc-fu-done-wrap">' +
+      '<button type="button" class="cc-fu-done-toggle" data-followup-toggle-done="' + escapeHtml(phone) + '"' +
+        ' aria-expanded="' + (collapsed ? 'false' : 'true') + '">' +
+        (collapsed ? '▸' : '▾') + ' משימות שהושלמו (' + fu.done.length + ')' +
+      '</button>' +
+      (collapsed ? '' : '<div class="cc-fu-done-list">' +
+        fu.done.map(function (f) { return followUpRowHtml(f, true); }).join('') + '</div>') +
+    '</div>';
+  }
+
+  function followUpsHtml(phone) {
+    return '<div class="cc-mgmt-section cc-mgmt-followups" data-mgmt-followups="' + escapeHtml(phone) + '">' +
+      '<div class="cc-mgmt-subtitle">משימות מעקב</div>' +
+      '<div class="cc-fu-form">' +
+        '<div class="cc-fu-form-row">' +
+          '<input type="text" class="cc-fu-text-input" placeholder="משימה חדשה…" />' +
+          '<input type="date" class="cc-fu-date-input" />' +
+          '<button type="button" class="btn btn-primary btn-sm" data-followup-add="' + escapeHtml(phone) + '">הוספה</button>' +
+        '</div>' +
+        '<div class="cc-mgmt-err cc-fu-err" hidden></div>' +
+      '</div>' +
+      '<div class="cc-fu-open-list">' + openFollowUpsHtml(phone) + '</div>' +
+      doneFollowUpsHtml(phone) +
+    '</div>';
+  }
+
   // -- DOM helpers / behavior --
   function mgmtPanelNode(phone) { return $('[data-mgmt-panel="' + phone + '"]'); }
 
@@ -1091,6 +1214,7 @@
     var body = panel.querySelector('.cc-mgmt-body');
     if (body) { body.hidden = !open; body.innerHTML = open ? mgmtBodyHtml(phone) : ''; }
     updateStatusChip(phone);
+    updateFollowUpBadge(phone);
   }
 
   // Replace ONLY the meta section (keeps the notes form + list, and vice-versa).
@@ -1106,16 +1230,145 @@
     if (listEl) listEl.innerHTML = notesListHtml(phone);
   }
 
+  // -- follow-up behavior --
+  function _byDueAsc(a, b) { var x = String(a.dueDate || ''), y = String(b.dueDate || ''); return x < y ? -1 : (x > y ? 1 : 0); }
+  function _byDoneAtDesc(a, b) { var x = String(a.doneAt || ''), y = String(b.doneAt || ''); return x < y ? 1 : (x > y ? -1 : 0); }
+
+  // Recompute this patient's badge counts from the loaded lists (keeps the card
+  // «מעקב באיחור» badge consistent after load/add/done without a re-fetch).
+  function syncFollowUpCount(phone) {
+    var key = mgmtKey(phone);
+    var fu = state.patientFollowUps[key];
+    if (!fu) return;
+    var overdue = fu.open.filter(function (f) { return PatientMgmtUi.isOverdue(f.dueDate, today(), f.done); }).length;
+    state.followUpCounts[key] = { open: fu.open.length, overdue: overdue };
+  }
+
+  // Update the card header overdue badge from the counts cache (badge lives
+  // OUTSIDE the panel, like the status chip).
+  function updateFollowUpBadge(phone) {
+    var panel = mgmtPanelNode(phone);
+    var card = panel && panel.closest('.client-card');
+    var chips = card && card.querySelector('.cc-head-chips');
+    if (!chips) return;
+    var existing = chips.querySelector('.cc-followup-badge');
+    if (existing) existing.remove();
+    var c = state.followUpCounts[mgmtKey(phone)];
+    var badge = PatientMgmtUi.overdueBadge(c ? c.overdue : 0);
+    if (badge.show) chips.insertAdjacentHTML('afterbegin', '<span class="' + badge.cls + '">⏰ ' + escapeHtml(badge.label) + '</span>');
+  }
+
+  // Re-render the open list + done-wrap (keeps the add form intact), and refresh
+  // the card badge.
+  function renderFollowUps(phone) {
+    var panel = mgmtPanelNode(phone);
+    var sec = panel && panel.querySelector('[data-mgmt-followups]');
+    if (sec) {
+      var openList = sec.querySelector('.cc-fu-open-list');
+      if (openList) openList.innerHTML = openFollowUpsHtml(phone);
+      var existingDone = sec.querySelector('.cc-fu-done-wrap');
+      if (existingDone) existingDone.remove();
+      var doneHtml = doneFollowUpsHtml(phone);
+      if (doneHtml) sec.insertAdjacentHTML('beforeend', doneHtml);
+    }
+    updateFollowUpBadge(phone);
+  }
+
+  function addFollowUp(phone) {
+    var key = mgmtKey(phone);
+    var panel = mgmtPanelNode(phone);
+    if (!panel) return;
+    var text = String(fieldVal(panel, '.cc-fu-text-input')).trim();
+    var dueDate = String(fieldVal(panel, '.cc-fu-date-input')).trim();
+    var err = PatientMgmtUi.followUpError(text, dueDate);
+    if (err) { showErr(panel, '.cc-fu-err', err); return; }
+    showErr(panel, '.cc-fu-err', '');
+    var btn = panel.querySelector('[data-followup-add]');
+    if (btn) btn.disabled = true;
+
+    apiAddFollowUp({ phone: phone, createdBy: currentAuthor(), dueDate: dueDate, text: text })
+      .then(function (res) {
+        var fu = state.patientFollowUps[key] || (state.patientFollowUps[key] = { open: [], done: [] });
+        var row = (res && res.followup) || { phone: phone, id: 'tmp_' + Date.now(),
+          createdAt: new Date().toISOString(), createdBy: currentAuthor(),
+          dueDate: dueDate, text: text, done: '', doneAt: '', doneBy: '' };
+        fu.open.push(row);
+        fu.open.sort(_byDueAsc);
+        syncFollowUpCount(phone);
+        renderFollowUps(phone);
+        var p2 = mgmtPanelNode(phone);
+        if (p2) {
+          var t = p2.querySelector('.cc-fu-text-input'); if (t) t.value = '';
+          var d = p2.querySelector('.cc-fu-date-input'); if (d) d.value = '';
+          var b = p2.querySelector('[data-followup-add]'); if (b) b.disabled = false;
+        }
+        toast('המשימה נוספה');
+      })
+      .catch(function (e) {
+        var b = panel.querySelector('[data-followup-add]'); if (b) b.disabled = false;
+        showErr(panel, '.cc-fu-err', 'הוספת המשימה נכשלה — ' + ((e && e.message) || 'שגיאה'));
+        toast('הוספת המשימה נכשלה', true);
+      });
+  }
+
+  function toggleFollowUpDone(phone, id, done) {
+    var key = mgmtKey(phone);
+    var fu = state.patientFollowUps[key];
+    if (!fu) return;
+    var from = done ? fu.open : fu.done;
+    var idx = -1;
+    for (var i = 0; i < from.length; i++) { if (String(from[i].id) === String(id)) { idx = i; break; } }
+    if (idx === -1) return;
+    var prevOpen = fu.open.slice(), prevDone = fu.done.slice();
+    var row = from[idx];
+    from.splice(idx, 1);
+    row.done = done ? 'true' : '';
+    row.doneAt = done ? new Date().toISOString() : '';
+    row.doneBy = done ? currentAuthor() : '';
+    (done ? fu.done : fu.open).push(row);
+    fu.open.sort(_byDueAsc); fu.done.sort(_byDoneAtDesc);
+    syncFollowUpCount(phone);
+    renderFollowUps(phone);
+
+    apiSetFollowUpDone({ phone: phone, id: id, done: done, doneBy: currentAuthor() })
+      .then(function (res) {
+        if (res && res.followup) {   // reconcile the server's authoritative stamp
+          row.doneAt = res.followup.doneAt || row.doneAt;
+          row.doneBy = res.followup.doneBy || row.doneBy;
+          fu.done.sort(_byDoneAtDesc);
+          renderFollowUps(phone);
+        }
+      })
+      .catch(function (e) {
+        state.patientFollowUps[key] = { open: prevOpen, done: prevDone };   // revert
+        syncFollowUpCount(phone);
+        renderFollowUps(phone);
+        toast('עדכון המשימה נכשל', true);
+      });
+  }
+
+  function toggleFollowUpDoneList(phone) {
+    var key = mgmtKey(phone);
+    var collapsed = state.followUpDoneCollapsed[key] !== false;
+    state.followUpDoneCollapsed[key] = collapsed ? false : true;
+    renderFollowUps(phone);
+  }
+
   function loadPatientMgmt(phone) {
     var key = mgmtKey(phone);
     if (state.patientMgmtLoading[key]) return;
     state.patientMgmtLoading[key] = true;
     state.patientMgmtError[key] = '';
     renderMgmtPanel(phone);   // shows the spinner
-    Promise.all([apiPatientMeta(phone), apiPatientNotes(phone)])
+    Promise.all([apiPatientMeta(phone), apiPatientNotes(phone), apiFollowUps(phone)])
       .then(function (res) {
         state.patientMeta[key] = (res[0] && res[0].meta) || PatientMgmt.defaultMeta(phone);
         state.patientNotes[key] = (res[1] && Array.isArray(res[1].notes)) ? res[1].notes : [];
+        state.patientFollowUps[key] = {
+          open: (res[2] && Array.isArray(res[2].open)) ? res[2].open : [],
+          done: (res[2] && Array.isArray(res[2].done)) ? res[2].done : []
+        };
+        syncFollowUpCount(phone);   // keep the card badge consistent with the loaded list
       })
       .catch(function (err) { state.patientMgmtError[key] = (err && err.message) || 'שגיאה'; })
       .then(function () { state.patientMgmtLoading[key] = false; renderMgmtPanel(phone); });
@@ -1210,7 +1463,7 @@
       '<div class="cc-top">' +
         '<div class="client-head">' +
           '<div class="client-name">' + escapeHtml(p.name) + badges + '</div>' +
-          '<div class="cc-head-chips">' + statusChipHtml(p.phone) + debtChip(p.debtStatus, p.amountOwed) + '</div>' +
+          '<div class="cc-head-chips">' + followUpBadgeHtml(p.phone) + statusChipHtml(p.phone) + debtChip(p.debtStatus, p.amountOwed) + '</div>' +
         '</div>' +
         '<div class="client-meta">' + phoneChip + originChip + '</div>' +
       '</div>';
@@ -2755,6 +3008,12 @@
       if (msv) { saveMgmtMeta(msv.getAttribute('data-mgmt-save')); return; }
       var nad = e.target.closest('[data-note-add]');
       if (nad) { addMgmtNote(nad.getAttribute('data-note-add')); return; }
+      var fua = e.target.closest('[data-followup-add]');
+      if (fua) { addFollowUp(fua.getAttribute('data-followup-add')); return; }
+      var fud = e.target.closest('[data-followup-done]');
+      if (fud) { toggleFollowUpDone(fud.getAttribute('data-followup-phone'), fud.getAttribute('data-followup-done'), fud.checked); return; }
+      var fut = e.target.closest('[data-followup-toggle-done]');
+      if (fut) { toggleFollowUpDoneList(fut.getAttribute('data-followup-toggle-done')); return; }
 
       var ep = e.target.closest('[data-edit-patient]');
       if (ep) { openPatientModal(ep.getAttribute('data-edit-patient')); return; }

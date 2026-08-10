@@ -157,4 +157,54 @@ test('apps-script/Code.gs declares the SAME header order (inline mirror)', () =>
     'Code.gs NOTES_HEADERS must match the module (exact order, append-only)');
   assert.deepEqual(declaredArray('PATIENT_META_HEADERS'), PM.PATIENT_META_HEADERS,
     'Code.gs PATIENT_META_HEADERS must match the module (exact order, append-only)');
+  assert.deepEqual(declaredArray('FOLLOWUPS_HEADERS'), PM.FOLLOWUPS_HEADERS,
+    'Code.gs FOLLOWUPS_HEADERS must match the module (exact order, append-only)');
+});
+
+// ---- Follow-up tasks (משימות מעקב) -------------------------------------------
+test('FOLLOWUPS_HEADERS is the exact append-only contract', () => {
+  assert.deepEqual(PM.FOLLOWUPS_HEADERS,
+    ['phone', 'id', 'createdAt', 'createdBy', 'dueDate', 'text', 'done', 'doneAt', 'doneBy']);
+});
+
+test('isISODate accepts valid calendar dates, rejects malformed/impossible ones', () => {
+  ['2026-08-10', '2026-01-01', '2026-12-31', '2024-02-29'].forEach((d) =>
+    assert.equal(PM.isISODate(d), true, `${d} should be valid`));
+  ['2026-13-01', '2026-00-10', '2026-02-30', '2026-8-10', '10/08/2026', '', '2026-08-10T00:00', 'nope', null]
+    .forEach((d) => assert.equal(PM.isISODate(d), false, `${JSON.stringify(d)} should be invalid`));
+});
+
+test('validateFollowUp: canonical phone, non-empty text, valid ISO dueDate', () => {
+  const ok = PM.validateFollowUp({ phone: '0501234567', createdBy: 'יעל', dueDate: '2026-08-20', text: '  להתקשר  ' });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.value, { phone: '0501234567', text: 'להתקשר', dueDate: '2026-08-20', createdBy: 'יעל' });
+
+  assert.equal(PM.validateFollowUp({ phone: '050-1', dueDate: '2026-08-20', text: 'x' }).error, 'invalid_phone');
+  assert.equal(PM.validateFollowUp({ phone: '0501234567', dueDate: '2026-08-20', text: '   ' }).error, 'empty_text');
+  assert.equal(PM.validateFollowUp({ phone: '0501234567', dueDate: '2026-02-30', text: 'x' }).error, 'invalid_due_date');
+  assert.equal(PM.validateFollowUp({ phone: '0501234567', dueDate: '', text: 'x' }).error, 'invalid_due_date');
+});
+
+test('isFollowUpOverdue: due BEFORE today = overdue; due today = NOT overdue; done = never', () => {
+  const today = '2026-08-10';
+  assert.equal(PM.isFollowUpOverdue('2026-08-09', today, ''), true, 'yesterday → overdue');
+  assert.equal(PM.isFollowUpOverdue('2026-08-10', today, ''), false, 'today → NOT overdue (boundary)');
+  assert.equal(PM.isFollowUpOverdue('2026-08-11', today, ''), false, 'tomorrow → not overdue');
+  assert.equal(PM.isFollowUpOverdue('2026-08-09', today, 'true'), false, 'done → never overdue');
+  assert.equal(PM.isFollowUpOverdue('', today, ''), false, 'missing date → not overdue');
+});
+
+test('followUpCounts: aggregates open/overdue per phone; excludes done; boundary at today', () => {
+  const today = '2026-08-10';
+  const rows = [
+    { phone: '0501234567', dueDate: '2026-08-09', done: '' },   // overdue + open
+    { phone: '0501234567', dueDate: '2026-08-10', done: '' },   // open, NOT overdue (today)
+    { phone: '0501234567', dueDate: '2026-08-01', done: 'true' }, // done → excluded
+    { phone: '0522223333', dueDate: '2026-08-15', done: '' }    // open, not overdue
+  ];
+  const c = PM.followUpCounts(rows, today);
+  assert.deepEqual(c['0501234567'], { open: 2, overdue: 1 });
+  assert.deepEqual(c['0522223333'], { open: 1, overdue: 0 });
+  // A phone with only done tasks does not appear.
+  assert.equal(PM.followUpCounts([{ phone: '0509999999', dueDate: '2026-01-01', done: 'true' }], today)['0509999999'], undefined);
 });
