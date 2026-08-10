@@ -1,5 +1,33 @@
 # Changelog
 
+## PWA icons — recolored to the app's fuchsia-on-plum identity
+
+The home-screen / PWA icons were the E-ZONE "e" brand glyph in a neon
+`#ff2fd6` on a teal-black `#071410` — off from the running app's plum `--bg`
+(`#2c1a28`) and `--accent-vivid` fuchsia (`#e873bc`). Regenerated the full icon
+set (192, 512, and 512 maskable — every size the manifest references) so the
+icon reads as the same brand as the app.
+
+Reproducible + committed, no hand-made binaries: `scripts/recolor-icons.js`
+(the existing "outpatient recipe" — a per-pixel blend-remap that preserves the
+brand glyph's exact shape and anti-aliasing, only shifting hue) retargeted to
+`NEW_BG = #2c1a28` / `NEW_LOGO = #e873bc`. Re-run with `node scripts/recolor-icons.js`.
+The glyph is **not** redrawn — same mark as before (and as the outpatient app),
+now rose/fuchsia instead of green, matching the in-app logo text color
+(`var(--green-2)` = `#e873bc`).
+
+Icon filenames are unchanged (`icon-v2-192/512/maskable.png`), so the
+manifest / `index.html` / SW precache references need no edit; the
+service-worker cache is bumped **v12 → v13** so installed clients pull the new
+icons. `manifest` `theme_color` / `background_color` already match the current
+dark token (`#2c1a28`) — left as-is.
+
+Tests: `test/icon-rebrand.test.js` retargeted to the `#2c1a28` / `#e873bc`
+palette (dominant-background, logo-presence, exact-color, and maskable
+dark-corner pixel guards), plus a new guard that **every manifest icon (and the
+apple-touch-icon) exists on disk**. The generation script is a dev tool, not run
+in CI. Full suite 381 passing.
+
 ## style.css — de-duplicate the concatenated stylesheet
 
 `public/style.css` had accumulated **two full copies** of the base stylesheet

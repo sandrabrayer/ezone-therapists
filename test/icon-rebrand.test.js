@@ -2,16 +2,17 @@
 
 /**
  * Guards for the PWA icon rebrand — the ORIGINAL E-ZONE brand logo (the stylised
- * "e" glyph), recolored via blend-remap onto a fluorescent-fuchsia-on-dark
- * palette. The glyph is NOT redrawn, so these guards assert palette + presence,
- * not stroke geometry.
+ * "e" glyph), recolored via blend-remap onto the app's own fuchsia-on-plum
+ * palette (--accent-vivid #e873bc on --bg #2c1a28). The glyph is NOT redrawn, so
+ * these guards assert palette + presence, not stroke geometry.
  *
  *  1. Cache-version floor — public/sw.js must be at least v5, so a rebrand can
  *     never ship without busting the old cached home-screen icon.
- *  2. Palette assertions — the dominant background is #071410 and the logo ink
- *     is #ff2fd6; no stray third colour dominates.
+ *  2. Palette assertions — the dominant background is #2c1a28 and the logo ink
+ *     is #e873bc; no stray third colour dominates.
  *  3. Logo-presence guard — the coloured (fuchsia) ink covers > 5% of each icon,
  *     proving the recolored logo is actually present and not washed out.
+ *  4. Manifest wiring — every icon the manifest references exists on disk.
  *
  * Run with:  npm test   (Node >= 18, built-in test runner)
  */
@@ -24,8 +25,8 @@ const zlib = require('node:zlib');
 const PUB = path.join(__dirname, '..', 'public');
 const CACHE_FLOOR = 5;
 
-const BG = [0x07, 0x14, 0x10];    // #071410 — dark background
-const LOGO = [0xff, 0x2f, 0xd6];  // #ff2fd6 — fluorescent fuchsia logo
+const BG = [0x2c, 0x1a, 0x28];    // #2c1a28 — app --bg (plum) background
+const LOGO = [0xe8, 0x73, 0xbc];  // #e873bc — app --accent-vivid fuchsia logo
 
 // ---- minimal PNG decoder (8-bit RGB/RGBA, non-interlaced) ------------------
 
@@ -113,7 +114,7 @@ const ICONS = [
 ];
 
 for (const spec of ICONS) {
-  test(`${spec.file} uses the #071410 / #ff2fd6 brand palette with the logo present`, () => {
+  test(`${spec.file} uses the #2c1a28 / #e873bc brand palette with the logo present`, () => {
     const { N, ch, px } = decodePNG(path.join(PUB, spec.file));
     assert.equal(N, spec.size, `${spec.file}: wrong dimensions`);
 
@@ -129,13 +130,13 @@ for (const spec of ICONS) {
     // Palette: the exact background colour must dominate the opaque area.
     assert.ok(
       bg / total > 0.30,
-      `${spec.file}: #071410 background covers only ${(bg / total * 100).toFixed(1)}% — wrong palette`
+      `${spec.file}: #2c1a28 background covers only ${(bg / total * 100).toFixed(1)}% — wrong palette`
     );
 
     // Logo-presence guard: fuchsia ink must cover more than 5% of the canvas.
     assert.ok(
       logo / total > 0.05,
-      `${spec.file}: fuchsia #ff2fd6 ink covers only ${(logo / total * 100).toFixed(1)}% (need > 5%) — logo missing/washed out`
+      `${spec.file}: fuchsia #e873bc ink covers only ${(logo / total * 100).toFixed(1)}% (need > 5%) — logo missing/washed out`
     );
 
     // The exact brand colours must both appear as solid pixels somewhere.
@@ -155,3 +156,20 @@ for (const spec of ICONS) {
     }
   });
 }
+
+// ---- 4. manifest wiring: every referenced icon exists on disk ---------------
+
+test('every icon the manifest references exists on disk', () => {
+  const man = JSON.parse(fs.readFileSync(path.join(PUB, 'manifest.webmanifest'), 'utf8'));
+  assert.ok(Array.isArray(man.icons) && man.icons.length > 0, 'manifest must list icons');
+  for (const icon of man.icons) {
+    const p = path.join(PUB, icon.src);
+    assert.ok(fs.existsSync(p), `manifest icon "${icon.src}" is missing on disk`);
+    assert.ok(fs.statSync(p).size > 0, `manifest icon "${icon.src}" is empty`);
+  }
+  // The apple-touch-icon referenced by index.html must exist too.
+  const idx = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+  const m = idx.match(/rel="apple-touch-icon"\s+href="([^"]+)"/);
+  assert.ok(m, 'index.html must declare an apple-touch-icon');
+  assert.ok(fs.existsSync(path.join(PUB, m[1])), `apple-touch-icon "${m[1]}" is missing on disk`);
+});
