@@ -4,10 +4,11 @@
  * network is unavailable, so an installed app still opens offline (read-only of
  * whatever was last seen). API calls are never cached.
  */
-var CACHE = 'ezone-therapists-v14';
+var CACHE = 'ezone-therapists-v15';
 var SHELL = [
   './',
   './index.html',
+  './guide.html',
   './manifest.webmanifest',
   './icon-v2-192.png',
   './icon-v2-512.png'
