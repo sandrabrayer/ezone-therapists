@@ -1,5 +1,30 @@
 # Changelog
 
+## style.css — de-duplicate the concatenated stylesheet
+
+`public/style.css` had accumulated **two full copies** of the base stylesheet
+concatenated (two `:root` blocks), with the later single-copy blocks (spinners,
+treatment dates, the ניהול מטופל panel) appended once at the end. The first copy
+(lines 1–870) was an **older** version: 254 of its selectors were byte-identical
+to the second copy, and 16 diverged — always with the first copy holding the
+*older* value (pre-fuchsia palette, smaller fonts, no `.assign-row-assigned`).
+Because that first copy sat entirely earlier in the cascade, the second copy
+already won every conflict, so the first copy was **fully-overridden dead code**
+and defined **zero** selectors that don't also appear later.
+
+Removed the first copy (the 870 duplicated lines), keeping the second copy + all
+appended blocks — the file drops from 2170 to 1300 lines (~40% smaller). This is
+a **zero-visual-change** cleanup: a before/after full-page dashboard screenshot
+rendered in headless Chromium is **byte-identical**, and the selector analysis
+proves no computed style can change (nothing unique was lost; the removed rules
+were already overridden). Brace count stays balanced (464/464); one `:root`
+remains.
+
+Service-worker cache bumped **v11 → v12**. `test/palette.test.js` updated: the
+palette-var and vivid/hot-accent assertions now expect **one** occurrence each
+(they previously asserted two — an artifact of the duplication) and the SW-cache
+guard tracks v12.
+
 ## Patient management panel (ניהול מטופל) — readability + «ממשיך לעוד חודש» status
 
 Two refinements on the step-2 panel.
