@@ -40,6 +40,7 @@ test('typeLabel maps each enum key to its Hebrew label; unknown passes through',
 
 test('statusLabel maps each enum key; unknown passes through', () => {
   assert.equal(UI.statusLabel('active'), 'פעיל');
+  assert.equal(UI.statusLabel('continuing'), 'ממשיך לעוד חודש');
   assert.equal(UI.statusLabel('frozen'), 'מוקפא');
   assert.equal(UI.statusLabel('ended'), 'הסתיים');
   assert.equal(UI.statusLabel('weird'), 'weird');
@@ -53,16 +54,21 @@ test('statusChip: active (default) renders NO chip', () => {
   assert.equal(UI.statusChip('unknown').show, false);
 });
 
-test('statusChip: frozen and ended render distinct muted chips', () => {
+test('statusChip: continuing, frozen and ended render distinct chips', () => {
+  const cont = UI.statusChip('continuing');
   const frozen = UI.statusChip('frozen');
   const ended = UI.statusChip('ended');
+  assert.equal(cont.show, true);
+  assert.equal(cont.label, 'ממשיך לעוד חודש');
+  assert.ok(/cc-status-continuing/.test(cont.cls));
   assert.equal(frozen.show, true);
   assert.equal(frozen.label, 'מוקפא');
   assert.ok(/cc-status-frozen/.test(frozen.cls));
   assert.equal(ended.show, true);
   assert.equal(ended.label, 'הסתיים');
   assert.ok(/cc-status-ended/.test(ended.cls));
-  assert.notEqual(frozen.cls, ended.cls, 'frozen and ended must use different classes');
+  // All three must use different classes.
+  assert.equal(new Set([cont.cls, frozen.cls, ended.cls]).size, 3, 'each status must use a distinct class');
 });
 
 // ---- Relative date -----------------------------------------------------------

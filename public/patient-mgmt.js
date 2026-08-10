@@ -46,7 +46,7 @@
   // Fixed enums. UI labels (Hebrew) live in the frontend; the stored value is
   // always the canonical English key.
   var NOTE_TYPES = ['clinical', 'admin', 'family', 'other'];
-  var PATIENT_STATUSES = ['active', 'frozen', 'ended'];
+  var PATIENT_STATUSES = ['active', 'continuing', 'frozen', 'ended'];
 
   function isNoteType(t) { return NOTE_TYPES.indexOf(String(t == null ? '' : t)) !== -1; }
   function isStatus(s) { return PATIENT_STATUSES.indexOf(String(s == null ? '' : s)) !== -1; }

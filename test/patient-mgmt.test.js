@@ -88,11 +88,12 @@ test('validateMeta defaults a blank status to active', () => {
   assert.equal(r.value.status, 'active');
 });
 
-test('validateMeta accepts the status enum and rejects anything else', () => {
-  ['active', 'frozen', 'ended'].forEach((status) => {
-    assert.equal(PM.validateMeta({ phone: '0501234567', fields: { status } }).ok, true);
+test('validateMeta accepts the status enum (incl. continuing) and rejects anything else', () => {
+  ['active', 'continuing', 'frozen', 'ended'].forEach((status) => {
+    assert.equal(PM.validateMeta({ phone: '0501234567', fields: { status } }).ok, true,
+      `status ${status} should be accepted`);
   });
-  ['paused', 'ACTIVE', 'done', 'x'].forEach((status) => {
+  ['paused', 'ACTIVE', 'continue', 'done', 'x'].forEach((status) => {
     const r = PM.validateMeta({ phone: '0501234567', fields: { status } });
     assert.equal(r.ok, false, `status ${status} should be rejected`);
     assert.equal(r.error, 'invalid_status');
