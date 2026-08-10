@@ -1,0 +1,38 @@
+name: Tests
+
+# Runs the Node test suite (`npm test`, node --test) on the deployed branch and
+# on any PR targeting it, so a red test is caught BEFORE it can merge into — or
+# push to — the production branch. main is NOT deployed, so it is not gated here.
+#
+# The clasp deploy (deploy-apps-script.yml) additionally gates its deploy job on
+# a copy of this suite passing on the SAME push (needs: test), so a broken test
+# can never redeploy the live Apps Script.
+
+on:
+  push:
+    branches:
+      - claude/inspiring-tesla-jipobw
+  pull_request:
+    branches:
+      - claude/inspiring-tesla-jipobw
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test

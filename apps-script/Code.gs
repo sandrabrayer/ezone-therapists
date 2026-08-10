@@ -97,6 +97,19 @@ var ASSIGNMENTS_HEADERS = [
 var THERAPISTS_HEADERS = ['name', 'active'];
 var TREATMENT_TYPES_HEADERS = ['name', 'active', 'isGroup'];
 
+/* Per-patient management panel (ניהול מטופל). APPEND-ONLY headers — mirror of
+ * public/patient-mgmt.js NOTES_HEADERS / PATIENT_META_HEADERS. New columns go at
+ * the END only; test/patient-mgmt.test.js guards this order on both sides.
+ *   Notes       — append-only audit trail; one row per note, newest-first on read.
+ *   PatientMeta — ONE editable row per patient (keyed by canonical phone),
+ *                 last-writer-wins, stamped with updatedBy/updatedAt on every save. */
+var NOTES_HEADERS = ['phone', 'timestamp', 'author', 'type', 'text'];
+var PATIENT_META_HEADERS = [
+  'phone', 'status', 'statusReason', 'statusDate',
+  'contactName', 'contactPhone', 'referral', 'goals',
+  'updatedBy', 'updatedAt'
+];
+
 /* Seed values. A fresh sheet is seeded with the full list; an existing sheet has
  * any MISSING seed names appended (by name) so additions here reach live sheets
  * too. Retiring an entry sets active=false (the row stays), so a retired name is
@@ -359,7 +372,7 @@ function _duplicatePatient(phone, patients) {
 
 // Columns that MUST stay plain text so a leading-zero phone is never coerced to a
 // number (the bug that drops the zero). Matched by header name across all sheets.
-function _isPhoneHeader(h) { return h === 'phone' || h === 'patientPhone'; }
+function _isPhoneHeader(h) { return h === 'phone' || h === 'patientPhone' || h === 'contactPhone'; }
 
 // Match key for a phone read from a RAW grid cell: REPAIR a leading zero Sheets
 // dropped (mirror of _recoverStoredPhone), THEN normalize. _readAll already
@@ -1785,6 +1798,147 @@ function cleanupTherapistRosterNow() {
   }
 }
 
+/* ===== Per-patient management panel (ניהול מטופל) =====
+ * Notes log + editable patient meta. All four actions are gated by a shared
+ * secret PATIENT_MGMT_SECRET (Script Properties) — FAIL-CLOSED: a missing
+ * property, or a missing/wrong provided secret, is an error and NEVER an open
+ * read/write. The secret is injected server-side by the Node proxy and never
+ * reaches the browser (same pattern as the cross-app read secrets).
+ *
+ * Validation (phone canonical /^0\d{9}$/, note type enum, non-empty text,
+ * status enum, canonical-or-empty contactPhone) is an inline MIRROR of
+ * public/patient-mgmt.js — keep both in sync; test/patient-mgmt.test.js guards
+ * the pure module and the header order on both sides. */
+
+var _NOTE_TYPES = { clinical: true, admin: true, family: true, other: true };
+var _PATIENT_STATUSES = { active: true, frozen: true, ended: true };
+
+// Fail-closed secret gate. Returns null when authorized, or an error object to
+// return verbatim when not. Missing property ⇒ unconfigured (never open).
+function _requirePatientMgmtSecret(provided) {
+  var configured = PropertiesService.getScriptProperties().getProperty('PATIENT_MGMT_SECRET');
+  if (!configured) return { ok: false, error: 'patient_mgmt_secret_unconfigured' };
+  if (!provided || String(provided) !== String(configured)) return { ok: false, error: 'unauthorized' };
+  return null;
+}
+
+// Mirror of public/patient-mgmt.js validateNote (server owns the timestamp).
+function _validatePatientNote(input) {
+  input = input || {};
+  var phone = _toCanonicalPhone(input.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  if (!_NOTE_TYPES[String(input.type == null ? '' : input.type)]) return { ok: false, error: 'invalid_type' };
+  var text = String(input.text == null ? '' : input.text).trim();
+  if (!text) return { ok: false, error: 'empty_text' };
+  return { ok: true, value: { phone: phone, type: String(input.type), text: text,
+    author: String(input.author == null ? '' : input.author).trim() } };
+}
+
+// Mirror of public/patient-mgmt.js validateMeta (writer stamps updatedBy/At).
+function _validatePatientMeta(input) {
+  input = input || {};
+  var phone = _toCanonicalPhone(input.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var fields = input.fields || {};
+  var status = String(fields.status == null ? '' : fields.status).trim() || 'active';
+  if (!_PATIENT_STATUSES[status]) return { ok: false, error: 'invalid_status' };
+  var contactPhone = String(fields.contactPhone == null ? '' : fields.contactPhone).trim();
+  if (contactPhone && !_toCanonicalPhone(contactPhone)) return { ok: false, error: 'invalid_contact_phone' };
+  function s(v) { return v == null ? '' : String(v); }
+  return { ok: true, value: {
+    phone: phone, status: status,
+    statusReason: s(fields.statusReason), statusDate: s(fields.statusDate),
+    contactName: s(fields.contactName), contactPhone: contactPhone,
+    referral: s(fields.referral), goals: s(fields.goals)
+  } };
+}
+
+// getPatientNotes(phone) → { ok, notes: [...] } newest-first. Append-only sheet,
+// so we read all rows for the phone and sort by timestamp descending.
+function _getPatientNotes(params) {
+  var gate = _requirePatientMgmtSecret(params && params.secret);
+  if (gate) return gate;
+  var phone = _toCanonicalPhone(params && params.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var sh = _ensureSheet('Notes', NOTES_HEADERS);
+  var key = _normalizePhoneForMatch(phone);
+  var rows = _readAll(sh, NOTES_HEADERS).filter(function (r) {
+    return _normalizePhoneForMatch(r.phone) === key;
+  });
+  rows.sort(function (a, b) {
+    var ta = String(a.timestamp || ''), tb = String(b.timestamp || '');
+    return ta < tb ? 1 : (ta > tb ? -1 : 0);   // ISO strings sort chronologically
+  });
+  return { ok: true, notes: rows };
+}
+
+// addPatientNote(phone, author, type, text) → appends ONE row. The server sets
+// the timestamp (ISO) — a client clock is never trusted for the audit trail.
+function _addPatientNote(payload) {
+  var gate = _requirePatientMgmtSecret(payload && payload.secret);
+  if (gate) return gate;
+  var v = _validatePatientNote(payload);
+  if (!v.ok) return v;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = _ensureSheet('Notes', NOTES_HEADERS);
+    var note = {
+      phone: v.value.phone,
+      timestamp: new Date().toISOString(),
+      author: v.value.author,
+      type: v.value.type,
+      text: v.value.text
+    };
+    sh.appendRow(NOTES_HEADERS.map(function (h) { return note[h] == null ? '' : note[h]; }));
+    return { ok: true, note: note };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+// getPatientMeta(phone) → { ok, meta } — the single row, or empty defaults
+// (status:'active') when the patient has no meta row yet.
+function _getPatientMeta(params) {
+  var gate = _requirePatientMgmtSecret(params && params.secret);
+  if (gate) return gate;
+  var phone = _toCanonicalPhone(params && params.phone);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+  var sh = _ensureSheet('PatientMeta', PATIENT_META_HEADERS);
+  var key = _normalizePhoneForMatch(phone);
+  var rows = _readAll(sh, PATIENT_META_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (_normalizePhoneForMatch(rows[i].phone) === key) return { ok: true, meta: rows[i] };
+  }
+  return { ok: true, meta: {
+    phone: phone, status: 'active', statusReason: '', statusDate: '',
+    contactName: '', contactPhone: '', referral: '', goals: '',
+    updatedBy: '', updatedAt: ''
+  } };
+}
+
+// setPatientMeta(phone, fields, updatedBy) → UPSERT the single row by phone
+// (single-row write via _upsertByKey, not a full-sheet rewrite). Last-writer-wins;
+// updatedBy/updatedAt are stamped on every save. LockService guards the upsert.
+function _setPatientMeta(payload) {
+  var gate = _requirePatientMgmtSecret(payload && payload.secret);
+  if (gate) return gate;
+  var v = _validatePatientMeta(payload);
+  if (!v.ok) return v;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = _ensureSheet('PatientMeta', PATIENT_META_HEADERS);
+    var row = v.value;
+    row.updatedBy = String(payload.updatedBy == null ? '' : payload.updatedBy).trim();
+    row.updatedAt = new Date().toISOString();
+    _upsertByKey(sh, PATIENT_META_HEADERS, 'phone', row);
+    return { ok: true, meta: row };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
 function _json(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
@@ -1795,6 +1949,8 @@ function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) || 'getData';
     if (action === 'getData') return _json(_getData());
+    if (action === 'getPatientNotes') return _json(_getPatientNotes(e.parameter));
+    if (action === 'getPatientMeta') return _json(_getPatientMeta(e.parameter));
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });
@@ -1830,6 +1986,10 @@ function doPost(e) {
     }
     if (action === 'migrateTherapistNames') return _json(_migrateTherapistNames());
     if (action === 'requestExtraSession') return _json(_postRequestExtraSession(payload));
+    if (action === 'getPatientNotes') return _json(_getPatientNotes(payload));
+    if (action === 'addPatientNote') return _json(_addPatientNote(payload));
+    if (action === 'getPatientMeta') return _json(_getPatientMeta(payload));
+    if (action === 'setPatientMeta') return _json(_setPatientMeta(payload));
     return _json({ ok: false, error: 'unknown action: ' + action });
   } catch (err) {
     return _json({ ok: false, error: String(err) });

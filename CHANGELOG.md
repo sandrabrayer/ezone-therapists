@@ -1,5 +1,64 @@
 # Changelog
 
+## Patient management panel (ניהול מטופל) — backend (step 1)
+
+Backend for the per-patient management panel: an **append-only notes log**
+(יומן הערות) and an **editable patient-meta** row. No UI yet — that ships in a
+separate step-2 PR — so this change is safe to deploy on its own.
+
+**Apps Script (`apps-script/Code.gs`)** — two new sheets, created lazily via the
+existing `_ensureSheet` init with APPEND-ONLY headers:
+
+- `Notes` — `phone | timestamp | author | type | text`
+- `PatientMeta` — `phone | status | statusReason | statusDate | contactName | contactPhone | referral | goals | updatedBy | updatedAt`
+
+Four new actions (routed in both `doGet` for reads and `doPost`):
+
+- `getPatientNotes(phone)` → the patient's notes, **newest first**
+- `addPatientNote(phone, author, type, text)` → appends one row; the **server**
+  stamps the ISO `timestamp` (a client clock is never trusted). Rejects a
+  non-canonical phone, a `type` outside `clinical|admin|family|other`, or empty
+  text.
+- `getPatientMeta(phone)` → the single row, or empty defaults (`status:"active"`)
+- `setPatientMeta(phone, fields, updatedBy)` → **single-row upsert by phone**
+  (via `_upsertByKey`, not a full-sheet rewrite), **last-writer-wins** with
+  `updatedBy`/`updatedAt` stamped on every save. Guarded by `LockService`.
+
+All four are **fail-closed** on a shared secret `PATIENT_MGMT_SECRET` (Script
+Properties): a missing property, or a missing/wrong provided secret, is an error
+— never an open read/write. Phone validation is server-side (`/^0\d{9}$/`), with
+the existing leading-zero recovery applied to values read back from Sheets.
+
+**Node/Express (`server.js`)** — four proxy routes inject `PATIENT_MGMT_SECRET`
+(a Railway env var) server-side so it never reaches the browser:
+`GET /api/patient-notes/:phone`, `POST /api/patient-notes`,
+`GET /api/patient-meta/:phone`, `POST /api/patient-meta`. Each validates the
+phone (and, on meta, a non-empty `contactPhone`) **before** forwarding (defense
+in depth) and is fail-closed when the secret is unset.
+
+**Shared module** — `public/patient-mgmt.js` is the single source of truth for
+the header order and validation rules (`validateNote` / `validateMeta`, the type
+and status enums), mirrored inline in `Code.gs` (same pattern as `phone.js` /
+`treatment-guard.js`).
+
+**Tests** (`node --test`) — `test/patient-mgmt.test.js` (type-enum + empty-text
+rejection, phone accept/reject incl. separators / 9-digit / +972, leading-zero
+recovery round-trip, status enum, contact-phone rule, and a **header-order
+guard** asserting the module and the `Code.gs` mirror agree exactly),
+`test/patient-mgmt-routes.test.js` (secret injected server-side, phone validation
+before forwarding, secret never echoed), and `test/patient-mgmt-failclosed.test.js`
+(every route is a clear 500 and never calls the sibling when the secret is unset).
+
+**CI** — new `.github/workflows/tests.yml` runs the suite on pushes to and PRs
+targeting the deployed branch (`claude/inspiring-tesla-jipobw`; main is not
+deployed). The clasp deploy (`deploy-apps-script.yml`) now gates its `deploy`
+job on a `test` job (`needs: test`) so a red test can never redeploy the live
+Apps Script.
+
+**Config to set before use:** `PATIENT_MGMT_SECRET` as a Script Property on the
+therapists Apps Script AND as a Railway env var (same value). Until both are set,
+the routes fail closed (clear 500) and nothing is read or written.
+
 ## Dashboard — outpatient treatment start/end dates on the patient card
 
 Each patient card's «תוכנית טיפול» panel now shows the outpatient **treatment
