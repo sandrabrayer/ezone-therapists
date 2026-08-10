@@ -40,6 +40,7 @@
   };
   var STATUS_LABELS = {
     active: 'פעיל',
+    continuing: 'ממשיך לעוד חודש',
     frozen: 'מוקפא',
     ended: 'הסתיים'
   };
@@ -55,14 +56,16 @@
 
   /**
    * The header status chip shown next to the debt chip. `active` (the default)
-   * renders NO chip. `frozen` / `ended` render a muted chip with a DISTINCT
-   * class — deliberately not the debt-warning red and not the sky scheduling
-   * accent (see the CSS: slate for frozen, dim gray for ended).
+   * renders NO chip. `continuing` / `frozen` / `ended` render a chip with a
+   * DISTINCT class — deliberately not the debt-warning red and not the sky
+   * scheduling accent (see the CSS: emerald for continuing, slate for frozen,
+   * mauve-gray for ended).
    * @param {*} status
    * @returns {{show:boolean, label?:string, cls?:string}}
    */
   function statusChip(status) {
     var k = String(status == null ? '' : status);
+    if (k === 'continuing') return { show: true, label: STATUS_LABELS.continuing, cls: 'cc-status-chip cc-status-continuing' };
     if (k === 'frozen') return { show: true, label: STATUS_LABELS.frozen, cls: 'cc-status-chip cc-status-frozen' };
     if (k === 'ended') return { show: true, label: STATUS_LABELS.ended, cls: 'cc-status-chip cc-status-ended' };
     return { show: false };   // active / unknown → no chip

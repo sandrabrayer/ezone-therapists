@@ -2095,10 +2095,16 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 700;
   border: 1px solid transparent; white-space: nowrap;
 }
-/* Slate — cool neutral, ≥ AA on the dark card. */
-.cc-status-frozen { background: #37414f; color: #d3dcea; border-color: #55627a; }
-/* Dim gray — warmer neutral, clearly different from slate and from red/sky. */
-.cc-status-ended  { background: #3d3a41; color: #cfc9d2; border-color: #5b5560; }
+/* Emerald — a saturated POSITIVE status (ממשיך לעוד חודש). Green-leaning so it
+   is not confused with the debt chips (light red/green), the sky scheduling
+   accent, the fuchsia accents, or the slate/gray of מוקפא/הסתיים. */
+.cc-status-continuing { background: #14463c; color: #6ee7c2; border-color: #2f8f74; }
+/* Slate — cool blue-gray, saturated a touch so the status stands out (still not
+   the sky accent). */
+.cc-status-frozen { background: #33415f; color: #bcd0f2; border-color: #4f6aa0; }
+/* Mauve-gray — warmer neutral, saturated a touch; clearly distinct from slate
+   and from the red/sky/emerald. */
+.cc-status-ended  { background: #443a4a; color: #d6c4dd; border-color: #6b5a74; }
 
 .client-card .cc-mgmt {
   background: var(--panel); border-color: var(--accent-deep);
@@ -2108,23 +2114,26 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .cc-mgmt-head {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
   gap: 8px; padding: 10px 12px; cursor: pointer;
-  background: transparent; border: 0; color: var(--accent-2);
+  background: transparent; border: 0; color: var(--accent-vivid);
   font: inherit; text-align: start;
 }
 .cc-mgmt-head:hover { background: rgba(232, 115, 188, 0.08); }
-.cc-mgmt-title { font-size: 11px; letter-spacing: 0.4px; font-weight: 700; }
+/* Section titles — fuchsia accent, larger, so the headings read clearly (were
+   too pale at --accent-2/11px). Scoped to the panel; no global-token change. */
+.cc-mgmt-title { font-size: 13px; letter-spacing: 0.2px; font-weight: 600; color: var(--accent-vivid); }
 .cc-mgmt-caret { color: var(--accent-vivid); font-size: 12px; }
 .cc-mgmt-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; }
 
 .cc-mgmt-section { border-top: 1px solid var(--border); padding-top: 10px; }
 .cc-mgmt-section:first-child { border-top: 0; padding-top: 0; }
-.cc-mgmt-subtitle { font-size: 12px; font-weight: 700; color: var(--accent-2); margin-bottom: 8px; }
+.cc-mgmt-subtitle { font-size: 13px; font-weight: 600; color: var(--accent-vivid); margin-bottom: 8px; }
 
 .cc-mgmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
 @media (max-width: 640px) { .cc-mgmt-grid { grid-template-columns: 1fr; } }
 .cc-mgmt-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .cc-mgmt-field-wide { grid-column: 1 / -1; }
-.cc-mgmt-label { font-size: 11px; color: var(--muted); }
+/* Field labels — primary text color (not the muted token) so they're legible. */
+.cc-mgmt-label { font-size: 11px; color: var(--text-soft); }
 .cc-mgmt-field select,
 .cc-mgmt-field input,
 .cc-mgmt-field textarea { width: 100%; }
@@ -2155,7 +2164,7 @@ button.month-pay-btn:active { filter: brightness(0.88); }
   background: var(--panel-2); color: var(--text-soft); border: 1px solid var(--border);
 }
 /* Subtle per-type tints — muted, readable on the dark panel. */
-.cc-note-tag.type-clinical { background: rgba(45, 212, 191, 0.14); color: #8fe4d6; border-color: #2f6b62; }
-.cc-note-tag.type-admin    { background: rgba(232, 115, 188, 0.14); color: #e9a7d0; border-color: #7a3f66; }
-.cc-note-tag.type-family   { background: rgba(242, 195, 85, 0.14); color: #e7c675; border-color: #5a4818; }
+.cc-note-tag.type-clinical { background: rgba(45, 212, 191, 0.18); color: #a6efe2; border-color: #2f6b62; }
+.cc-note-tag.type-admin    { background: rgba(232, 115, 188, 0.18); color: #f2bcdd; border-color: #7a3f66; }
+.cc-note-tag.type-family   { background: rgba(242, 195, 85, 0.18); color: #f0d489; border-color: #5a4818; }
 .cc-note-tag.type-other    { background: var(--panel-2); color: var(--text-soft); border-color: var(--border); }

@@ -1,5 +1,31 @@
 # Changelog
 
+## Patient management panel (ניהול מטופל) — readability + «ממשיך לעוד חודש» status
+
+Two refinements on the step-2 panel.
+
+**Readability.** The «ניהול מטופל» panel header and the notes/meta subsection
+titles were too pale (`--accent-2`, 11–12px). They now use the fuchsia accent
+`#e873bc` at 13px/600, and the meta field labels move from the muted token to
+the primary `--text-soft` — all scoped to the patient-management panel, no
+global-token change. The note type tags are slightly brighter for AA contrast.
+
+**New status «ממשיך לעוד חודש».** A `continuing` value is added to the status
+enum across all four layers, kept 1:1: `public/patient-mgmt.js` (source of
+truth), the `apps-script/Code.gs` `setPatientMeta` mirror (accepts `continuing`,
+still rejects unknown values), `public/patient-mgmt-ui.js` (label map + chip),
+and the app.js dropdown (auto-populated from the enum). Unlike `active`,
+`continuing` **shows** a chip — a saturated **emerald** chip next to the debt
+chip, distinct from the debt red/green, the sky scheduling accent, the fuchsia
+accents, and the slate/mauve of מוקפא/הסתיים. The מוקפא (slate) and הסתיים
+(mauve-gray) chips were also made a touch more saturated so the status stands
+out, still clearly not the debt color.
+
+Service-worker cache bumped **v10 → v11**. Tests updated: enum label-map/chip 1:1
+(now four statuses), `continuing` chip class, and backend `setPatientMeta`
+acceptance of `continuing` while unknown values are still rejected. Header-order
+guards untouched (no sheet change). Full suite 380 passing.
+
 ## Patient management panel (ניהול מטופל) — UI (step 2)
 
 The frontend for the per-patient management panel, on top of the step-1 backend.

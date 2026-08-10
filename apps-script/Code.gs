@@ -1811,7 +1811,7 @@ function cleanupTherapistRosterNow() {
  * the pure module and the header order on both sides. */
 
 var _NOTE_TYPES = { clinical: true, admin: true, family: true, other: true };
-var _PATIENT_STATUSES = { active: true, frozen: true, ended: true };
+var _PATIENT_STATUSES = { active: true, continuing: true, frozen: true, ended: true };
 
 // Fail-closed secret gate. Returns null when authorized, or an error object to
 // return verbatim when not. Missing property ⇒ unconfigured (never open).
