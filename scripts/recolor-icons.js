@@ -5,8 +5,13 @@
  * verbatim from the committed source logos and recolored by a per-pixel
  * blend-remap that preserves the glyph shape and anti-aliasing EXACTLY:
  *
- *   old background #1a0d18  ->  new background #071410 (dark)
- *   old logo       #bc5586  ->  new logo       #ff2fd6 (fluorescent fuchsia)
+ *   old background #1a0d18  ->  new background #2c1a28 (the app's --bg plum)
+ *   old logo       #bc5586  ->  new logo       #e873bc (the app's --accent-vivid)
+ *
+ * The palette is the app's own fuchsia identity (matching the in-app logo text
+ * color var(--green-2) = #e873bc on the plum --bg #2c1a28), so the home-screen
+ * icon reads as the same brand as the running app — the outpatient recipe, in
+ * rose/fuchsia instead of green.
  *
  * Every source pixel is a linear blend between the old background and the old
  * logo colour (that is how the anti-aliased edges were stored). We recover that
@@ -33,8 +38,8 @@ var path = require('path');
 
 var OLD_BG = [0x1a, 0x0d, 0x18];   // #1a0d18
 var OLD_LOGO = [0xbc, 0x55, 0x86]; // #bc5586
-var NEW_BG = [0x07, 0x14, 0x10];   // #071410
-var NEW_LOGO = [0xff, 0x2f, 0xd6]; // #ff2fd6
+var NEW_BG = [0x2c, 0x1a, 0x28];   // #2c1a28 — app --bg (plum)
+var NEW_LOGO = [0xe8, 0x73, 0xbc]; // #e873bc — app --accent-vivid (fuchsia)
 
 // ---- CRC / chunk helpers ---------------------------------------------------
 
