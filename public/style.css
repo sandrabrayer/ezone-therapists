@@ -2082,3 +2082,80 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 @media (prefers-reduced-motion: reduce) {
   .spinner, .btn.is-busy::before { animation-duration: 1.8s; }
 }
+
+/* ── Patient management panel (ניהול מטופל) ──────────────────────────────────
+   A collapsible per-card panel below the plan/schedule grid, styled in the
+   fuchsia accent family (distinct from the teal plan panel and the sky schedule
+   panel). Plus the header status chip next to the debt chip — muted slate
+   (מוקפא) / dim gray (הסתיים), deliberately NOT the debt-warning red and NOT the
+   sky scheduling accent. */
+.client-card .cc-head-chips { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.cc-status-chip {
+  font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 700;
+  border: 1px solid transparent; white-space: nowrap;
+}
+/* Slate — cool neutral, ≥ AA on the dark card. */
+.cc-status-frozen { background: #37414f; color: #d3dcea; border-color: #55627a; }
+/* Dim gray — warmer neutral, clearly different from slate and from red/sky. */
+.cc-status-ended  { background: #3d3a41; color: #cfc9d2; border-color: #5b5560; }
+
+.client-card .cc-mgmt {
+  background: var(--panel); border-color: var(--accent-deep);
+  padding: 0;                 /* header/body own their padding */
+  overflow: hidden;
+}
+.cc-mgmt-head {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 12px; cursor: pointer;
+  background: transparent; border: 0; color: var(--accent-2);
+  font: inherit; text-align: start;
+}
+.cc-mgmt-head:hover { background: rgba(232, 115, 188, 0.08); }
+.cc-mgmt-title { font-size: 11px; letter-spacing: 0.4px; font-weight: 700; }
+.cc-mgmt-caret { color: var(--accent-vivid); font-size: 12px; }
+.cc-mgmt-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+
+.cc-mgmt-section { border-top: 1px solid var(--border); padding-top: 10px; }
+.cc-mgmt-section:first-child { border-top: 0; padding-top: 0; }
+.cc-mgmt-subtitle { font-size: 12px; font-weight: 700; color: var(--accent-2); margin-bottom: 8px; }
+
+.cc-mgmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+@media (max-width: 640px) { .cc-mgmt-grid { grid-template-columns: 1fr; } }
+.cc-mgmt-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cc-mgmt-field-wide { grid-column: 1 / -1; }
+.cc-mgmt-label { font-size: 11px; color: var(--muted); }
+.cc-mgmt-field select,
+.cc-mgmt-field input,
+.cc-mgmt-field textarea { width: 100%; }
+.cc-mgmt-contact-phone { direction: ltr; text-align: start; }
+
+.cc-mgmt-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.cc-mgmt-updated { font-size: 11px; color: var(--muted); }
+.cc-mgmt-err {
+  font-size: 12px; color: #ffb4b4; background: rgba(255, 118, 118, 0.10);
+  border: 1px solid #6b2a2a; border-radius: 8px; padding: 6px 10px; margin-top: 8px;
+}
+.cc-mgmt-load-error { font-size: 13px; color: var(--text-soft); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-mgmt-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+
+/* Notes log */
+.cc-note-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.cc-note-form-row { display: flex; align-items: center; gap: 8px; }
+.cc-note-form-row select { flex: 1; min-width: 0; }
+.cc-note-list { display: flex; flex-direction: column; gap: 8px; }
+.cc-note-row { border-top: 1px solid var(--border); padding-top: 8px; }
+.cc-note-row:first-child { border-top: 0; padding-top: 0; }
+.cc-note-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 3px; }
+.cc-note-author { font-size: 13px; font-weight: 700; color: var(--text); }
+.cc-note-date { font-size: 11px; color: var(--muted); margin-inline-start: auto; }
+.cc-note-text { font-size: 13px; color: var(--text-soft); white-space: pre-wrap; word-break: break-word; }
+.cc-note-tag {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600;
+  background: var(--panel-2); color: var(--text-soft); border: 1px solid var(--border);
+}
+/* Subtle per-type tints — muted, readable on the dark panel. */
+.cc-note-tag.type-clinical { background: rgba(45, 212, 191, 0.14); color: #8fe4d6; border-color: #2f6b62; }
+.cc-note-tag.type-admin    { background: rgba(232, 115, 188, 0.14); color: #e9a7d0; border-color: #7a3f66; }
+.cc-note-tag.type-family   { background: rgba(242, 195, 85, 0.14); color: #e7c675; border-color: #5a4818; }
+.cc-note-tag.type-other    { background: var(--panel-2); color: var(--text-soft); border-color: var(--border); }
