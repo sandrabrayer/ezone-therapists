@@ -122,3 +122,37 @@ test('contactPhoneError: separators / 9-digit / +972 are rejected with a Hebrew 
     assert.ok(err && /טלפון/.test(err), `${bad} should be rejected with a Hebrew error`);
   });
 });
+
+// ---- Follow-up UI helpers ----------------------------------------------------
+test('formatDate: a due date renders DD/MM/YYYY; garbage passes through trimmed', () => {
+  assert.equal(UI.formatDate('2026-08-20'), '20/08/2026');
+  assert.equal(UI.formatDate('2026-12-05'), '05/12/2026');
+  assert.equal(UI.formatDate('  nope  '), 'nope');
+  assert.equal(UI.formatDate(''), '');
+});
+
+test('overdueBadge: hidden at 0; shown with "מעקב באיחור" (count when > 1)', () => {
+  assert.equal(UI.overdueBadge(0).show, false);
+  assert.equal(UI.overdueBadge(null).show, false);
+  const one = UI.overdueBadge(1);
+  assert.equal(one.show, true);
+  assert.equal(one.label, 'מעקב באיחור');
+  assert.ok(/cc-followup-badge/.test(one.cls));
+  const many = UI.overdueBadge(3);
+  assert.equal(many.show, true);
+  assert.ok(/3/.test(many.label), 'count shown when > 1');
+});
+
+test('isOverdue (UI re-export): due today is NOT overdue; yesterday is; done never', () => {
+  const today = '2026-08-10';
+  assert.equal(UI.isOverdue('2026-08-10', today, ''), false);
+  assert.equal(UI.isOverdue('2026-08-09', today, ''), true);
+  assert.equal(UI.isOverdue('2026-08-09', today, 'true'), false);
+});
+
+test('followUpError: blocks empty text and invalid due date, Hebrew messages', () => {
+  assert.ok(/טקסט/.test(UI.followUpError('   ', '2026-08-20')));
+  assert.ok(/תאריך/.test(UI.followUpError('להתקשר', '2026-02-30')));
+  assert.ok(/תאריך/.test(UI.followUpError('להתקשר', '')));
+  assert.equal(UI.followUpError('להתקשר', '2026-08-20'), null);
+});

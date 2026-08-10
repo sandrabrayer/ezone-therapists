@@ -1298,3 +1298,43 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .cc-note-tag.type-admin    { background: rgba(232, 115, 188, 0.18); color: #f2bcdd; border-color: #7a3f66; }
 .cc-note-tag.type-family   { background: rgba(242, 195, 85, 0.18); color: #f0d489; border-color: #5a4818; }
 .cc-note-tag.type-other    { background: var(--panel-2); color: var(--text-soft); border-color: var(--border); }
+
+/* ── Follow-up tasks (משימות מעקב) ───────────────────────────────────────────
+   A third subsection in the ניהול מטופל panel + a per-card overdue badge. The
+   badge is a warm amber-red — distinct from the debt chips, the sky scheduling
+   accent, the fuchsia accents, and the status chips (emerald/slate/mauve). */
+.cc-followup-badge {
+  font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 700;
+  background: #4a2a1a; color: #ffb08a; border: 1px solid #7a4020; white-space: nowrap;
+}
+
+.cc-fu-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.cc-fu-form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-fu-form-row .cc-fu-text-input { flex: 1 1 160px; min-width: 0; }
+.cc-fu-form-row .cc-fu-date-input { flex: 0 0 auto; }
+
+.cc-fu-open-list, .cc-fu-done-list { display: flex; flex-direction: column; gap: 6px; }
+.cc-fu-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 8px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+/* Overdue: warm amber-red left rule + tint (not the debt color). */
+.cc-fu-row.cc-fu-overdue { border-inline-start: 3px solid #d9764f; background: rgba(217, 118, 79, 0.10); }
+.cc-fu-row.cc-fu-done { opacity: 0.7; }
+.cc-fu-check { display: flex; align-items: center; padding-top: 1px; }
+.cc-fu-check input { width: 16px; height: 16px; accent-color: var(--accent-vivid); cursor: pointer; }
+.cc-fu-main { flex: 1; min-width: 0; }
+.cc-fu-text { font-size: 13px; color: var(--text); word-break: break-word; }
+.cc-fu-row.cc-fu-done .cc-fu-text { text-decoration: line-through; color: var(--text-soft); }
+.cc-fu-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 3px; font-size: 11px; color: var(--muted); }
+.cc-fu-due { color: var(--text-soft); direction: rtl; }
+.cc-fu-due-overdue { color: #ffb08a; font-weight: 700; }
+
+.cc-fu-done-wrap { margin-top: 10px; }
+.cc-fu-done-toggle {
+  background: transparent; border: 0; color: var(--accent-2); cursor: pointer;
+  font: inherit; font-size: 12px; padding: 4px 0; text-align: start; width: 100%;
+}
+.cc-fu-done-toggle:hover { color: var(--accent-vivid); }
+.cc-fu-done-list { margin-top: 6px; }

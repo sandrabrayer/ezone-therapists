@@ -148,6 +148,70 @@ test('POST /api/patient-meta allows an empty contactPhone', async () => {
   assert.equal(captured.body.action, 'setPatientMeta');
 });
 
+// ---- Follow-up routes --------------------------------------------------------
+test('GET /api/followups/:phone forwards getFollowUps + secret + phone', async () => {
+  await waitForListen();
+  resetCaptured();
+  const res = await httpGet('/api/followups/0501234567');
+  assert.equal(res.status, 200);
+  assert.ok(captured.url.includes('action=getFollowUps'), `got: ${captured.url}`);
+  assert.ok(captured.url.includes(`secret=${encodeURIComponent(PATIENT_MGMT_SECRET)}`), `got: ${captured.url}`);
+  assert.ok(captured.url.includes('phone=0501234567'), `got: ${captured.url}`);
+});
+
+test('GET /api/followups/:phone rejects a non-canonical phone (400, no fetch)', async () => {
+  await waitForListen();
+  resetCaptured();
+  const res = await httpGet('/api/followups/050-1');
+  assert.equal(res.status, 400);
+  assert.equal(captured.url, null);
+});
+
+test('POST /api/followups forwards addFollowUp + secret in the body', async () => {
+  await waitForListen();
+  resetCaptured();
+  const res = await httpReq('POST', '/api/followups',
+    { phone: '0501234567', createdBy: 'יעל', dueDate: '2026-08-20', text: 'להתקשר' });
+  assert.equal(res.status, 200);
+  assert.equal(captured.body.action, 'addFollowUp');
+  assert.equal(captured.body.secret, PATIENT_MGMT_SECRET);
+  assert.equal(captured.body.dueDate, '2026-08-20');
+  assert.equal(captured.body.text, 'להתקשר');
+});
+
+test('POST /api/followups rejects a non-canonical phone (400, no fetch)', async () => {
+  await waitForListen();
+  resetCaptured();
+  const res = await httpReq('POST', '/api/followups', { phone: '501234567', dueDate: '2026-08-20', text: 'x' });
+  assert.equal(res.status, 400);
+  assert.equal(captured.url, null);
+});
+
+test('POST /api/followups/done forwards setFollowUpDone + secret; requires id', async () => {
+  await waitForListen();
+  resetCaptured();
+  const ok = await httpReq('POST', '/api/followups/done', { phone: '0501234567', id: 'fu_x', done: true, doneBy: 'יעל' });
+  assert.equal(ok.status, 200);
+  assert.equal(captured.body.action, 'setFollowUpDone');
+  assert.equal(captured.body.secret, PATIENT_MGMT_SECRET);
+  assert.equal(captured.body.id, 'fu_x');
+  // missing id → 400, no fetch
+  resetCaptured();
+  const bad = await httpReq('POST', '/api/followups/done', { phone: '0501234567', done: true });
+  assert.equal(bad.status, 400);
+  assert.equal(captured.url, null);
+});
+
+test('GET /api/followup-counts forwards getOpenFollowUpCounts + secret, no phone', async () => {
+  await waitForListen();
+  resetCaptured();
+  const res = await httpGet('/api/followup-counts');
+  assert.equal(res.status, 200);
+  assert.ok(captured.url.includes('action=getOpenFollowUpCounts'), `got: ${captured.url}`);
+  assert.ok(captured.url.includes(`secret=${encodeURIComponent(PATIENT_MGMT_SECRET)}`), `got: ${captured.url}`);
+  assert.ok(!captured.url.includes('phone='), 'counts is a bulk call — no phone param');
+});
+
 // ---- The secret never crosses to the browser ---------------------------------
 test('the patient-mgmt secret is never echoed in a response body', async () => {
   await waitForListen();

@@ -459,6 +459,45 @@ app.post('/api/patient-meta', (req, res) => {
   });
 });
 
+// --- Follow-up tasks (משימות מעקב) — same PATIENT_MGMT_SECRET, fail-closed ---
+// GET — one patient's follow-ups (open first, then done).
+app.get('/api/followups/:phone', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  if (!requireCanonicalPhone(res, req.params.phone)) return;
+  sheetsGetWithParams(res, { action: 'getFollowUps', secret: PATIENT_MGMT_SECRET, phone: req.params.phone });
+});
+
+// POST { phone, createdBy, dueDate, text } — add one task. The Apps Script sets
+// id/createdAt; here we only guarantee the phone shape before forwarding.
+app.post('/api/followups', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  const b = req.body || {};
+  if (!requireCanonicalPhone(res, b.phone)) return;
+  sheetsPostBody(res, {
+    action: 'addFollowUp', secret: PATIENT_MGMT_SECRET,
+    phone: b.phone, createdBy: b.createdBy, dueDate: b.dueDate, text: b.text
+  });
+});
+
+// POST { phone, id, done, doneBy } — mark one task done / not-done (single-row).
+app.post('/api/followups/done', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  const b = req.body || {};
+  if (!requireCanonicalPhone(res, b.phone)) return;
+  if (!b.id) return res.status(400).json({ ok: false, error: 'missing id' });
+  sheetsPostBody(res, {
+    action: 'setFollowUpDone', secret: PATIENT_MGMT_SECRET,
+    phone: b.phone, id: b.id, done: b.done, doneBy: b.doneBy
+  });
+});
+
+// GET — bulk {phone: {open, overdue}} for ALL patients in ONE call (badge source;
+// no phone param — this is the endpoint that avoids per-card fetches on load).
+app.get('/api/followup-counts', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  sheetsGetWithParams(res, { action: 'getOpenFollowUpCounts', secret: PATIENT_MGMT_SECRET });
+});
+
 app.get('/api/debug/env', (req, res) => {
   res.json({
     ok: true,
