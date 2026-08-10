@@ -33,7 +33,28 @@ permissions:
   contents: read
 
 jobs:
+  # Gate: the Node test suite must pass on THIS push before the deploy job runs.
+  # A red test can never redeploy the live Apps Script (the /exec URL its
+  # consumers depend on).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
   deploy:
+    needs: test          # deploy ONLY if the test job above passed on this push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

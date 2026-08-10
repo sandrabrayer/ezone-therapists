@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const Phone = require('./public/phone.js');   // canonical phone rule (defense in depth)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,11 @@ const TREATMENT_PLANS_SECRET = process.env.TREATMENT_PLANS_SECRET || '';
 const DASHBOARD_SHEETS_URL = process.env.DASHBOARD_SHEETS_URL || '';
 const OCCUPANCY_SECRET = process.env.OCCUPANCY_SECRET || '';
 const STOP_ALERTS_SECRET = process.env.STOP_ALERTS_SECRET || '';
+// PATIENT_MGMT_SECRET — shared secret for this app's OWN patient-management
+// actions (getPatientNotes / addPatientNote / getPatientMeta / setPatientMeta on
+// SHEETS_URL). Injected server-side, NEVER sent to the browser. Fail-closed: the
+// /api/patient-* routes return a clear 500 when this is unset.
+const PATIENT_MGMT_SECRET = process.env.PATIENT_MGMT_SECRET || '';
 // APP_PASSWORD — optional shared UI-gate password. When set, the frontend shows
 // a password screen on open and verifies it here (server-side); when empty, the
 // gate is OFF and the app opens directly. NEVER sent to the browser.
@@ -346,6 +352,113 @@ app.post('/api/stop-alerts/unread', async (req, res) => {
   }
 });
 
+// --- Patient management (notes log + editable meta) -------------------------
+// This app's OWN patient-management actions on SHEETS_URL, gated by
+// PATIENT_MGMT_SECRET. The secret is injected here and NEVER sent to the
+// browser; the frontend calls the relative /api/patient-* routes only.
+// Fail-closed: a missing SHEETS_URL or PATIENT_MGMT_SECRET is a clear 500 and
+// the sibling Apps Script is never called unauthenticated. The phone shape is
+// validated here too (defense in depth) so a badly-formed number never leaves
+// the proxy.
+function requirePatientMgmtConfig(res) {
+  if (!SHEETS_URL) {
+    res.status(500).json({ ok: false, error: 'SHEETS_URL env var is not configured on the server (patient management).' });
+    return false;
+  }
+  if (!PATIENT_MGMT_SECRET) {
+    res.status(500).json({ ok: false, error: 'PATIENT_MGMT_SECRET env var is not configured on the server.' });
+    return false;
+  }
+  return true;
+}
+
+function requireCanonicalPhone(res, phone) {
+  if (!Phone.isCanonical(String(phone == null ? '' : phone))) {
+    res.status(400).json({ ok: false, error: 'invalid phone (expected canonical 10-digit 0XXXXXXXXX)' });
+    return false;
+  }
+  return true;
+}
+
+// GET SHEETS_URL with arbitrary query params (secret injected by the caller).
+async function sheetsGetWithParams(res, params) {
+  try {
+    let url = SHEETS_URL + (SHEETS_URL.includes('?') ? '&' : '?');
+    url += Object.keys(params)
+      .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+      .join('&');
+    const r = await fetch(url, { redirect: 'follow' });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch (_) { throw new Error('Non-JSON from Apps Script: ' + text.slice(0, 200)); }
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: String(err) });
+  }
+}
+
+// POST a JSON body to SHEETS_URL (secret already injected into the body).
+async function sheetsPostBody(res, body) {
+  try {
+    const r = await fetch(SHEETS_URL, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch (_) { throw new Error('Non-JSON from Apps Script: ' + text.slice(0, 200)); }
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: String(err) });
+  }
+}
+
+// GET — the append-only notes log for one patient (newest first).
+app.get('/api/patient-notes/:phone', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  if (!requireCanonicalPhone(res, req.params.phone)) return;
+  sheetsGetWithParams(res, { action: 'getPatientNotes', secret: PATIENT_MGMT_SECRET, phone: req.params.phone });
+});
+
+// POST { phone, author, type, text } — append one note. The Apps Script sets
+// the timestamp; here we only guarantee the phone shape before forwarding.
+app.post('/api/patient-notes', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  const b = req.body || {};
+  if (!requireCanonicalPhone(res, b.phone)) return;
+  sheetsPostBody(res, {
+    action: 'addPatientNote', secret: PATIENT_MGMT_SECRET,
+    phone: b.phone, author: b.author, type: b.type, text: b.text
+  });
+});
+
+// GET — the single editable meta row for one patient (or empty defaults).
+app.get('/api/patient-meta/:phone', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  if (!requireCanonicalPhone(res, req.params.phone)) return;
+  sheetsGetWithParams(res, { action: 'getPatientMeta', secret: PATIENT_MGMT_SECRET, phone: req.params.phone });
+});
+
+// POST { phone, fields, updatedBy } — upsert the meta row. contactPhone, when
+// present and non-empty, must also be canonical (defense in depth).
+app.post('/api/patient-meta', (req, res) => {
+  if (!requirePatientMgmtConfig(res)) return;
+  const b = req.body || {};
+  if (!requireCanonicalPhone(res, b.phone)) return;
+  const cp = b.fields && b.fields.contactPhone;
+  if (cp != null && String(cp).trim() !== '' && !Phone.isCanonical(String(cp))) {
+    return res.status(400).json({ ok: false, error: 'invalid contactPhone (expected canonical 10-digit 0XXXXXXXXX or empty)' });
+  }
+  sheetsPostBody(res, {
+    action: 'setPatientMeta', secret: PATIENT_MGMT_SECRET,
+    phone: b.phone, fields: b.fields || {}, updatedBy: b.updatedBy
+  });
+});
+
 app.get('/api/debug/env', (req, res) => {
   res.json({
     ok: true,
@@ -359,6 +472,7 @@ app.get('/api/debug/env', (req, res) => {
     dashboardUrlConfigured: !!DASHBOARD_SHEETS_URL,
     occupancySecretConfigured: !!OCCUPANCY_SECRET,
     stopAlertsSecretConfigured: !!STOP_ALERTS_SECRET,
+    patientMgmtSecretConfigured: !!PATIENT_MGMT_SECRET,
     appPasswordConfigured: !!APP_PASSWORD
   });
 });
