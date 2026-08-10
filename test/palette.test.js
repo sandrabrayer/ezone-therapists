@@ -15,7 +15,7 @@ const PUB = path.join(__dirname, '..', 'public');
 const CSS = fs.readFileSync(path.join(PUB, 'style.css'), 'utf8');
 const SERVER = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-test('root vars carry the chosen palette (both :root blocks)', () => {
+test('root vars carry the chosen palette (single :root block after dedupe)', () => {
   for (const [name, hex] of [
     ['--bg', '#2c1a28'], ['--bg-elev', '#3f2b3a'], ['--panel', '#4a3644'],
     ['--card', '#564150'], ['--border', '#826478'],
@@ -24,7 +24,7 @@ test('root vars carry the chosen palette (both :root blocks)', () => {
     ['--panel-sched', '#3d5770'], ['--panel-sched-border', '#38bdf8'],
   ]) {
     const re = new RegExp(name.replace(/-/g, '\\-') + ':\\s*' + hex, 'g');
-    assert.strictEqual((CSS.match(re) || []).length, 2, `${name} must be ${hex} in both :root blocks`);
+    assert.strictEqual((CSS.match(re) || []).length, 1, `${name} must be ${hex} in the (now single) :root block`);
   }
 });
 
@@ -61,14 +61,14 @@ test('PWA theme colors match the new background', () => {
 
 test('service-worker cache was bumped for the restyle', () => {
   const sw = fs.readFileSync(path.join(PUB, 'sw.js'), 'utf8');
-  assert.match(sw, /ezone-therapists-v11/);
-  assert.ok(!sw.includes('ezone-therapists-v6') && !sw.includes('ezone-therapists-v7') && !sw.includes('ezone-therapists-v8') && !sw.includes('ezone-therapists-v9') && !sw.includes('ezone-therapists-v10'), 'old cache names must be gone');
+  assert.match(sw, /ezone-therapists-v12/);
+  assert.ok(!sw.includes('ezone-therapists-v6') && !sw.includes('ezone-therapists-v7') && !sw.includes('ezone-therapists-v8') && !sw.includes('ezone-therapists-v9') && !sw.includes('ezone-therapists-v10') && !sw.includes('ezone-therapists-v11'), 'old cache names must be gone');
 });
 
 test('pop layer: vivid headline + hot badge vars exist and badges use them', () => {
-  assert.strictEqual((CSS.match(/--accent-vivid:\s*#e873bc/g) || []).length, 2);
-  assert.strictEqual((CSS.match(/--accent-hot:\s*#e33ba3/g) || []).length, 2);
-  assert.strictEqual((CSS.match(/--green-2:\s*var\(--accent-vivid\)/g) || []).length, 2);
+  assert.strictEqual((CSS.match(/--accent-vivid:\s*#e873bc/g) || []).length, 1);
+  assert.strictEqual((CSS.match(/--accent-hot:\s*#e33ba3/g) || []).length, 1);
+  assert.strictEqual((CSS.match(/--green-2:\s*var\(--accent-vivid\)/g) || []).length, 1);
   assert.match(CSS, /\.tab-badge \{[\s\S]*?var\(--accent-hot\)/);
   assert.match(CSS, /\.assign-row-pending \.assign-name \{ color: #ffffff; \}/);
 });
