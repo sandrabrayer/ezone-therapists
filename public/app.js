@@ -27,6 +27,8 @@
   var Plan = window.Plan;
   var StopAlerts = window.StopAlerts;
   var TreatmentDates = window.TreatmentDates;
+  var PatientMgmt = window.PatientMgmt;
+  var PatientMgmtUi = window.PatientMgmtUi;
 
   // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
   // is the therapist's scheduling choice — independent of any roster house.
@@ -102,7 +104,15 @@
     mineSearch: '',
     loaded: false,
     initialLoading: false,   // true only on the very first load (cold Apps Script)
-    stopAlertsLoading: false // true while the «התראות טיפול» tab re-pulls on open
+    stopAlertsLoading: false, // true while the «התראות טיפול» tab re-pulls on open
+    // Patient-management panel (ניהול מטופל) — LAZY, per-patient, keyed by
+    // normalized phone. Nothing is fetched on page load (no N per-card calls);
+    // a card's meta + notes load on FIRST expand and are cached for the session.
+    patientMeta: {},          // key -> meta object (single editable row)
+    patientNotes: {},         // key -> notes array (newest-first)
+    patientMgmtLoading: {},   // key -> bool (fetch in flight)
+    patientMgmtError: {},     // key -> string (load error, for inline retry copy)
+    mgmtOpen: {}              // key -> bool (panel expanded; persists across re-render)
   };
 
   // Per-patient gate decisions pending in the schedule modal (null until check).
@@ -254,6 +264,42 @@
   }
   async function apiTreatmentPlans() {
     var r = await fetch('/api/treatment-plans', { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+
+  // Patient-management panel — the four step-1 proxy routes. The shared secret is
+  // injected server-side; the browser only ever calls these relative paths and
+  // never sees a secret (same as the stop-alerts routes).
+  async function apiPatientNotes(phone) {
+    var r = await fetch('/api/patient-notes/' + encodeURIComponent(phone), { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiAddPatientNote(body) {
+    var r = await fetch('/api/patient-notes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiPatientMeta(phone) {
+    var r = await fetch('/api/patient-meta/' + encodeURIComponent(phone), { cache: 'no-store' });
+    var data = {};
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiSetPatientMeta(body) {
+    var r = await fetch('/api/patient-meta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
     var data = {};
     try { data = await r.json(); } catch (_) {}
     if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
@@ -863,6 +909,298 @@
       '</div>';
   }
 
+  // ===== Patient management panel (ניהול מטופל) ============================
+  // A collapsible per-card panel with an editable meta form (status + guardian
+  // contact + referral + goals) and an append-only notes log. LAZY: a card
+  // fetches its meta + notes only on FIRST expand, then reads from the state
+  // caches (keyed by normalized phone) for the rest of the session; a successful
+  // save refetches the authoritative row. All rendering is driven from state so
+  // a full dashboard re-render restores an open panel with its cached content.
+
+  function mgmtKey(phone) { return normPhone(phone); }
+  function currentAuthor() { return state.therapist || 'עורך'; }
+
+  // Header status chip next to the debt chip. Renders ONLY from meta already in
+  // the cache (populated on first expand) — never triggers a fetch, so the list
+  // still opens with zero patient-management calls (active → no chip).
+  function statusChipHtml(phone) {
+    var meta = state.patientMeta[mgmtKey(phone)];
+    if (!meta) return '';
+    var chip = PatientMgmtUi.statusChip(meta.status);
+    return chip.show ? '<span class="' + chip.cls + '">' + escapeHtml(chip.label) + '</span>' : '';
+  }
+
+  function mgmtPanelHtml(p) {
+    var key = mgmtKey(p.phone);
+    var open = !!state.mgmtOpen[key];
+    return '<div class="cc-panel cc-mgmt" data-mgmt-panel="' + escapeHtml(p.phone) + '">' +
+      '<button type="button" class="cc-mgmt-head" data-mgmt-toggle="' + escapeHtml(p.phone) + '"' +
+        ' aria-expanded="' + (open ? 'true' : 'false') + '">' +
+        '<span class="cc-mgmt-title">ניהול מטופל</span>' +
+        '<span class="cc-mgmt-caret" aria-hidden="true">' + (open ? '▾' : '◂') + '</span>' +
+      '</button>' +
+      '<div class="cc-mgmt-body"' + (open ? '' : ' hidden') + '>' +
+        (open ? mgmtBodyHtml(p.phone) : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  function mgmtBodyHtml(phone) {
+    var key = mgmtKey(phone);
+    if (state.patientMgmtLoading[key]) return Spinner.html('טוען…');
+    if (state.patientMgmtError[key]) {
+      return '<div class="cc-mgmt-load-error">לא ניתן לטעון את פרטי הניהול — ' +
+        escapeHtml(state.patientMgmtError[key]) +
+        ' <button type="button" class="btn btn-sm" data-mgmt-retry="' + escapeHtml(phone) + '">נסו שוב</button></div>';
+    }
+    var meta = state.patientMeta[key] || PatientMgmt.defaultMeta(phone);
+    return metaFormHtml(phone, meta) + notesHtml(phone);
+  }
+
+  // -- meta form --
+  function statusOptionsHtml(sel) {
+    return PatientMgmt.PATIENT_STATUSES.map(function (s) {
+      return '<option value="' + s + '"' + (s === sel ? ' selected' : '') + '>' +
+        escapeHtml(PatientMgmtUi.statusLabel(s)) + '</option>';
+    }).join('');
+  }
+
+  function metaUpdatedLine(meta) {
+    if (!meta || (!meta.updatedBy && !meta.updatedAt)) return '';
+    var parts = [];
+    if (meta.updatedBy) parts.push('על ידי ' + escapeHtml(meta.updatedBy));
+    if (meta.updatedAt) parts.push(escapeHtml(PatientMgmtUi.relativeDate(meta.updatedAt, Date.now())));
+    if (!parts.length) return '';
+    return '<div class="cc-mgmt-updated" title="' + escapeHtml(PatientMgmtUi.absoluteDateTime(meta.updatedAt)) + '">' +
+      'עודכן לאחרונה ' + parts.join(' · ') + '</div>';
+  }
+
+  function metaFormHtml(phone, meta) {
+    var sel = PatientMgmt.PATIENT_STATUSES.indexOf(String(meta.status)) !== -1 ? String(meta.status) : 'active';
+    return '<div class="cc-mgmt-section cc-mgmt-meta" data-mgmt-meta="' + escapeHtml(phone) + '">' +
+      '<div class="cc-mgmt-grid">' +
+        '<label class="cc-mgmt-field">' +
+          '<span class="cc-mgmt-label">סטטוס</span>' +
+          '<select class="cc-mgmt-status">' + statusOptionsHtml(sel) + '</select>' +
+        '</label>' +
+        '<label class="cc-mgmt-field">' +
+          '<span class="cc-mgmt-label">סיבת סטטוס</span>' +
+          '<input type="text" class="cc-mgmt-status-reason" value="' + escapeHtml(meta.statusReason) + '" />' +
+        '</label>' +
+        '<label class="cc-mgmt-field">' +
+          '<span class="cc-mgmt-label">שם איש קשר</span>' +
+          '<input type="text" class="cc-mgmt-contact-name" value="' + escapeHtml(meta.contactName) + '" />' +
+        '</label>' +
+        '<label class="cc-mgmt-field">' +
+          '<span class="cc-mgmt-label">טלפון איש קשר</span>' +
+          '<input type="tel" inputmode="numeric" dir="ltr" class="cc-mgmt-contact-phone" value="' + escapeHtml(meta.contactPhone) + '" placeholder="0501234567" />' +
+        '</label>' +
+        '<label class="cc-mgmt-field cc-mgmt-field-wide">' +
+          '<span class="cc-mgmt-label">גורם מפנה / מסגרת</span>' +
+          '<input type="text" class="cc-mgmt-referral" value="' + escapeHtml(meta.referral) + '" />' +
+        '</label>' +
+        '<label class="cc-mgmt-field cc-mgmt-field-wide">' +
+          '<span class="cc-mgmt-label">מטרות טיפול</span>' +
+          '<textarea class="cc-mgmt-goals" rows="2">' + escapeHtml(meta.goals) + '</textarea>' +
+        '</label>' +
+      '</div>' +
+      '<div class="cc-mgmt-err cc-mgmt-meta-err" hidden></div>' +
+      '<div class="cc-mgmt-actions">' +
+        '<button type="button" class="btn btn-primary btn-sm" data-mgmt-save="' + escapeHtml(phone) + '">שמירת פרטים</button>' +
+        metaUpdatedLine(meta) +
+      '</div>' +
+    '</div>';
+  }
+
+  // -- notes log --
+  function noteTypeOptionsHtml() {
+    return PatientMgmt.NOTE_TYPES.map(function (t) {
+      return '<option value="' + t + '">' + escapeHtml(PatientMgmtUi.typeLabel(t)) + '</option>';
+    }).join('');
+  }
+
+  function noteRowHtml(n) {
+    var author = n.author ? escapeHtml(n.author) : 'לא ידוע';
+    return '<div class="cc-note-row">' +
+      '<div class="cc-note-head">' +
+        '<span class="cc-note-author">' + author + '</span>' +
+        '<span class="cc-note-tag type-' + escapeHtml(n.type) + '">' + escapeHtml(PatientMgmtUi.typeLabel(n.type)) + '</span>' +
+        '<span class="cc-note-date" title="' + escapeHtml(PatientMgmtUi.absoluteDateTime(n.timestamp)) + '">' +
+          escapeHtml(PatientMgmtUi.relativeDate(n.timestamp, Date.now())) + '</span>' +
+      '</div>' +
+      '<div class="cc-note-text">' + escapeHtml(n.text) + '</div>' +
+    '</div>';
+  }
+
+  function notesListHtml(phone) {
+    var notes = state.patientNotes[mgmtKey(phone)] || [];
+    return notes.length ? notes.map(noteRowHtml).join('') : '<div class="cc-mgmt-empty">אין הערות עדיין</div>';
+  }
+
+  function notesHtml(phone) {
+    return '<div class="cc-mgmt-section cc-mgmt-notes" data-mgmt-notes="' + escapeHtml(phone) + '">' +
+      '<div class="cc-mgmt-subtitle">יומן הערות</div>' +
+      '<div class="cc-note-form">' +
+        '<div class="cc-note-form-row">' +
+          '<select class="cc-note-type">' + noteTypeOptionsHtml() + '</select>' +
+          '<button type="button" class="btn btn-primary btn-sm" data-note-add="' + escapeHtml(phone) + '">הוספת הערה</button>' +
+        '</div>' +
+        '<textarea class="cc-note-text-input" rows="2" placeholder="הוספת הערה…"></textarea>' +
+        '<div class="cc-mgmt-err cc-note-err" hidden></div>' +
+      '</div>' +
+      '<div class="cc-note-list">' + notesListHtml(phone) + '</div>' +
+    '</div>';
+  }
+
+  // -- DOM helpers / behavior --
+  function mgmtPanelNode(phone) { return $('[data-mgmt-panel="' + phone + '"]'); }
+
+  function fieldVal(panel, cls) { var el = panel.querySelector(cls); return el ? el.value : ''; }
+  function showErr(panel, cls, msg) {
+    var el = panel && panel.querySelector(cls);
+    if (!el) return;
+    if (msg) { el.textContent = msg; el.hidden = false; } else { el.textContent = ''; el.hidden = true; }
+  }
+
+  // Refresh the header status chip (lives OUTSIDE the panel) from the cache.
+  function updateStatusChip(phone) {
+    var panel = mgmtPanelNode(phone);
+    var card = panel && panel.closest('.client-card');
+    var chips = card && card.querySelector('.cc-head-chips');
+    if (!chips) return;
+    var existing = chips.querySelector('.cc-status-chip');
+    if (existing) existing.remove();
+    var meta = state.patientMeta[mgmtKey(phone)];
+    if (!meta) return;
+    var c = PatientMgmtUi.statusChip(meta.status);
+    if (c.show) chips.insertAdjacentHTML('afterbegin', '<span class="' + c.cls + '">' + escapeHtml(c.label) + '</span>');
+  }
+
+  // Re-render ONE card's panel body + toggle from the caches (no full dashboard
+  // re-render, so open panels / edits on other cards are untouched).
+  function renderMgmtPanel(phone) {
+    var panel = mgmtPanelNode(phone);
+    if (!panel) return;
+    var open = !!state.mgmtOpen[mgmtKey(phone)];
+    var head = panel.querySelector('.cc-mgmt-head');
+    if (head) {
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var caret = head.querySelector('.cc-mgmt-caret');
+      if (caret) caret.textContent = open ? '▾' : '◂';
+    }
+    var body = panel.querySelector('.cc-mgmt-body');
+    if (body) { body.hidden = !open; body.innerHTML = open ? mgmtBodyHtml(phone) : ''; }
+    updateStatusChip(phone);
+  }
+
+  // Replace ONLY the meta section (keeps the notes form + list, and vice-versa).
+  function renderMetaSection(phone) {
+    var panel = mgmtPanelNode(phone);
+    var sec = panel && panel.querySelector('[data-mgmt-meta]');
+    if (sec) sec.outerHTML = metaFormHtml(phone, state.patientMeta[mgmtKey(phone)] || PatientMgmt.defaultMeta(phone));
+    updateStatusChip(phone);
+  }
+  function renderNotesList(phone) {
+    var panel = mgmtPanelNode(phone);
+    var listEl = panel && panel.querySelector('.cc-note-list');
+    if (listEl) listEl.innerHTML = notesListHtml(phone);
+  }
+
+  function loadPatientMgmt(phone) {
+    var key = mgmtKey(phone);
+    if (state.patientMgmtLoading[key]) return;
+    state.patientMgmtLoading[key] = true;
+    state.patientMgmtError[key] = '';
+    renderMgmtPanel(phone);   // shows the spinner
+    Promise.all([apiPatientMeta(phone), apiPatientNotes(phone)])
+      .then(function (res) {
+        state.patientMeta[key] = (res[0] && res[0].meta) || PatientMgmt.defaultMeta(phone);
+        state.patientNotes[key] = (res[1] && Array.isArray(res[1].notes)) ? res[1].notes : [];
+      })
+      .catch(function (err) { state.patientMgmtError[key] = (err && err.message) || 'שגיאה'; })
+      .then(function () { state.patientMgmtLoading[key] = false; renderMgmtPanel(phone); });
+  }
+
+  function toggleMgmtPanel(phone) {
+    var key = mgmtKey(phone);
+    state.mgmtOpen[key] = !state.mgmtOpen[key];
+    if (state.mgmtOpen[key] && !state.patientMeta[key] && !state.patientMgmtError[key]) {
+      loadPatientMgmt(phone);   // first expand → fetch (renders its own spinner)
+    } else {
+      renderMgmtPanel(phone);
+    }
+  }
+
+  function saveMgmtMeta(phone) {
+    var key = mgmtKey(phone);
+    var panel = mgmtPanelNode(phone);
+    if (!panel) return;
+    var fields = {
+      status: fieldVal(panel, '.cc-mgmt-status'),
+      statusReason: fieldVal(panel, '.cc-mgmt-status-reason'),
+      contactName: fieldVal(panel, '.cc-mgmt-contact-name'),
+      contactPhone: String(fieldVal(panel, '.cc-mgmt-contact-phone')).trim(),
+      referral: fieldVal(panel, '.cc-mgmt-referral'),
+      goals: fieldVal(panel, '.cc-mgmt-goals')
+    };
+    var phoneErr = PatientMgmtUi.contactPhoneError(fields.contactPhone);
+    if (phoneErr) { showErr(panel, '.cc-mgmt-meta-err', phoneErr); return; }
+    showErr(panel, '.cc-mgmt-meta-err', '');
+
+    var prev = state.patientMeta[key];
+    // Optimistic: reflect the saved values (+ stamp) immediately, then reconcile
+    // with the authoritative row on success or revert on failure.
+    state.patientMeta[key] = Object.assign({}, prev || PatientMgmt.defaultMeta(phone), fields,
+      { phone: phone, updatedBy: currentAuthor(), updatedAt: new Date().toISOString() });
+    renderMetaSection(phone);
+
+    apiSetPatientMeta({ phone: phone, fields: fields, updatedBy: currentAuthor() })
+      .then(function (res) {
+        if (res && res.meta) state.patientMeta[key] = res.meta;
+        renderMetaSection(phone);
+        toast('הפרטים נשמרו');
+      })
+      .catch(function (err) {
+        state.patientMeta[key] = prev;    // revert the optimistic write
+        renderMetaSection(phone);
+        showErr(mgmtPanelNode(phone), '.cc-mgmt-meta-err', 'השמירה נכשלה — ' + ((err && err.message) || 'שגיאה'));
+        toast('שמירת הפרטים נכשלה', true);
+      });
+  }
+
+  function addMgmtNote(phone) {
+    var key = mgmtKey(phone);
+    var panel = mgmtPanelNode(phone);
+    if (!panel) return;
+    var type = fieldVal(panel, '.cc-note-type');
+    var text = String(fieldVal(panel, '.cc-note-text-input')).trim();
+    if (!text) { showErr(panel, '.cc-note-err', 'לא ניתן להוסיף הערה ריקה'); return; }
+    if (PatientMgmt.NOTE_TYPES.indexOf(type) === -1) { showErr(panel, '.cc-note-err', 'סוג הערה לא תקין'); return; }
+    showErr(panel, '.cc-note-err', '');
+    var btn = panel.querySelector('[data-note-add]');
+    if (btn) btn.disabled = true;
+
+    apiAddPatientNote({ phone: phone, author: currentAuthor(), type: type, text: text })
+      .then(function (res) {
+        var note = (res && res.note) ||
+          { phone: phone, timestamp: new Date().toISOString(), author: currentAuthor(), type: type, text: text };
+        if (!Array.isArray(state.patientNotes[key])) state.patientNotes[key] = [];
+        state.patientNotes[key].unshift(note);   // append-only, newest first
+        renderNotesList(phone);
+        var p2 = mgmtPanelNode(phone);
+        if (p2) {
+          var t2 = p2.querySelector('.cc-note-text-input'); if (t2) t2.value = '';
+          var b2 = p2.querySelector('[data-note-add]'); if (b2) b2.disabled = false;
+        }
+        toast('ההערה נוספה');
+      })
+      .catch(function (err) {
+        var b2 = panel.querySelector('[data-note-add]'); if (b2) b2.disabled = false;
+        showErr(panel, '.cc-note-err', 'הוספת ההערה נכשלה — ' + ((err && err.message) || 'שגיאה'));
+        toast('הוספת ההערה נכשלה', true);
+      });
+  }
+
   function patientCard(p) {
     var badges = '';
     if (p.stillAdmitted) badges += ' <span class="chip chip-partial">עדיין מאושפז/ת' + (p.admittedHouse ? ' · ' + escapeHtml(houseLabel(p.admittedHouse)) : '') + '</span>';
@@ -872,16 +1210,18 @@
       '<div class="cc-top">' +
         '<div class="client-head">' +
           '<div class="client-name">' + escapeHtml(p.name) + badges + '</div>' +
-          debtChip(p.debtStatus, p.amountOwed) +
+          '<div class="cc-head-chips">' + statusChipHtml(p.phone) + debtChip(p.debtStatus, p.amountOwed) + '</div>' +
         '</div>' +
         '<div class="client-meta">' + phoneChip + originChip + '</div>' +
       '</div>';
     var alertHtml = '';
     var al = patientUpcomingAlert(p.phone);
     if (al) alertHtml = '<div class="alert-row">⚠️ נכנס/ה לחוב לאחר קביעת הטיפול (' + money(al.amountOwed) + ') — יש לבדוק טיפול עתידי</div>';
-    // Dashboard is VIEW-ONLY for everyone — no edit/schedule actions here.
+    // Dashboard is VIEW-ONLY for the plan/schedule; the ניהול מטופל panel below
+    // is the one editable surface (notes + meta), lazy-loaded on expand.
     return '<div class="client-card">' + top +
       '<div class="cc-body cc-body-2">' + planPanelHtml(p) + schedulePanelHtml(p) + '</div>' +
+      mgmtPanelHtml(p) +
       alertHtml + '</div>';
   }
 
@@ -2405,6 +2745,17 @@
     // Delegated patient actions — shared by the dashboard list and the שיבוץ
     // assign list (so a newly registered patient is actionable in both).
     function onPatientListClick(e) {
+      // Patient-management panel (ניהול מטופל) — dashboard cards only; the
+      // attributes never appear on the שיבוץ list so these are no-ops there.
+      var mtg = e.target.closest('[data-mgmt-toggle]');
+      if (mtg) { toggleMgmtPanel(mtg.getAttribute('data-mgmt-toggle')); return; }
+      var mrt = e.target.closest('[data-mgmt-retry]');
+      if (mrt) { loadPatientMgmt(mrt.getAttribute('data-mgmt-retry')); return; }
+      var msv = e.target.closest('[data-mgmt-save]');
+      if (msv) { saveMgmtMeta(msv.getAttribute('data-mgmt-save')); return; }
+      var nad = e.target.closest('[data-note-add]');
+      if (nad) { addMgmtNote(nad.getAttribute('data-note-add')); return; }
+
       var ep = e.target.closest('[data-edit-patient]');
       if (ep) { openPatientModal(ep.getAttribute('data-edit-patient')); return; }
       var ap = e.target.closest('[data-assignments-patient]');

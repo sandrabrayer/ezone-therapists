@@ -1,5 +1,50 @@
 # Changelog
 
+## Patient management panel (ניהול מטופל) — UI (step 2)
+
+The frontend for the per-patient management panel, on top of the step-1 backend.
+Each patient card in «מטופלים ותוכנית טיפול» gains a collapsible **«ניהול מטופל»**
+panel below the plan/schedule grid, styled in the fuchsia accent family (distinct
+from the teal plan panel and the sky schedule panel), RTL, Rubik, dark theme.
+
+**Lazy-loaded.** A card fetches its meta + notes only on the **first expand**
+(standard loading spinner), then reads from per-session in-memory caches keyed by
+normalized phone; a successful save refetches the authoritative row. The list
+still opens with **zero** patient-management calls — no N per-card fetches.
+
+**Meta form.** Status dropdown (פעיל / מוקפא / הסתיים) + reason, guardian
+contact name/phone, referral (גורם מפנה / מסגרת), and goals (מטרות טיפול).
+`contactPhone` is validated with the shared module (`/^0\d{9}$/` or empty) —
+inline RTL error, save blocked. Optimistic save via `POST /api/patient-meta`
+(`updatedBy` = the acting therapist, same source as the session-outcome flow),
+with revert + inline error on failure and a muted «עודכן לאחרונה» line.
+
+**Status chip.** A muted **מוקפא** (slate) / **הסתיים** (dim gray) chip next to
+the debt chip (active = no chip). Distinct from the debt-warning red and the sky
+scheduling accent, AA-contrast on the dark card. Rendered from cached meta only
+— it appears after the first expand, never triggering a load on its own.
+
+**Notes log.** Newest-first list (author, tinted type tag קלינית /
+אדמיניסטרטיבית / קשר עם משפחה / אחר, Hebrew relative date with the absolute
+date on hover, text) + an append-only add form (type dropdown + textarea; empty
+text blocked client-side). No edit/delete UI.
+
+**New pure modules** (framework-free, unit-tested, mirrored globals):
+`public/patient-mgmt-ui.js` — enum↔Hebrew label maps (1:1 with the canonical
+enums), the status-chip class logic, a Hebrew relative-date formatter
+(«היום» / «אתמול» / «לפני יומיים» / «לפני N ימים» / absolute DD/MM/YYYY), and
+the contactPhone UI guard (reuses `phone.js`, no duplicate regex). Wired into
+`app.js` (lazy fetch/render, optimistic save, delegated events on the stable
+`#patientsList`).
+
+**PWA.** Service-worker cache bumped **v9 → v10** so the new assets take on a
+plain refresh.
+
+**Tests** (`test/patient-mgmt-ui.test.js`, `node --test`): label maps complete +
+1:1 with the enums; status-chip mapping; relative-date cases (today / yesterday /
+N days / absolute fallback / unparseable); contactPhone guard (empty ok,
+canonical ok, separators / 9-digit / +972 rejected). Full suite: 380 passing.
+
 ## Patient management panel (ניהול מטופל) — backend (step 1)
 
 Backend for the per-patient management panel: an **append-only notes log**
