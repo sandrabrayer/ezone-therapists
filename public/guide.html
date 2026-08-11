@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#17121b">
+<title>מדריך משתמש — E-ZONE מטפלים</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #17121b;
+    --panel: #211a27;
+    --panel-2: #2a2132;
+    --border: #3a2d44;
+    --text: #f2eaf1;
+    --muted: #b5a3b3;
+    --accent: #e873bc;
+    --accent-hot: #e33ba3;
+    --info: #7fb2ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Rubik', system-ui, sans-serif; direction: rtl;
+    font-size: 16px; line-height: 1.7;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 18px 60px; }
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+  }
+  .logo { font-weight: 700; font-size: 20px; color: var(--accent-hot); }
+  .logo span { color: var(--text); font-weight: 500; }
+  a.back {
+    color: var(--accent); text-decoration: none; font-weight: 500;
+    border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px;
+  }
+  a.back:active { background: var(--panel-2); }
+  h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 22px; }
+  nav.toc {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 18px; margin-bottom: 26px;
+  }
+  nav.toc a { color: var(--accent); text-decoration: none; display: block; padding: 3px 0; }
+  h2 {
+    font-size: 19px; font-weight: 700; color: var(--accent);
+    margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    scroll-margin-top: 12px;
+  }
+  h3 { font-size: 16px; font-weight: 500; margin: 18px 0 6px; }
+  p { margin: 0 0 10px; }
+  ol, ul { margin: 0 0 12px; padding-right: 22px; }
+  li { margin-bottom: 6px; }
+  .box { border-radius: 12px; padding: 12px 16px; margin: 12px 0; }
+  .box.warn { background: rgba(227,59,163,.12); border-right: 4px solid var(--accent-hot); }
+  .box.tip  { background: rgba(127,178,255,.10); border-right: 4px solid var(--info); }
+  .box .t { font-weight: 700; margin-bottom: 4px; }
+  .kbd {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1px 8px; font-weight: 500; white-space: nowrap;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 15px; }
+  th { color: var(--accent); text-align: right; font-weight: 700; }
+  th, td { border-bottom: 1px solid var(--border); padding: 8px 6px; vertical-align: top; }
+  .muted { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="logo">E-ZONE <span>מטפלים</span></div>
+  <a class="back" href="./">חזרה לאפליקציה</a>
+</header>
+
+<h1>מדריך משתמש</h1>
+<div class="sub">רישום טיפולים · מעקב · תוכניות טיפול</div>
+
+<nav class="toc">
+  <a href="#about">1. מה זו האפליקציה ולמה חשוב לדווח</a>
+  <a href="#install">2. כניסה והתקנה בטלפון</a>
+  <a href="#tabs">3. שלוש הלשוניות</a>
+  <a href="#log">4. רישום טיפול — צעד אחר צעד</a>
+  <a href="#debt">5. חסימה בגלל חוב — ומה עושים</a>
+  <a href="#phone">6. מספרי טלפון — פורמט מחייב</a>
+  <a href="#faq">7. תקלות נפוצות</a>
+  <a href="#contacts">8. למי פונים</a>
+</nav>
+
+<h2 id="about">1. מה זו האפליקציה ולמה חשוב לדווח</h2>
+<p>אפליקציית <b>E-ZONE מטפלים</b> משמשת כל מטפל/ת לרישום כל טיפול שבוצע — למטופלי חוץ ולמטופלים באשפוז.</p>
+<p>הרישום חשוב משתי סיבות:</p>
+<ol>
+  <li><b>התשלום שלך</b> — השכר מחושב על בסיס הטיפולים שדווחו באפליקציה. טיפול שלא דווח — לא ישולם.</li>
+  <li><b>מעקב טיפולי</b> — המשרד עוקב שכל מטופל/ת אכן מקבל/ת את הטיפולים בתוכנית.</li>
+</ol>
+<div class="box warn"><div class="t">כלל זהב</div>מדווחים על כל טיפול <b>מיד בסיום</b> — לא בסוף היום ולא בסוף השבוע.</div>
+
+<h2 id="install">2. כניסה והתקנה בטלפון</h2>
+<h3>כניסה</h3>
+<ol>
+  <li>פותחים את כתובת האפליקציה שקיבלתם מהמשרד.</li>
+  <li>מזינים את קוד ה-PIN האישי.</li>
+</ol>
+<div class="box tip"><div class="t">טעינה ראשונה איטית?</div>לפעמים הכניסה הראשונה (בעיקר אחרי עדכון גרסה) לוקחת 10–30 שניות. זה תקין — ממתינים לסיום הטעינה. כניסות הבאות מהירות.</div>
+<h3>התקנה כאפליקציה בטלפון</h3>
+<ol>
+  <li>פותחים את הכתובת בדפדפן הטלפון (Chrome באנדרואיד / Safari באייפון).</li>
+  <li>באנדרואיד: תפריט <span class="kbd">⋮</span> ← <b>הוספה למסך הבית</b>. באייפון: כפתור שיתוף <span class="kbd">⬆</span> ← <b>הוסף למסך הבית</b>.</li>
+  <li>נוצר אייקון על מסך הבית — מכאן נכנסים כמו לכל אפליקציה.</li>
+</ol>
+<div class="box tip"><div class="t">האפליקציה "תקועה" על גרסה ישנה?</div>סוגרים את האפליקציה לגמרי ופותחים מחדש. אם עדיין — מרעננים את הדף (משיכה למטה) או פותחים בדפדפן ומרעננים.</div>
+
+<h2 id="tabs">3. שלוש הלשוניות</h2>
+<table>
+  <tr><th>לשונית</th><th>מה עושים בה</th></tr>
+  <tr><td><b>טיפולי חוץ</b></td><td>רישום טיפול שבוצע למטופל/ת חוץ (אמבולטורי).</td></tr>
+  <tr><td><b>מטופלים באשפוז</b></td><td>רישום טיפול שבוצע למטופל/ת השוהה באשפוז/מסגרת.</td></tr>
+  <tr><td><b>מטופלי חוץ — תוכנית טיפול</b></td><td>צפייה בתוכנית הטיפול של כל מטופל/ת חוץ: תדירות, יתרת טיפולים, סטטוס. <b>צפייה בלבד</b> — שינוי בתוכנית מתבצע רק מול ורד.</td></tr>
+</table>
+
+<h2 id="log">4. רישום טיפול — צעד אחר צעד</h2>
+<ol>
+  <li>נכנסים ללשונית המתאימה (חוץ / אשפוז).</li>
+  <li>בוחרים את המטופל/ת מהרשימה.</li>
+  <li>בוחרים את סוג המפגש (למשל: אינטייק / טיפול המשך) ואת התוצאה — <b>התקיים / לא הגיע/ה / בוטל</b>.</li>
+  <li>שומרים. הרישום נחתם אוטומטית עם שם המטפל/ת, המטופל/ת, התאריך והשעה.</li>
+  <li>ממתינים לאישור השמירה על המסך לפני שממשיכים.</li>
+</ol>
+<div class="box warn"><div class="t">חשוב</div>לא סוגרים את האפליקציה לפני שמופיע אישור שהרישום נשמר. אם הופיעה שגיאה — מנסים שוב, ואם היא חוזרת פונים לסנדרה.</div>
+
+<h2 id="debt">5. חסימה בגלל חוב — ומה עושים</h2>
+<p>מטופל/ת שמסומן/ת במערכת כבעל/ת חוב — <b>לא ניתן להמשיך לטפל בו/בה</b> ללא אישור. בעת ניסיון לרשום טיפול תופיע חסימה.</p>
+<h3>איך משחררים את החסימה</h3>
+<ol>
+  <li>בחלון החסימה בוחרים מאשר/ת: <b>רון</b> או <b>סנדרה</b> (רק לאחר שקיבלתם מהם אישור בפועל).</li>
+  <li>מוסיפים הערה קצרה — מי אישר ולמה.</li>
+  <li>שומרים. האישור נרשם אוטומטית עם שם המטופל/ת, המטפל/ת, המאשר/ת ומועד האישור.</li>
+</ol>
+<div class="box warn"><div class="t">אין לעקוף</div>אסור לטפל במטופל/ת עם חוב בלי אישור רון או סנדרה. כל אישור מתועד.</div>
+
+<h2 id="phone">6. מספרי טלפון — פורמט מחייב</h2>
+<p>המערכת מזהה מטופלים בין האפליקציות לפי מספר טלפון, ולכן הפורמט אחיד ומחייב:</p>
+<div class="box tip"><div class="t">הפורמט היחיד המותר</div><b>10 ספרות, מתחיל ב-0, בלי מקפים ובלי רווחים.</b> לדוגמה: <span class="kbd">0501234567</span><br>לא תקין: <span class="kbd">050-1234567</span> · <span class="kbd">501234567</span> · <span class="kbd">+972501234567</span></div>
+<p>אם המערכת לא מצאה התאמה למטופל/ת (או מצאה יותר מהתאמה אחת) — הרישום מסומן לבירור ידני ולא נבלע בשקט. במקרה כזה פונים למשרד לתיקון המספר.</p>
+
+<h2 id="faq">7. תקלות נפוצות</h2>
+<table>
+  <tr><th>תופעה</th><th>פתרון</th></tr>
+  <tr><td>טעינה איטית בכניסה הראשונה</td><td>ממתינים 10–30 שניות. תקין אחרי עדכון גרסה.</td></tr>
+  <tr><td>האפליקציה מציגה גרסה ישנה</td><td>סגירה מלאה ופתיחה מחדש; ריענון הדף; במקרה קיצון — הסרה והתקנה מחדש למסך הבית.</td></tr>
+  <tr><td>מטופל/ת לא מופיע/ה ברשימה</td><td>פונים למשרד — ייתכן שהמטופל/ת טרם נקלט/ה או שמספר הטלפון אינו בפורמט התקין.</td></tr>
+  <tr><td>שגיאה בשמירת טיפול</td><td>מנסים שוב. אם חוזר — צילום מסך ופנייה לסנדרה.</td></tr>
+  <tr><td>חסימת חוב שנראית שגויה</td><td>סטטוס התשלומים מנוהל אצל ורד — מבררים מולה לפני בקשת אישור.</td></tr>
+</table>
+
+<h2 id="contacts">8. למי פונים</h2>
+<ul>
+  <li><b>תשלומים, חובות ותוכניות טיפול</b> — ורד.</li>
+  <li><b>שיבוץ מטופלים ולוח זמנים</b> — ירדן.</li>
+  <li><b>אישור טיפול למרות חוב</b> — רון או סנדרה בלבד.</li>
+  <li><b>תקלות טכניות באפליקציה</b> — סנדרה.</li>
+</ul>
+<p class="muted">אין להעביר צילומי מסך הכוללים פרטי מטופלים מחוץ לצוות.</p>
+
+</div>
+</body>
+</html>

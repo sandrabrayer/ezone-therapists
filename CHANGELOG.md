@@ -1,5 +1,20 @@
 # Changelog
 
+## In-app user guide
+
+Added in-app user guide (guide.html) + header link; SW cache v15.
+
+- `public/guide.html` — static RTL Hebrew user guide (מדריך משתמש), dark theme
+  matching the app; no scripts, no data access, only the existing Google Fonts
+  stylesheet.
+- Header: a «מדריך» link in the top bar (visible on all tabs) opens the guide;
+  the guide's «חזרה לאפליקציה» link returns to the app.
+- `public/sw.js` — `./guide.html` added to the precache shell; cache bumped
+  v14 → v15 so installed clients pick up the new shell (guide works offline
+  after first visit).
+- Tests: `test/guide.test.js` guards the guide's presence/RTL, the header link,
+  and the SW precache + v15 version.
+
 ## Follow-up tasks (משימות מעקב) — phase 2
 
 Per-patient follow-up tasks with due dates + an overdue badge, inside the
