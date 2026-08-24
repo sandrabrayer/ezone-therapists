@@ -30,39 +30,16 @@
   var PatientMgmt = window.PatientMgmt;
   var PatientMgmtUi = window.PatientMgmtUi;
 
-  // Scheduling LOCATIONS are a fixed code list (id stored, Hebrew shown). This
-  // is the therapist's scheduling choice — independent of any roster house.
-  var LOCATIONS = [
-    { id: 'sde_eliaz',     he: 'שדה אליעז' },
-    { id: 'rehab',         he: 'קיסריה ריהאב' },
-    { id: 'efroni',        he: 'קיסריה עפרוני' },
-    { id: 'raanana_asher', he: 'רעננה אשר' },
-    { id: 'raanana_pardes', he: 'רעננה הפרדס' },
-    { id: 'ramot',         he: 'רמות השבים' }
-  ];
-  // Display labels for ids that may sit on OLDER bookings (pre-iteration-10 list)
-  // so historical rows still read in Hebrew even though they're off the dropdown.
-  var LEGACY_LOCATION_LABELS = { raanana: 'רעננה אשר', asher: 'אשר', arfoni: 'קיסריה עפרוני' };
-  function locationLabel(v) {
-    var s = String(v == null ? '' : v).trim();
-    for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === s) return LOCATIONS[i].he;
-    return LEGACY_LOCATION_LABELS[s] || s;
-  }
-
-  // ORIGIN HOUSES — a SEPARATE list from the scheduling LOCATIONS, used for the
-  // "still admitted — which house" field on the intake record.
-  var ORIGIN_HOUSES = [
-    { id: 'raanana',  he: 'רעננה אשר' },
-    { id: 'ramot',    he: 'רמות השבים' },
-    { id: 'efroni',   he: 'קיסריה עפרוני' },
-    { id: 'rehab',    he: 'קיסריה ריהאב' },
-    { id: 'external', he: 'חיצוני' }
-  ];
-  function houseLabel(v) {
-    var s = String(v == null ? '' : v).trim();
-    for (var i = 0; i < ORIGIN_HOUSES.length; i++) if (ORIGIN_HOUSES[i].id === s) return ORIGIN_HOUSES[i].he;
-    return s;
-  }
+  // House / location enumerations live in houses.js (single source of truth,
+  // guarded by test/houses.test.js — every list must cover the canonical
+  // 5-house ecosystem set). Scheduling LOCATIONS are the therapist's
+  // scheduling choice — independent of any roster house; ORIGIN_HOUSES is the
+  // SEPARATE "still admitted — which house" intake list.
+  var Houses = window.Houses;
+  var LOCATIONS = Houses.LOCATIONS;
+  var ORIGIN_HOUSES = Houses.ORIGIN_HOUSES;
+  var locationLabel = Houses.locationLabel;
+  var houseLabel = Houses.houseLabel;
   // Display-only relabel for legacy outpatient service terms (e.g. מרכז יום).
   function svc(v) { return Scheduling.displayServiceType(v); }
 
