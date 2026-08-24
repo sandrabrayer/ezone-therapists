@@ -122,6 +122,15 @@ match / ambiguous multi-match / a plan with zero types (*"אין תוכנית ט
 - **Locations** are a fixed list of six (id stored, Hebrew shown): שדה אליעז,
   קיסריה ריהאב, קיסריה עפרוני, רעננה אשר, רעננה הפרדס, רמות השבים. **Time** is a
   30-minute dropdown 07:00–21:00. *(Older note below predates this list.)*
+- **House enumerations live in [`public/houses.js`](public/houses.js)** — the
+  single source of truth for the scheduling `LOCATIONS` and the intake
+  `ORIGIN_HOUSES` lists, including the canonical↔internal key mapping for the
+  ecosystem's **five houses** (canonical ids `asher`, `ramot`, `arfoni`,
+  `rehab`, `pardes`). The new house **רעננה הפרדס** (opened Aug 2026,
+  תחלואה כפולה) uses canonical id **`pardes`** on the intake list and the
+  pre-existing scheduling-location id `raanana_pardes` (already stored on live
+  bookings — never rename stored ids). `test/houses.test.js` guards that every
+  enumeration covers all five canonical houses.
 - **(legacy)** earlier locations were: רמות השבים (`ramot`),
   רעננה (`raanana`), אשר (`asher`), קיסריה ערפוני (`arfoni`), קיסריה ריהאב
   (`rehab`). Location is the therapist's scheduling choice, independent of the

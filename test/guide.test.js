@@ -34,11 +34,11 @@ test('the app header links to the guide', () => {
   );
 });
 
-test('service worker precaches the guide under cache v15', () => {
+test('service worker precaches the guide under cache v15 or later', () => {
   const sw = fs.readFileSync(path.join(PUB, 'sw.js'), 'utf8');
   const m = sw.match(/ezone-therapists-v(\d+)/);
   assert.ok(m, 'sw.js must define a versioned cache name');
-  assert.equal(m[1], '15', 'cache version must be v15 so clients refetch the shell with the guide link');
+  assert.ok(Number(m[1]) >= 15, 'cache version must be >= v15 so clients refetch the shell with the guide link');
   const shell = sw.match(/var SHELL = \[[^\]]*\]/);
   assert.ok(shell, 'sw.js must define the SHELL precache list');
   assert.ok(shell[0].includes("'./guide.html'"), 'SHELL must precache ./guide.html');

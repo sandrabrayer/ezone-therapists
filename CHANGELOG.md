@@ -1,5 +1,31 @@
 # Changelog
 
+## New house: רעננה הפרדס (canonical id `pardes`)
+
+The fifth E-ZONE house (רעננה הפרדס, תחלואה כפולה) is now selectable everywhere
+this app enumerates houses. SW cache v16.
+
+- **`public/houses.js` (new)** — house/location enumerations extracted from
+  `app.js` into a single testable UMD module: scheduling `LOCATIONS` (already
+  contained רעננה הפרדס as `raanana_pardes` since iteration 10 — unchanged, the
+  id is stored on live bookings), intake `ORIGIN_HOUSES` (**now includes
+  `pardes` / רעננה הפרדס**, placed before the non-house `external`), the legacy
+  location relabels, and both label helpers. The module documents the
+  canonical↔internal key mapping for all five houses (`asher`, `ramot`,
+  `arfoni`, `rehab`, `pardes`).
+- `public/app.js` — consumes `window.Houses` instead of inline lists; behavior
+  otherwise unchanged. Unknown stored ids still render verbatim (honest
+  fallback, never an error), so pre-existing rows are unaffected.
+- `public/index.html` — loads `houses.js` before `app.js`;
+  `public/sw.js` cache bumped v15 → v16 so installed clients refetch the shell.
+- **No Apps Script change** — the Sheet is row-keyed (no per-house tabs) and
+  stores `location` / `admittedHouse` as pass-through values, so no backend
+  redeploy is needed.
+- Tests: `test/houses.test.js` guards that every enumeration covers the
+  canonical 5-house list, that stored ids stay frozen, the honest unknown-id
+  fallback, and the index.html/app.js wiring; `test/guide.test.js`'s SW pin
+  relaxed to a ≥ v15 floor.
+
 ## In-app user guide
 
 Added in-app user guide (guide.html) + header link; SW cache v15.
