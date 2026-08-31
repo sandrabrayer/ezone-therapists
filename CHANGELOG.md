@@ -1,5 +1,13 @@
 # Changelog
 
+## Renewal alerts (חידוש חבילה) — 7 days before package end
+
+See [`CHANGELOG-renewal-alerts.md`](CHANGELOG-renewal-alerts.md): the dashboard
+card gets a third date line (חידוש חבילה) and the התראות טיפול tab a
+«חידוש חבילה — השבוע הקרוב» section + summed badge — same 7-day rule as the
+outpatient due_soon, date only, no payment state. SW cache v18 (v17 was taken
+by the staffing roster sync below).
+
 ## Staffing roster sync — enable writes (PR B)
 
 See [`CHANGELOG-staffing-roster-sync.md`](CHANGELOG-staffing-roster-sync.md):

@@ -129,6 +129,14 @@
            and cancelled (dimmed, no action) rows. -->
       <section id="view-stopAlerts" class="view">
         <div id="stopAlertsNotice" class="billing-empty" hidden></div>
+        <!-- Package renewals (חידוש חבילה): outpatients whose package end
+             (renewalDate from getTreatmentPlans) is ≤7 days out or overdue —
+             the same 7-day rule as the outpatient app's due_soon. Date only,
+             no payment state; kept separate from the stop alerts below. -->
+        <div class="panel renewals-warn" id="renewalAlertsPanel">
+          <div class="renewals-section-title">חידוש חבילה — השבוע הקרוב</div>
+          <div id="renewalAlertsList" class="billing-list"></div>
+        </div>
         <div class="panel">
           <div class="panel-title">התראות טיפול</div>
           <div id="stopAlertsUnread" class="billing-list"></div>
@@ -330,6 +338,7 @@
   <script src="roster.js?v=__BUILD__"></script>
   <script src="plan.js?v=__BUILD__"></script>
   <script src="treatmentdates.js?v=__BUILD__"></script>
+  <script src="renewal.js?v=__BUILD__"></script>
   <script src="patient-mgmt.js?v=__BUILD__"></script>
   <script src="patient-mgmt-ui.js?v=__BUILD__"></script>
   <script src="quota.js?v=__BUILD__"></script>
