@@ -41,6 +41,12 @@
  *                                Client so it leaves the roster union. FAIL-CLOSED:
  *                                until set (and the outpatient receiver deployed),
  *                                deleting a patient changes nothing locally.
+ *       STAFFING_SHEETS_URL    = the ezone-staffing /exec URL — the therapist
+ *                                roster feed (source of truth is moving there).
+ *       STAFFING_THERAPISTS_SECRET = the shared getTherapistsForTherapists secret
+ *                                (= staffing's THERAPISTS_READ_SECRET). Until both
+ *                                are set, the roster-sync preview reports
+ *                                'unconfigured' (fail-closed, no writes).
  *  4. Deploy → New deployment → Web app (Execute as: Me; Access: Anyone w/ link).
  *  5. Copy the /exec URL and set it as SHEETS_URL in the Node server env.
  */
@@ -120,7 +126,7 @@ var FOLLOWUPS_HEADERS = [
  * any MISSING seed names appended (by name) so additions here reach live sheets
  * too. Retiring an entry sets active=false (the row stays), so a retired name is
  * still "present" and never re-added — only a hard row delete would resurrect a
- * seed name. THERAPISTS_SEED is the FINAL 19-name FULL-name roster — the old SHORT
+ * seed name. THERAPISTS_SEED is the FINAL 29-name FULL-name roster — the old SHORT
  * names (עידו, דליה, חנן, מעיין, איתן, מרים, תמר, שחר, יסמין) were removed so a
  * hard delete stays deleted. Mirror of public/therapist-migration.js
  * FINAL_THERAPISTS — keep both in sync. */
@@ -1804,6 +1810,223 @@ function cleanupTherapistRosterNow() {
   }
 }
 
+/* ===== Staffing roster sync — PREVIEW ONLY (PR A) =====
+ * The Therapists roster's source of truth is MOVING to the ezone-staffing app
+ * (workers with role מטפל/ת). This section ships the read-only half: a live
+ * fetch of the staffing feed + a pure sync PLAN, exposed as the
+ * `previewStaffingRosterSync` action and the editor function
+ * `previewStaffingRosterSyncNow`. NOTHING here writes to any sheet — the write
+ * path (replacing the THERAPISTS_SEED seeding in _getData) ships separately
+ * after the plan has been reviewed against live data.
+ *
+ * Script Properties (same pattern as OUTPATIENT_SHEETS_URL/DEBT_STATUS_SECRET):
+ *   STAFFING_SHEETS_URL         the ezone-staffing Apps Script /exec URL
+ *   STAFFING_THERAPISTS_SECRET  shared secret for getTherapistsForTherapists
+ */
+
+// One live fetch of the STAFFING therapist roster, cached per execution (copy
+// of the _liveDebtRoster shape: Script Properties + muteHttpExceptions +
+// FAIL-CLOSED). Returns { status:'ok', therapists:[{name, active}, …] } or
+// { status:'unconfigured' } / { status:'unavailable' }. The shape is validated
+// strictly — anything but an array of {name:string, active:boolean} entries is
+// 'unavailable', never a half-parsed roster.
+var _staffingRosterCache = null;
+function _staffingRoster() {
+  if (_staffingRosterCache) return _staffingRosterCache;
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('STAFFING_SHEETS_URL');
+  var secret = props.getProperty('STAFFING_THERAPISTS_SECRET');
+  if (!url) { _staffingRosterCache = { status: 'unconfigured' }; return _staffingRosterCache; }
+  try {
+    var full = url + (url.indexOf('?') > -1 ? '&' : '?') + 'action=getTherapistsForTherapists' +
+      (secret ? '&secret=' + encodeURIComponent(secret) : '');
+    var resp = UrlFetchApp.fetch(full, { muteHttpExceptions: true, followRedirects: true });
+    var code = resp.getResponseCode();
+    if (code < 200 || code >= 300) { _staffingRosterCache = { status: 'unavailable' }; return _staffingRosterCache; }
+    var data = JSON.parse(resp.getContentText());
+    if (!data || data.ok === false || !Array.isArray(data.therapists)) {
+      _staffingRosterCache = { status: 'unavailable' }; return _staffingRosterCache;
+    }
+    for (var i = 0; i < data.therapists.length; i++) {
+      var t = data.therapists[i];
+      if (!t || typeof t.name !== 'string' || typeof t.active !== 'boolean') {
+        _staffingRosterCache = { status: 'unavailable' }; return _staffingRosterCache;
+      }
+    }
+    _staffingRosterCache = { status: 'ok', therapists: data.therapists };
+    return _staffingRosterCache;
+  } catch (e) {
+    _staffingRosterCache = { status: 'unavailable' };
+    return _staffingRosterCache;
+  }
+}
+
+/* === BEGIN roster-sync core — MIRROR: public/roster-sync.js ⇄ apps-script/Code.gs; keep BYTE-IDENTICAL (guarded by test/roster-sync.test.js) === */
+
+function _rosterSyncTrim(name) { return String(name == null ? '' : name).trim(); }
+
+// Normalization used ONLY to surface nearMatches — NEVER to match or merge.
+// Gershayim (״) → ASCII quote ("), trim, collapse whitespace runs.
+function _rosterSyncNormalize(name) {
+  return _rosterSyncTrim(name).replace(/״/g, '"').replace(/\s+/g, ' ');
+}
+
+// Tolerant active-flag reader: the sheet stores 'true'/'false' strings, the
+// staffing feed sends booleans. Same semantics as public/scheduling.js
+// isActive — only an explicit negative retires; blank means active.
+function _rosterSyncIsActive(v) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v === undefined || v === null || v === '') return true;
+  var s = String(v).trim().toLowerCase();
+  return !(s === 'false' || s === '0' || s === 'no' || s === 'inactive' || s === 'לא');
+}
+
+function _rosterSyncFirstToken(name) {
+  return _rosterSyncTrim(name).split(/\s+/)[0] || '';
+}
+
+// Why a nearMatch pair differs: 'whitespace' (edge or internal spacing only),
+// 'gershayim' (״ vs " only), or 'gershayim+whitespace' (both needed).
+function _rosterSyncNearReason(a, b) {
+  var ta = _rosterSyncTrim(a), tb = _rosterSyncTrim(b);
+  if (ta === tb) return 'whitespace';
+  if (ta.replace(/״/g, '"') === tb.replace(/״/g, '"')) return 'gershayim';
+  if (ta.replace(/\s+/g, ' ') === tb.replace(/\s+/g, ' ')) return 'whitespace';
+  return 'gershayim+whitespace';
+}
+
+// De-dupe + index one side's rows: [{raw, key, active}], first occurrence wins
+// (same rule as Scheduling.activeNames). key = trim(name); raw is kept verbatim
+// so a whitespace-only difference is still visible in nearMatches.
+function _rosterSyncIndex(rows) {
+  var list = [], seen = {};
+  (Array.isArray(rows) ? rows : []).forEach(function (r) {
+    var raw = (r && r.name != null) ? String(r.name) : '';
+    var key = _rosterSyncTrim(raw);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    list.push({ raw: raw, key: key, active: _rosterSyncIsActive(r.active) });
+  });
+  return list;
+}
+
+/**
+ * Plan the staffing→Therapists roster sync. Pure — no I/O.
+ * @param {Array} sheetRows current Therapists sheet rows [{name, active}]
+ * @param {Array} feedRows  staffing feed rows [{name, active}]
+ * @returns {{add:string[], deactivate:string[], reactivate:string[],
+ *            unchanged:number, nearMatches:Array, possibleRenames:Array,
+ *            unknownInSheet:string[]}}
+ */
+function planRosterSync(sheetRows, feedRows) {
+  var plan = { add: [], deactivate: [], reactivate: [], unchanged: 0,
+               nearMatches: [], possibleRenames: [], unknownInSheet: [] };
+  var sheet = _rosterSyncIndex(sheetRows);
+  var feed = _rosterSyncIndex(feedRows);
+  var sheetByKey = {}, feedByKey = {};
+  sheet.forEach(function (s) { sheetByKey[s.key] = s; });
+  feed.forEach(function (f) { feedByKey[f.key] = f; });
+
+  sheet.forEach(function (s) {
+    var f = feedByKey[s.key];
+    if (!f) {
+      // Absent from the feed: report it, and (if currently active) deactivate.
+      plan.unknownInSheet.push(s.key);
+      if (s.active) plan.deactivate.push(s.key);
+      return;
+    }
+    if (s.raw !== f.raw) {
+      // Matched by trimmed key but not byte-equal raw (edge whitespace).
+      plan.nearMatches.push({ sheet: s.raw, feed: f.raw, reason: _rosterSyncNearReason(s.raw, f.raw) });
+    }
+    if (s.active && !f.active) plan.deactivate.push(s.key);
+    else if (!s.active && f.active) plan.reactivate.push(s.key);
+    else plan.unchanged++;
+  });
+  feed.forEach(function (f) {
+    if (!sheetByKey[f.key]) plan.add.push(f.key);
+  });
+
+  // nearMatches across the UNMATCHED names: same after normalization, not
+  // byte-equal. These pairs are ALSO left in add/deactivate on purpose — the
+  // human fixes the spelling at the source; nothing is auto-merged.
+  var sheetOnly = sheet.filter(function (s) { return !feedByKey[s.key]; });
+  var feedOnly = feed.filter(function (f) { return !sheetByKey[f.key]; });
+  var nearPair = {};
+  sheetOnly.forEach(function (s) {
+    feedOnly.forEach(function (f) {
+      if (_rosterSyncNormalize(s.key) === _rosterSyncNormalize(f.key)) {
+        plan.nearMatches.push({ sheet: s.raw, feed: f.raw, reason: _rosterSyncNearReason(s.raw, f.raw) });
+        nearPair[s.key + '\n' + f.key] = true;
+      }
+    });
+  });
+
+  // possibleRenames heuristic: a first token owned by EXACTLY one sheet-only
+  // name and EXACTLY one feed-only name (and not already a nearMatch pair)
+  // looks like a rename (שירן → שירן כהן). Report-only — never applied.
+  var byToken = {};
+  sheetOnly.forEach(function (s) {
+    var t = _rosterSyncFirstToken(s.key);
+    (byToken[t] = byToken[t] || { s: [], f: [] }).s.push(s.key);
+  });
+  feedOnly.forEach(function (f) {
+    var t = _rosterSyncFirstToken(f.key);
+    (byToken[t] = byToken[t] || { s: [], f: [] }).f.push(f.key);
+  });
+  Object.keys(byToken).forEach(function (t) {
+    var g = byToken[t];
+    if (g.s.length === 1 && g.f.length === 1 && !nearPair[g.s[0] + '\n' + g.f[0]]) {
+      plan.possibleRenames.push({ from: g.s[0], to: g.f[0] });
+    }
+  });
+  return plan;
+}
+
+/**
+ * Turn a plan into the Therapists-sheet row writes: [{name, active}] where
+ * active is the sheet's 'true'/'false' string convention (upsert by name;
+ * missing names are appended). NEVER emits a delete, NEVER a rename;
+ * deactivation only when explicitly allowed.
+ * @param {Object} plan a planRosterSync result
+ * @param {{allowDeactivate:boolean}} opts
+ * @returns {Array<{name:string, active:string}>}
+ */
+function applyPlan(plan, opts) {
+  var allowDeactivate = !!(opts && opts.allowDeactivate);
+  var writes = [];
+  if (!plan) return writes;
+  (plan.add || []).forEach(function (n) { writes.push({ name: n, active: 'true' }); });
+  (plan.reactivate || []).forEach(function (n) { writes.push({ name: n, active: 'true' }); });
+  if (allowDeactivate) {
+    (plan.deactivate || []).forEach(function (n) { writes.push({ name: n, active: 'false' }); });
+  }
+  return writes;
+}
+
+/* === END roster-sync core === */
+
+// READ-ONLY preview: fetch the staffing roster, diff it against the Therapists
+// sheet, return the plan. Writes NOTHING (guarded by test/roster-sync.test.js:
+// zero setValues/appendRow/clearContent calls). Rides the existing app-password
+// gate like every other action — it exposes only names + active flags.
+function _previewStaffingRosterSync() {
+  var roster = _staffingRoster();
+  if (roster.status !== 'ok') return { ok: true, source: roster.status, plan: null };
+  var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
+  var rows = _readAll(sh, THERAPISTS_HEADERS);
+  return { ok: true, source: 'ok', plan: planRosterSync(rows, roster.therapists) };
+}
+
+// Run straight from the Apps Script editor (Run ▸ previewStaffingRosterSyncNow)
+// to read the live plan in the log (same convention as migrateTherapistNamesNow).
+function previewStaffingRosterSyncNow() {
+  var report = _previewStaffingRosterSync();
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 /* ===== Per-patient management panel (ניהול מטופל) =====
  * Notes log + editable patient meta. All four actions are gated by a shared
  * secret PATIENT_MGMT_SECRET (Script Properties) — FAIL-CLOSED: a missing
@@ -2140,6 +2363,7 @@ function doPost(e) {
       return _json(_removeSchedule(id));
     }
     if (action === 'migrateTherapistNames') return _json(_migrateTherapistNames());
+    if (action === 'previewStaffingRosterSync') return _json(_previewStaffingRosterSync());
     if (action === 'requestExtraSession') return _json(_postRequestExtraSession(payload));
     if (action === 'getPatientNotes') return _json(_getPatientNotes(payload));
     if (action === 'addPatientNote') return _json(_addPatientNote(payload));

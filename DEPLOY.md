@@ -165,6 +165,25 @@ therefore *is* the live Web App configuration:
 
 ---
 
+## Script Properties (Apps Script project settings)
+
+Set in the Apps Script editor → Project Settings → Script Properties (they are
+never in code; the full cross-app list lives in `EZONE-ECOSYSTEM-STATUS.md` and
+the header comment of `apps-script/Code.gs`). Added for the staffing roster
+sync:
+
+| Property | Value |
+| --- | --- |
+| `STAFFING_SHEETS_URL` | the ezone-staffing Apps Script `/exec` URL |
+| `STAFFING_THERAPISTS_SECRET` | the shared `getTherapistsForTherapists` secret (= staffing's `THERAPISTS_READ_SECRET`) |
+
+The Therapists roster's **source of truth is moving to the ezone-staffing app**
+(workers with role מטפל/ת). Until both properties are set, the sync preview
+reports `unconfigured` and nothing changes — the fetch FAILS CLOSED, same as
+the debt-status pattern.
+
+---
+
 ## Manual fallback (if CI is unavailable)
 
 ```bash

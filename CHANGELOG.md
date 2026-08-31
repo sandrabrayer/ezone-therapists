@@ -1,5 +1,12 @@
 # Changelog
 
+## Staffing roster sync — preview only (PR A)
+
+See [`CHANGELOG-staffing-roster-sync.md`](CHANGELOG-staffing-roster-sync.md):
+the Therapists roster's source of truth is moving to ezone-staffing; this PR
+ships the pure sync planner + the read-only `previewStaffingRosterSync` action
+(no sheet writes, no frontend change, SW stays v16).
+
 ## New house: רעננה הפרדס (canonical id `pardes`)
 
 The fifth E-ZONE house (רעננה הפרדס, תחלואה כפולה) is now selectable everywhere
