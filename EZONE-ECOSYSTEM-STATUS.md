@@ -91,6 +91,20 @@ outpatient was switched dashboard-hKjf9 → volta, orphaning a day of work).
   TREATMENT_PLANS_SECRET, OCCUPANCY_SECRET, OUTPATIENT_LEAD_SECRET,
   WINBACK_SOURCE_SECRET, APP_PIN (Railway).
 
+## Therapists: roster source = the ezone-staffing feed
+
+- The Therapists app's therapist list is SYNCED from ezone-staffing (workers
+  with role מטפל/ת) on every getData — `getTherapistsForTherapists`. Names are
+  edited in the STAFFING app; `active` is overwritten by every sync (exact-name
+  upsert, add/deactivate/reactivate only — never a row delete or rename; all
+  downstream matching, incl. outpatient TherapistRates, is exact-string, so
+  renames go through staffing + `migrateTherapistNames` + a TherapistRates row
+  rename together).
+- Secret pairing: staffing's `THERAPISTS_READ_SECRET` = therapists'
+  `STAFFING_THERAPISTS_SECRET` (plus `STAFFING_SHEETS_URL` on the therapists
+  Apps Script). Unset/unreachable ⇒ NO writes; the last-synced list is served
+  and the UI shows an amber "לא סונכרנה" toast.
+
 ## Known pitfalls (hard-won, extended July 4)
 
 - Apps Script NEVER auto-syncs from GitHub: paste Code.gs → Save → deploy a NEW

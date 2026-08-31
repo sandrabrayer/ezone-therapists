@@ -98,6 +98,9 @@
 
   // Per-patient gate decisions pending in the schedule modal (null until check).
   var pendingPatients = null;
+  // One amber roster-sync warning per page load (loadOwn runs after every save
+  // too — the toast must not nag on each one).
+  var rosterSourceWarned = false;
   // True when the chosen single patient has NO approved plan type — scheduling is
   // blocked (never fail open). Drives the submit button's disabled state.
   var planBlocked = false;
@@ -146,10 +149,12 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function normPhone(v) { return Phone.normalizeForMatch(v); }
-  function toast(msg, isError) {
+  // kind: falsy = neutral, true = red error, 'warn' = amber warning.
+  function toast(msg, kind) {
     var t = $('#toast');
     t.textContent = msg;
-    t.classList.toggle('error', !!isError);
+    t.classList.toggle('error', kind === true);
+    t.classList.toggle('warn', kind === 'warn');
     t.hidden = false;
     clearTimeout(toast._tid);
     toast._tid = setTimeout(function () { t.hidden = true; }, 3200);
@@ -416,6 +421,18 @@
         return a;
       });
       state.therapists = data.therapists || [];
+      // Staffing roster sync telemetry: the backend syncs the Therapists list
+      // from ezone-staffing on every getData and reports how. Anything but a
+      // confirmed 'staffing' sync — while the field exists at all (an older
+      // backend sends none: stay silent) — gets ONE non-blocking amber toast
+      // per page load; the app keeps serving the last-synced list either way.
+      if (data.rosterSource && data.rosterSource !== 'staffing' && !rosterSourceWarned) {
+        rosterSourceWarned = true;
+        toast('רשימת המטפלים לא סונכרנה מאפליקציית כוח האדם — מוצגת הרשימה האחרונה', 'warn');
+      }
+      if (data.rosterSyncSummary) {
+        console.log('[ezone-therapists] staffing roster sync:', data.rosterSyncSummary);
+      }
       state.treatmentTypes = data.treatmentTypes || [];
       state.notifications = (data.notifications || []).map(function (n) {
         if (n && n.patientPhone != null) n.patientPhone = Phone.recoverStored(n.patientPhone);

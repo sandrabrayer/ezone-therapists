@@ -115,10 +115,14 @@ match / ambiguous multi-match / a plan with zero types (*"אין תוכנית ט
 
 ## Scheduling, lists & groups
 
-- **Therapist + treatment-type lists are Sheet-driven and active-flagged.** An
-  admin adds/retires/reactivates entries in the `Therapists` / `TreatmentTypes`
-  sheets with no code change. Retiring an entry only removes it from the dropdown
-  going forward; past records keep their original therapist/type string.
+- **The therapist list is SYNCED from the ezone-staffing app** (workers with
+  role מטפל/ת) on every load: names are edited THERE, and the `active` flag is
+  overwritten by every sync (add/deactivate/reactivate by exact name — never a
+  row delete or rename). On feed failure the last-synced list is served as-is
+  with an amber warning toast. The `TreatmentTypes` list stays admin-editable
+  in the sheet with an active flag. Either way, retiring an entry only removes
+  it from the dropdown going forward; past records keep their original
+  therapist/type string.
 - **Locations** are a fixed list of six (id stored, Hebrew shown): שדה אליעז,
   קיסריה ריהאב, קיסריה עפרוני, רעננה אשר, רעננה הפרדס, רמות השבים. **Time** is a
   30-minute dropdown 07:00–21:00. *(Older note below predates this list.)*
@@ -275,7 +279,11 @@ This app has its **own** Google Sheet — `Schedule` (one row per patient per
 session; carries both the legacy binary `attendance` and the 3-state `outcome` /
 `outcomeAt`), `Approvals`, `Patients` (identity + origin, keyed by phone),
 `Assignments` (one row per patient↔therapist↔plan, so a patient can have several),
-and the editable `Therapists` / `TreatmentTypes` lists. It also reads three sibling
+the `Therapists` list (**synced from ezone-staffing** — the Apps Script fetches
+`getTherapistsForTherapists` with `STAFFING_SHEETS_URL` +
+`STAFFING_THERAPISTS_SECRET` Script Properties on every `getData`; edit names in
+the staffing app, `active` is overwritten on every sync) and the editable
+`TreatmentTypes` list. It also reads three sibling
 projections through server-side proxy routes — the browser only ever calls
 relative `/api/...` URLs and never sees a secret:
 

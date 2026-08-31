@@ -1,20 +1,25 @@
 /**
  * therapist-migration.js
  * -----------------------------------------------------------------------------
- * The CANONICAL therapist roster + the one-time short→full name migration.
+ * The one-time short→full therapist name migration (+ future renames).
  *
  * This is the single source of truth, MIRRORED in apps-script/Code.gs
- * (THERAPISTS_SEED + _THERAPIST_SHORT_TO_FULL + _migrateTherapistName): any change
- * here MUST be reflected there. It runs under `node --test` (so the roster and the
- * mapping are unit-tested) and the Apps Script migration mirrors this exact logic.
- * It is NOT loaded by the browser (the dropdown reads the Therapists sheet); it
- * exists for the server-side mirror + tests.
+ * (_THERAPIST_SHORT_TO_FULL + _migrateTherapistName + _normalizeTherapistKey):
+ * any change here MUST be reflected there. It runs under `node --test` (so the
+ * mapping is unit-tested) and the Apps Script migration mirrors this exact
+ * logic. It is NOT loaded by the browser (the dropdown reads the Therapists
+ * sheet); it exists for the server-side mirror + tests.
  *
- * Why: the old seed hard-coded SHORT therapist names (עידו, דליה, …). Deleting a
- * row re-seeded it on the next getData. The fix replaces the seed with the final
- * FULL-name roster (so nothing short is ever re-added) and migrates existing
- * Assignment/Schedule rows from the short names to the full ones, so pay/credit
- * matching lines up with the new roster.
+ * The ROSTER is no longer a hard-coded list: since the staffing roster sync,
+ * the Therapists sheet (synced from ezone-staffing) is the source of truth, so
+ * every membership check here takes the roster as a PARAMETER — Code.gs passes
+ * the live sheet names (_rosterKeySet), tests pass fixtures. The old
+ * FINAL_THERAPISTS constant is gone with the THERAPISTS_SEED it mirrored.
+ *
+ * Why the mapping exists: the old seed hard-coded SHORT therapist names (עידו,
+ * דליה, …). The migration renames existing Assignment/Schedule rows from the
+ * short names to the full ones, so pay/credit matching lines up with the
+ * roster. ONLY the explicit mapping is applied — nothing is invented.
  */
 (function (root, factory) {
   var api = factory();
@@ -23,18 +28,8 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // The FINAL 29-name roster (full names). This replaces the old short-name seed.
-  var FINAL_THERAPISTS = [
-    'ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה',
-    'ד"ר מאקה קוורשוילי', 'עידו בוזגלו', 'רנטה בינו', 'חנן וויל', 'אורן סלמניק',
-    'אייל הר גיל', 'אלה שפירא', 'דליה מלמד', 'דנה דרוקר', 'הילה תבור', 'ליאת חגבי',
-    'מעיין דלומי', 'רמי רום', 'תמר גנץ', 'מורן בנטל', 'כנרת זיידן',
-    'יפעת רומנו', 'איתן דשא', 'יעל קינן', 'רעות חוגה', 'דניאל סייג', 'יניב הוד',
-    'נדיה מוסיירי', 'נרי אופק', 'שירן כהן'
-  ];
-
   // EXPLICIT short→full mapping. ONLY these are renamed — no mapping is invented.
-  // A name not listed here is left untouched (and, if not in FINAL_THERAPISTS,
+  // A name not listed here is left untouched (and, if not in the roster,
   // reported as `unmapped` for a human to decide).
   var SHORT_TO_FULL = {
     'רמי': 'רמי רום',
@@ -54,7 +49,13 @@
     'ד״ר נטליה': 'ד"ר נטליה סדוגין',
     'ד"ר נטליה': 'ד"ר נטליה סדוגין',
     'ד״ר דנגור': 'ד"ר יצחק דנגור',
-    'ד"ר דנגור': 'ד"ר יצחק דנגור'
+    'ד"ר דנגור': 'ד"ר יצחק דנגור',
+    // Real rename made in staffing (Aug 2026): the roster now carries the full
+    // surname. The old name is deactivated by the sync — never deleted; this
+    // mapping moves existing Assignments/Schedule rows. Both quote styles, per
+    // the convention above.
+    'ד״ר ילנה': 'ד"ר ילנה זבניאצקובסקי',
+    'ד"ר ילנה': 'ד"ר ילנה זבניאצקובסקי'
   };
 
   function trimName(name) { return String(name == null ? '' : name).trim(); }
@@ -66,9 +67,17 @@
     return trimName(name).replace(/[״׳"']/g, '').replace(/\s+/g, ' ');
   }
 
-  var ROSTER_EXACT = {};
-  var ROSTER_NORM = {};
-  FINAL_THERAPISTS.forEach(function (n) { ROSTER_EXACT[trimName(n)] = true; ROSTER_NORM[normalizeKey(n)] = true; });
+  // Exact + normalized membership sets for a roster (an array of name strings).
+  function rosterKeySet(rosterNames) {
+    var exact = {}, norm = {};
+    (Array.isArray(rosterNames) ? rosterNames : []).forEach(function (n) {
+      var t = trimName(n);
+      if (!t) return;
+      exact[t] = true;
+      norm[normalizeKey(t)] = true;
+    });
+    return { exact: exact, norm: norm };
+  }
 
   // Apply the explicit mapping to ONE name. Idempotent: a full name (or any name
   // not a short-key) is returned unchanged, so re-running never double-maps.
@@ -77,8 +86,12 @@
     return Object.prototype.hasOwnProperty.call(SHORT_TO_FULL, t) ? SHORT_TO_FULL[t] : t;
   }
 
-  function isInRosterExact(name) { return !!ROSTER_EXACT[trimName(name)]; }
-  function isInRosterNormalized(name) { return !!ROSTER_NORM[normalizeKey(name)]; }
+  function isInRosterExact(name, rosterNames) {
+    return !!rosterKeySet(rosterNames).exact[trimName(name)];
+  }
+  function isInRosterNormalized(name, rosterNames) {
+    return !!rosterKeySet(rosterNames).norm[normalizeKey(name)];
+  }
 
   /**
    * Plan the migration over a list of therapist-name strings (one per row).
@@ -91,10 +104,13 @@
    *                                    ONLY after normalization (ד"ר vs ד״ר) —
    *                                    informational, not rewritten
    * @param {Array<*>} names therapist field values, in row order
+   * @param {Array<string>} rosterNames the current roster (the synced Therapists
+   *   sheet's names) to classify against
    * @returns {{changes:Array, unmapped:string[], punctuationVariants:string[], scanned:number}}
    */
-  function planMigration(names) {
+  function planMigration(names, rosterNames) {
     var list = Array.isArray(names) ? names : [];
+    var roster = rosterKeySet(rosterNames);
     var changes = [];
     var unmappedSeen = {}, unmapped = [];
     var pvSeen = {}, punctuationVariants = [];
@@ -104,9 +120,9 @@
       var to = migrateName(from);
       if (to !== from) changes.push({ index: i, from: from, to: to });
       // Classify the POST-migration name.
-      if (!isInRosterNormalized(to)) {
+      if (!roster.norm[normalizeKey(to)]) {
         if (!unmappedSeen[to]) { unmappedSeen[to] = true; unmapped.push(to); }
-      } else if (!isInRosterExact(to)) {
+      } else if (!roster.exact[to]) {
         if (!pvSeen[to]) { pvSeen[to] = true; punctuationVariants.push(to); }
       }
     }
@@ -114,12 +130,12 @@
   }
 
   return {
-    FINAL_THERAPISTS: FINAL_THERAPISTS,
     SHORT_TO_FULL: SHORT_TO_FULL,
     migrateName: migrateName,
     isInRosterExact: isInRosterExact,
     isInRosterNormalized: isInRosterNormalized,
     normalizeKey: normalizeKey,
+    rosterKeySet: rosterKeySet,
     planMigration: planMigration
   };
 });
