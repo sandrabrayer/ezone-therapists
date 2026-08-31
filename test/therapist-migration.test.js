@@ -16,9 +16,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const TM = require('../public/therapist-migration');
 
-// Fixture: the roster as the synced Therapists sheet would hold it.
+// Fixture: the roster as the synced Therapists sheet would hold it (post the
+// Aug-2026 staffing rename ד"ר ילנה → ד"ר ילנה זבניאצקובסקי).
 const ROSTER = [
-  'ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה',
+  'ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה זבניאצקובסקי',
   'ד"ר מאקה קוורשוילי', 'עידו בוזגלו', 'רנטה בינו', 'חנן וויל', 'אורן סלמניק',
   'אייל הר גיל', 'אלה שפירא', 'דליה מלמד', 'דנה דרוקר', 'הילה תבור', 'ליאת חגבי',
   'מעיין דלומי', 'רמי רום', 'תמר גנץ', 'מורן בנטל', 'כנרת זיידן',
@@ -58,6 +59,18 @@ test('migrateName: each mapped short name becomes its full name', () => {
   assert.equal(TM.migrateName('ד"ר שפרינץ'), 'ד"ר מיכאל שפרינץ');
   assert.equal(TM.migrateName('ד"ר נטליה'), 'ד"ר נטליה סדוגין');
   assert.equal(TM.migrateName('ד"ר דנגור'), 'ד"ר יצחק דנגור');
+});
+
+test('the ילנה staffing rename is mapped (both quote styles) and lands in the roster', () => {
+  assert.equal(TM.migrateName('ד"ר ילנה'), 'ד"ר ילנה זבניאצקובסקי');
+  assert.equal(TM.migrateName('ד״ר ילנה'), 'ד"ר ילנה זבניאצקובסקי');
+  // Idempotent: the full new name is not a mapping key.
+  assert.equal(TM.migrateName('ד"ר ילנה זבניאצקובסקי'), 'ד"ר ילנה זבניאצקובסקי');
+  // Existing Assignments/Schedule rows migrate cleanly: renamed, in-roster.
+  const r = TM.planMigration(['ד"ר ילנה'], ROSTER);
+  assert.deepEqual(r.changes, [{ index: 0, from: 'ד"ר ילנה', to: 'ד"ר ילנה זבניאצקובסקי' }]);
+  assert.deepEqual(r.unmapped, []);
+  assert.deepEqual(r.punctuationVariants, []);
 });
 
 test('migrateName: trims surrounding whitespace before mapping', () => {
@@ -120,11 +133,12 @@ test('planMigration with an EMPTY roster flags everything unmapped (roster is a 
 // --- punctuation variants: ד״ר (gershayim) vs ד"ר (ASCII) ------------------
 
 test('a ד״ר gershayim-quote name matches the roster (normalized) and is flagged a variant, not unmapped', () => {
-  const r = TM.planMigration(['ד״ר ילנה'], ROSTER);    // gershayim quote vs roster ASCII; not a rename key
+  // gershayim quote vs roster ASCII; NOT a rename key (ד״ר ילנה is one now).
+  const r = TM.planMigration(['ד״ר מאקה קוורשוילי'], ROSTER);
   assert.deepEqual(r.unmapped, [], 'must NOT be treated as unknown');
-  assert.deepEqual(r.punctuationVariants, ['ד״ר ילנה']);
-  assert.equal(TM.isInRosterNormalized('ד״ר ילנה', ROSTER), true);
-  assert.equal(TM.isInRosterExact('ד״ר ילנה', ROSTER), false);
+  assert.deepEqual(r.punctuationVariants, ['ד״ר מאקה קוורשוילי']);
+  assert.equal(TM.isInRosterNormalized('ד״ר מאקה קוורשוילי', ROSTER), true);
+  assert.equal(TM.isInRosterExact('ד״ר מאקה קוורשוילי', ROSTER), false);
 });
 
 // --- mirror guard: apps-script/Code.gs must match this module --------------

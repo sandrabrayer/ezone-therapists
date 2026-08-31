@@ -49,7 +49,13 @@
     'ד״ר נטליה': 'ד"ר נטליה סדוגין',
     'ד"ר נטליה': 'ד"ר נטליה סדוגין',
     'ד״ר דנגור': 'ד"ר יצחק דנגור',
-    'ד"ר דנגור': 'ד"ר יצחק דנגור'
+    'ד"ר דנגור': 'ד"ר יצחק דנגור',
+    // Real rename made in staffing (Aug 2026): the roster now carries the full
+    // surname. The old name is deactivated by the sync — never deleted; this
+    // mapping moves existing Assignments/Schedule rows. Both quote styles, per
+    // the convention above.
+    'ד״ר ילנה': 'ד"ר ילנה זבניאצקובסקי',
+    'ד"ר ילנה': 'ד"ר ילנה זבניאצקובסקי'
   };
 
   function trimName(name) { return String(name == null ? '' : name).trim(); }

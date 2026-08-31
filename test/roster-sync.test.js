@@ -324,6 +324,7 @@ function gsContext(opts) {
     Session: { getScriptTimeZone: () => 'Asia/Jerusalem' },
     Utilities: { formatDate: (d) => String(d) },
     Logger: { log: () => {} },
+    console: { log: (...a) => logCalls.push(a.join(' ')) },
     ContentService: {
       createTextOutput: (s) => ({ setMimeType: () => ({ _json: s }) }),
       MimeType: { JSON: 'JSON' }
@@ -342,9 +343,10 @@ function gsContext(opts) {
     }
   };
   const cacheStore = opts.cacheStore || {};
+  const logCalls = [];
   vm.createContext(ctx);
   vm.runInContext(CODE_GS_SRC, ctx);
-  return { ctx, sheets, fetchCalls, cacheStore };
+  return { ctx, sheets, fetchCalls, cacheStore, logCalls };
 }
 
 const okResponse = (body) => () => ({
@@ -588,6 +590,13 @@ test('a second execution inside the 120s cache window refetches and rewrites NOT
   first.ctx._getData();
   assert.equal(first.fetchCalls.length, 1);
 
+  // The cached value is ONLY a timestamp of the applied sync — never the
+  // roster (or any therapist name).
+  const cached = store.staffingRosterSync;
+  assert.ok(cached, 'the sync must cache its marker');
+  assert.ok(!Number.isNaN(Date.parse(cached)), 'cached value is a timestamp: ' + cached);
+  SYNC_FEED.forEach((f) => assert.ok(!cached.includes(f.name), 'no roster data in the cache'));
+
   // A NEW vm context = a new Apps Script execution; same CacheService store =
   // still inside the TTL. Its sheet already holds the synced state.
   const syncedRows = [
@@ -606,8 +615,32 @@ test('a second execution inside the 120s cache window refetches and rewrites NOT
   assert.equal(second.fetchCalls.length, 0, 'must not refetch inside the cache TTL');
   assert.deepEqual(second.sheets.Therapists._writes, []);
   assert.equal(data.rosterSource, 'staffing');
-  assert.deepEqual(data.rosterSyncSummary, { added: 1, deactivated: 1, reactivated: 1 },
-    'the cached summary is echoed back for the console');
+  assert.equal(data.rosterSyncSummary, null, 'a cache hit carries no summary (nothing was applied)');
+});
+
+test('every APPLIED sync logs its summary server-side; cache hits stay quiet', () => {
+  const store = {};
+  const first = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED }),
+    cacheStore: store
+  });
+  first.ctx._getData();
+  const applied = first.logCalls.filter((l) => l.includes('staffingRosterSync applied'));
+  assert.equal(applied.length, 1, 'the applied sync must be visible in the Apps Script log');
+  assert.ok(applied[0].includes('"added":1') && applied[0].includes('"deactivated":1') && applied[0].includes('"reactivated":1'),
+    'the log carries the summary: ' + applied[0]);
+
+  const second = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED }),
+    cacheStore: store
+  });
+  second.ctx._getData();
+  assert.equal(second.logCalls.filter((l) => l.includes('staffingRosterSync applied')).length, 0,
+    'a cache hit applies nothing and must not log');
 });
 
 test('integration: Scheduling.activeNames over the synced list equals the feed\'s active names', () => {

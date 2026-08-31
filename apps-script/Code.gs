@@ -1593,7 +1593,9 @@ var _THERAPIST_SHORT_TO_FULL = {
   'ד״ר נטליה': 'ד"ר נטליה סדוגין',
   'ד"ר נטליה': 'ד"ר נטליה סדוגין',
   'ד״ר דנגור': 'ד"ר יצחק דנגור',
-  'ד"ר דנגור': 'ד"ר יצחק דנגור'
+  'ד"ר דנגור': 'ד"ר יצחק דנגור',
+  'ד״ר ילנה': 'ד"ר ילנה זבניאצקובסקי',
+  'ד"ר ילנה': 'ד"ר ילנה זבניאצקובסקי'
 };
 function _migrateTherapistName(name) {
   var t = String(name == null ? '' : name).trim();
@@ -1984,16 +1986,14 @@ function previewStaffingRosterSyncNow() {
 // served as-is, with `source` saying why so the frontend can warn.
 // A successful sync is cached in CacheService for 120s (key
 // 'staffingRosterSync', same TTL as outpatient TherapistRates) so a burst of
-// getData calls doesn't refetch/rewrite; the cached value is the last summary,
-// echoed back so the console still sees it.
+// getData calls doesn't refetch/rewrite. The cached value is ONLY the applied
+// sync's timestamp — never the roster — so a cache hit means "synced within
+// the window" (source 'staffing', summary null).
 function _syncTherapistsFromStaffing() {
   var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
   var cache = CacheService.getScriptCache();
-  var hit = cache.get('staffingRosterSync');
-  if (hit) {
-    var cachedSummary = null;
-    try { cachedSummary = JSON.parse(hit); } catch (_) {}
-    return { sh: sh, source: 'staffing', summary: cachedSummary };
+  if (cache.get('staffingRosterSync')) {
+    return { sh: sh, source: 'staffing', summary: null };
   }
   var roster = _staffingRoster();
   if (roster.status !== 'ok') return { sh: sh, source: roster.status, summary: null };
@@ -2032,7 +2032,11 @@ function _syncTherapistsFromStaffing() {
       deactivated: plan.deactivate.length,
       reactivated: plan.reactivate.length
     };
-    cache.put('staffingRosterSync', JSON.stringify(summary), 120);
+    // Every APPLIED sync is logged server-side (so the first sync after a
+    // deploy is visible in the Apps Script log, not only in the getData
+    // response). Cache hits don't reach here, so this stays quiet.
+    console.log('staffingRosterSync applied: ' + JSON.stringify(summary));
+    cache.put('staffingRosterSync', new Date().toISOString(), 120);
     return { sh: sh, source: 'staffing', summary: summary };
   } finally {
     try { lock.releaseLock(); } catch (_) {}

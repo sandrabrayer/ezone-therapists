@@ -122,10 +122,13 @@ overwritten by every sync.
     touch on Assignments/Schedule/Approvals.**
   - A successful sync is cached in `CacheService` for **120s** (key
     `staffingRosterSync`, same TTL as outpatient `TherapistRates`) so a burst
-    of `getData` calls doesn't refetch/rewrite; the cached summary is echoed
-    back.
-  - Success responses carry `rosterSource:'staffing'` +
-    `rosterSyncSummary:{added, deactivated, reactivated}`.
+    of `getData` calls doesn't refetch/rewrite. The cached value is ONLY the
+    applied sync's timestamp — never the roster; a cache hit returns
+    `rosterSource:'staffing'` with `rosterSyncSummary:null`.
+  - Applied-sync responses carry `rosterSource:'staffing'` +
+    `rosterSyncSummary:{added, deactivated, reactivated}`, and every APPLIED
+    sync also `console.log`s the summary server-side — so the first sync after
+    the deploy is visible in the Apps Script log.
 - **Removed**: `THERAPISTS_SEED` (no seed exists — guard-tested) and
   `cleanupTherapistRosterNow` (its job is the sync now).
 - **Kept**: `migrateTherapistNames*` for future renames — `_rosterKeySet` now
@@ -139,6 +142,12 @@ overwritten by every sync.
 `migrateName`, `normalizeKey` stay. Membership checks (`planMigration`,
 `isInRosterExact`, `isInRosterNormalized`) now take the roster as a
 **parameter** — Code.gs passes the live sheet names, tests pass fixtures.
+
+**New rename mapping** (a real rename made in staffing, both quote styles):
+`ד"ר ילנה` / `ד״ר ילנה` → **`ד"ר ילנה זבניאצקובסקי`**, in `SHORT_TO_FULL` and
+its Code.gs mirror, so `migrateTherapistNames` moves existing
+`Assignments`/`Schedule` rows. The old name is deactivated by the sync
+automatically — never deleted.
 
 ### Frontend
 
@@ -168,7 +177,11 @@ overwritten by every sync.
    shows the new SW version.
 2. DevTools ▸ Network → `getData` response has `rosterSource:"staffing"`.
 3. The therapist dropdown shows exactly staffing's active therapists.
-4. Rename test: change one therapist's name in staffing → within 2 min the old
-   name is `active=false` and the new one appears. Confirm that's expected,
-   then rename back — or, for a real rename, run `migrateTherapistNames` with a
-   mapping AND rename the outpatient `TherapistRates` row.
+4. **The ילנה rename**: the first sync deactivates `ד"ר ילנה` and adds
+   `ד"ר ילנה זבניאצקובסקי`. Then run Apps Script editor → Run ▸
+   `migrateTherapistNamesNow` so existing `Assignments`/`Schedule` rows move to
+   the new name, and rename the matching outpatient `TherapistRates` row so
+   pay matching keeps lining up.
+5. Any future rename: same recipe — rename in staffing, add the mapping to
+   `SHORT_TO_FULL` (+ Code.gs mirror), run `migrateTherapistNames`, rename the
+   `TherapistRates` row.
