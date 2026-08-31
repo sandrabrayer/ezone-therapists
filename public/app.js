@@ -656,6 +656,7 @@
     renderSchedule();
     renderMine();
     renderStopAlerts();
+    renderRenewalAlerts();
     updateLeadsBadge();
     updateStopAlertsBadge();
   }
@@ -686,15 +687,31 @@
     el.hidden = n === 0;
   }
 
-  // «התראות טיפול» tab badge — count of UNREAD alerts in BOTH directions (stop +
-  // resume; read and cancelled excluded). Hidden at zero. Refreshed on load, on
-  // tab open, and after every mark-read (incl. optimistic + rollback).
+  // «התראות טיפול» tab badge — ONE number: unread stop/resume alerts PLUS
+  // package-renewal alerts (חידוש חבילה, ≤7 days / overdue), so Yarden sees the
+  // tab needs attention from anywhere. Color keeps the stop-alert RED whenever
+  // any unread stop alert exists; renewal-only counts show AMBER. Hidden at
+  // zero. Refreshed on load, on tab open, and after every mark-read.
   function updateStopAlertsBadge() {
     var el = $('#stopAlertsBadge');
     if (!el) return;
-    var n = StopAlerts.unreadCount(state.stopAlerts);
+    var stopN = StopAlerts.unreadCount(state.stopAlerts);
+    var renewN = Renewal.alertCount(buildPatientRoster(), today());
+    var n = stopN + renewN;
+    el.classList.toggle('tab-badge-stop', stopN > 0);
+    el.classList.toggle('tab-badge-renew', stopN === 0 && renewN > 0);
     el.textContent = n;
     el.hidden = n === 0;
+  }
+
+  // «חידוש חבילה — השבוע הקרוב» — the renewal-alerts section ABOVE the stop
+  // alerts: outpatients whose package end (renewalDate) is ≤7 days out or
+  // overdue. Date only — no payment state. Clears by itself once Vered renews
+  // (outpatient moves nextBillingDate forward).
+  function renderRenewalAlerts() {
+    var host = $('#renewalAlertsList');
+    if (!host) return;
+    host.innerHTML = Renewal.alertsListHtml(buildPatientRoster(), today());
   }
 
   // One alert row. Its look and controls follow the alert's DIRECTION and STATUS:
@@ -911,7 +928,9 @@
     if (!lines) lines = '<div class="cc-line cc-muted">לא נקבעה תוכנית</div>';
     // Treatment period — start + end dates from the outpatient plan. Always shown
     // (labeled), formatted DD/MM/YYYY; missing/malformed render «—» (an active
-    // patient has no end date yet).
+    // patient has no end date yet). Third line: package renewal (חידוש חבילה)
+    // with a days-left chip when it's ≤7 days out / overdue (Renewal module —
+    // same 7-day rule as Vered's due_soon in outpatient).
     var period =
       '<div class="cc-dates">' +
         '<div class="cc-line cc-date-line">' +
@@ -922,6 +941,7 @@
           '<span class="cc-k">סיום טיפול</span>' +
           '<span class="cc-v">' + escapeHtml(TreatmentDates.format(p.treatmentEndDate)) + '</span>' +
         '</div>' +
+        Renewal.cardDateLineHtml(p.renewalDate, today()) +
       '</div>';
     return '<div class="cc-panel cc-plan">' +
       '<div class="cc-panel-title">תוכנית טיפול</div>' + lines + period +
@@ -2948,6 +2968,7 @@
       // while it runs (we keep whatever alerts we had until fresh ones arrive).
       state.stopAlertsLoading = true;
       renderStopAlerts();
+      renderRenewalAlerts();
       loadStopAlerts()
         .then(function () { state.stopAlertsLoading = false; renderStopAlerts(); })
         .catch(function () { state.stopAlertsLoading = false; renderStopAlerts(); });

@@ -592,6 +592,19 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .renewal-date { color: var(--muted); }
 .renewal-stop .renewal-days { color: #ff9d9d; font-weight: 700; }
 .renewal-warn .renewal-days { color: var(--amber); font-weight: 700; }
+
+/* חידוש חבילה — package-renewal alerts (Renewal module). The days-left chip:
+   amber (warn token) for due_soon, red for overdue; also used on the patient
+   card's third date line. */
+.chip.renewal-chip { font-weight: 700; }
+.chip.renewal-chip-warn { background: #3a310f; color: var(--amber); border-color: #5a4818; }
+.chip.renewal-chip-over { background: #3a0f10; color: #ef8484; border-color: #5a1818; }
+.renewal-phone { color: var(--muted); font-size: 0.9rem; direction: ltr; }
+.renewal-thers { color: var(--text-soft); font-size: 0.9rem; }
+/* Card: keep label right / value left like the other date lines, chip beside
+   the value. */
+.client-card .cc-renewal-line { justify-content: flex-start; align-items: center; gap: 8px; }
+.client-card .cc-renewal-line .cc-v { margin-inline-start: auto; }
 .chip-amount { background: var(--panel-2); color: var(--green-2); font-weight: 600; }
 
 /* Card banners + colored borders */
@@ -1087,6 +1100,12 @@ button.month-pay-btn:active { filter: brightness(0.88); }
 .tab-badge-stop {
   background: var(--red); color: #3a0d0d;
   box-shadow: 0 0 0 2px rgba(255,118,118,0.30);
+}
+/* Renewal-only badge state (no unread stop alerts): amber, matching the
+   due_soon chip. Any unread stop alert keeps the red above. */
+.tab-badge-renew {
+  background: var(--amber); color: #3a2b00;
+  box-shadow: 0 0 0 2px rgba(242,195,85,0.30);
 }
 
 .stop-alert-row {

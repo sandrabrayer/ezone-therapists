@@ -76,10 +76,10 @@
     state = state || {};
     var byPhone = {};
     var planStatusByPhone = {};
-    function add(name, phone, serviceType, sessions, startDate, exitDate) {
+    function add(name, phone, serviceType, sessions, startDate, exitDate, renewalDate) {
       var key = normPhone(phone);
       if (!key) return;
-      if (!byPhone[key]) byPhone[key] = { name: name || '', phone: phone || '', serviceType: serviceType || '', sessions: sessions, startDate: startDate || '', exitDate: exitDate || '' };
+      if (!byPhone[key]) byPhone[key] = { name: name || '', phone: phone || '', serviceType: serviceType || '', sessions: sessions, startDate: startDate || '', exitDate: exitDate || '', renewalDate: renewalDate || '' };
       else {
         if (!byPhone[key].name && name) byPhone[key].name = name;
         if (!byPhone[key].serviceType && serviceType) byPhone[key].serviceType = serviceType;
@@ -88,10 +88,11 @@
         // the first non-empty value seen for this phone.
         if (!byPhone[key].startDate && startDate) byPhone[key].startDate = startDate;
         if (!byPhone[key].exitDate && exitDate) byPhone[key].exitDate = exitDate;
+        if (!byPhone[key].renewalDate && renewalDate) byPhone[key].renewalDate = renewalDate;
       }
     }
     (state.plans || []).forEach(function (p) {
-      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek, p.startDate, p.exitDate);
+      add(p.name, p.phone, p.serviceType, p.sessions != null ? p.sessions : p.sessionsPerWeek, p.startDate, p.exitDate, p.renewalDate);
       var k = normPhone(p.phone);
       if (k && p.status != null && planStatusByPhone[k] == null) planStatusByPhone[k] = p.status;
     });
@@ -138,6 +139,9 @@
         // display by TreatmentDates.format. exitDate is blank for active patients.
         treatmentStartDate: base.startDate || '',
         treatmentEndDate: base.exitDate || '',
+        // Package end (outpatient nextBillingDate → renewalDate). Blank when the
+        // outpatient deploy doesn't project it yet — the app must keep working.
+        renewalDate: base.renewalDate || '',
         // Clean per-type plan breakdown from the approved plan's `sessions` blob
         // (the keys ARE the treatment types). Used for a readable dashboard plan
         // summary INSTEAD of dumping the raw JSON. [{treatmentType,frequencyPerWeek}].
