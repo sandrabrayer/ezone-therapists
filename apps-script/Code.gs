@@ -19,12 +19,15 @@
  *   - Assignments     one row per (patient, therapist, plan). A patient may have
  *                     MULTIPLE parallel treatments/therapists; therapist + plan
  *                     (type + weekly frequency) stay editable.
- *   - Therapists      editable list {name, active} — feeds the dropdown.
+ *   - Therapists      {name, active} — feeds the dropdown. SYNCED from the
+ *                     ezone-staffing roster feed on every getData (names are
+ *                     edited THERE; `active` is overwritten by every sync).
  *   - TreatmentTypes  editable list {name, active, isGroup} — feeds the dropdown.
  *
- * The Therapists / TreatmentTypes lists are ADMIN-EDITABLE with an active flag:
- * retiring a row removes it from the dropdown going forward but NEVER rewrites a
- * Schedule row that already references it by string.
+ * The TreatmentTypes list is ADMIN-EDITABLE with an active flag: retiring a row
+ * removes it from the dropdown going forward but NEVER rewrites a Schedule row
+ * that already references it by string. The same never-rewrite rule holds for
+ * therapist names: a deactivated therapist drops out of the dropdown only.
  *
  * Setup:
  *  1. Create a Google Sheet named "E-ZONE Therapists".
@@ -42,11 +45,11 @@
  *                                until set (and the outpatient receiver deployed),
  *                                deleting a patient changes nothing locally.
  *       STAFFING_SHEETS_URL    = the ezone-staffing /exec URL — the therapist
- *                                roster feed (source of truth is moving there).
+ *                                roster feed (the roster's source of truth).
  *       STAFFING_THERAPISTS_SECRET = the shared getTherapistsForTherapists secret
  *                                (= staffing's THERAPISTS_READ_SECRET). Until both
- *                                are set, the roster-sync preview reports
- *                                'unconfigured' (fail-closed, no writes).
+ *                                are set, the roster sync reports 'unconfigured'
+ *                                and serves the last-synced sheet (no writes).
  *  4. Deploy → New deployment → Web app (Execute as: Me; Access: Anyone w/ link).
  *  5. Copy the /exec URL and set it as SHEETS_URL in the Node server env.
  */
@@ -122,22 +125,14 @@ var FOLLOWUPS_HEADERS = [
   'phone', 'id', 'createdAt', 'createdBy', 'dueDate', 'text', 'done', 'doneAt', 'doneBy'
 ];
 
-/* Seed values. A fresh sheet is seeded with the full list; an existing sheet has
- * any MISSING seed names appended (by name) so additions here reach live sheets
- * too. Retiring an entry sets active=false (the row stays), so a retired name is
- * still "present" and never re-added — only a hard row delete would resurrect a
- * seed name. THERAPISTS_SEED is the FINAL 29-name FULL-name roster — the old SHORT
- * names (עידו, דליה, חנן, מעיין, איתן, מרים, תמר, שחר, יסמין) were removed so a
- * hard delete stays deleted. Mirror of public/therapist-migration.js
- * FINAL_THERAPISTS — keep both in sync. */
-var THERAPISTS_SEED = [
-  'ד"ר מיכאל שפרינץ', 'ד"ר יצחק דנגור', 'ד"ר נטליה סדוגין', 'ד"ר ילנה',
-  'ד"ר מאקה קוורשוילי', 'עידו בוזגלו', 'רנטה בינו', 'חנן וויל', 'אורן סלמניק',
-  'אייל הר גיל', 'אלה שפירא', 'דליה מלמד', 'דנה דרוקר', 'הילה תבור', 'ליאת חגבי',
-  'מעיין דלומי', 'רמי רום', 'תמר גנץ', 'מורן בנטל', 'כנרת זיידן',
-  'יפעת רומנו', 'איתן דשא', 'יעל קינן', 'רעות חוגה', 'דניאל סייג', 'יניב הוד',
-  'נדיה מוסיירי', 'נרי אופק', 'שירן כהן'
-];
+/* Seed values (TreatmentTypes only). A fresh sheet is seeded with the full list;
+ * an existing sheet has any MISSING seed names appended (by name) so additions
+ * here reach live sheets too. Retiring an entry sets active=false (the row
+ * stays), so a retired name is still "present" and never re-added — only a hard
+ * row delete would resurrect a seed name.
+ * The Therapists list has NO seed anymore: its source of truth is the
+ * ezone-staffing app (workers with role מטפל/ת), synced on every getData by
+ * _syncTherapistsFromStaffing — see the staffing roster sync section below. */
 var TREATMENT_TYPES_SEED = [
   { name: 'פרטני כללי', active: 'true', isGroup: 'false' },
   { name: 'פרטני CBT',  active: 'true', isGroup: 'false' },
@@ -280,8 +275,10 @@ function _getData() {
   var aSh = _ensureSheet('Approvals', APPROVALS_HEADERS);
   var pSh = _ensureSheet('Patients', PATIENTS_HEADERS);
   var asSh = _ensureSheet('Assignments', ASSIGNMENTS_HEADERS);
-  var thSh = _ensureSeededList('Therapists', THERAPISTS_HEADERS,
-    THERAPISTS_SEED.map(function (n) { return { name: n, active: 'true' }; }));
+  // The Therapists list is SYNCED from the ezone-staffing roster feed (no seed).
+  // On feed failure the last-synced sheet is served as-is and rosterSource says
+  // why, so the frontend can warn without blocking anything.
+  var thSync = _syncTherapistsFromStaffing();
   var ttSh = _ensureSeededList('TreatmentTypes', TREATMENT_TYPES_HEADERS, TREATMENT_TYPES_SEED);
   return {
     ok: true,
@@ -289,8 +286,10 @@ function _getData() {
     approvals: _readAll(aSh, APPROVALS_HEADERS),
     patients: _readAll(pSh, PATIENTS_HEADERS),
     assignments: _readAll(asSh, ASSIGNMENTS_HEADERS),
-    therapists: _readAll(thSh, THERAPISTS_HEADERS),
-    treatmentTypes: _readAll(ttSh, TREATMENT_TYPES_HEADERS)
+    therapists: _readAll(thSync.sh, THERAPISTS_HEADERS),
+    treatmentTypes: _readAll(ttSh, TREATMENT_TYPES_HEADERS),
+    rosterSource: thSync.source,
+    rosterSyncSummary: thSync.summary
   };
 }
 
@@ -1566,9 +1565,10 @@ function _removeSchedule(id) {
   }
 }
 
-/* ===== One-time therapist name migration (short → full) =====
- * Mirror of public/therapist-migration.js (FINAL_THERAPISTS = THERAPISTS_SEED,
- * SHORT_TO_FULL, migrateName, normalizeKey). Renames the therapist field on
+/* ===== Therapist name migration (short → full / future renames) =====
+ * Mirror of public/therapist-migration.js (SHORT_TO_FULL, migrateName,
+ * normalizeKey; the roster is the live Therapists sheet — synced from staffing —
+ * not a hard-coded list). Renames the therapist field on
  * existing Assignment + Schedule rows from the old SHORT names to the FINAL full
  * names, so pay/credit matching lines up with the new roster. ONLY the explicit
  * mapping is applied — no mapping is invented; a name with no full equivalent is
@@ -1604,11 +1604,16 @@ function _migrateTherapistName(name) {
 function _normalizeTherapistKey(name) {
   return String(name == null ? '' : name).trim().replace(/[״׳"']/g, '').replace(/\s+/g, ' ');
 }
+// The membership roster is the LIVE Therapists sheet (synced from staffing) —
+// there is no hard-coded seed anymore.
 function _rosterKeySet() {
+  var rows = _readAll(_ensureSheet('Therapists', THERAPISTS_HEADERS), THERAPISTS_HEADERS);
   var exact = {}, norm = {};
-  for (var i = 0; i < THERAPISTS_SEED.length; i++) {
-    exact[String(THERAPISTS_SEED[i]).trim()] = true;
-    norm[_normalizeTherapistKey(THERAPISTS_SEED[i])] = true;
+  for (var i = 0; i < rows.length; i++) {
+    var n = String(rows[i].name == null ? '' : rows[i].name).trim();
+    if (!n) continue;
+    exact[n] = true;
+    norm[_normalizeTherapistKey(n)] = true;
   }
   return { exact: exact, norm: norm };
 }
@@ -1642,8 +1647,8 @@ function _migrateTherapistColumn(sheetName, headers) {
 }
 
 // The migration action — safe to run repeatedly (idempotent). Returns a full
-// report: what was renamed, and which therapist names are NOT in the final 19
-// (so a human decides), incl. ד״ר-quote variants surfaced separately.
+// report: what was renamed, and which therapist names are NOT in the current
+// roster (so a human decides), incl. ד״ר-quote variants surfaced separately.
 function _migrateTherapistNames() {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -1753,71 +1758,14 @@ function cleanupOrphanedScheduledSessions() {
   return toDelete.length;
 }
 
-// Normalized-key set of the final roster (THERAPISTS_SEED), for membership tests.
-function _finalRosterNormSet() {
-  var s = {};
-  for (var i = 0; i < THERAPISTS_SEED.length; i++) {
-    s[_normalizeTherapistKey(THERAPISTS_SEED[i])] = true;
-  }
-  return s;
-}
-
-// One-time roster cleanup. REBUILDS the Therapists sheet to EXACTLY the final
-// THERAPISTS_SEED (29): wipes every existing data row, then writes the seed back
-// with active=true. This collapses short/full duplicates and drops removed people
-// in one deterministic pass (the earlier keep-filter left short+full dupes behind,
-// ballooning the count). Run from the editor: Run ▸ cleanupTherapistRosterNow.
-// Idempotent. NOTE: this resets any manual active=false retirement to active —
-// intended here, since the seed is the authoritative active list.
-function cleanupTherapistRosterNow() {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
-    var lastRow = sh.getLastRow();
-
-    var before = [];
-    if (lastRow >= 2) {
-      var g = sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).getValues();
-      for (var i = 0; i < g.length; i++) {
-        var nm = String(g[i][0] == null ? '' : g[i][0]).trim();
-        if (nm) before.push(nm);
-      }
-      // Wipe ALL existing data rows (row 2 downward). Header row stays.
-      sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).clearContent();
-    }
-
-    // Write back exactly the final roster — full names, active=true, no duplicates.
-    var rows = THERAPISTS_SEED.map(function (n) { return [n, 'true']; });
-    sh.getRange(2, 1, rows.length, THERAPISTS_HEADERS.length).setValues(rows);
-
-    var keepNorm = _finalRosterNormSet();
-    var removed = before.filter(function (nm) {
-      return !keepNorm[_normalizeTherapistKey(_migrateTherapistName(nm))];
-    });
-
-    var report = {
-      ok: true,
-      beforeCount: before.length,
-      removed: removed,
-      finalCount: rows.length,
-      finalRoster: THERAPISTS_SEED.slice()
-    };
-    Logger.log(JSON.stringify(report, null, 2));
-    return report;
-  } finally {
-    try { lock.releaseLock(); } catch (_) {}
-  }
-}
-
-/* ===== Staffing roster sync — PREVIEW ONLY (PR A) =====
- * The Therapists roster's source of truth is MOVING to the ezone-staffing app
- * (workers with role מטפל/ת). This section ships the read-only half: a live
- * fetch of the staffing feed + a pure sync PLAN, exposed as the
- * `previewStaffingRosterSync` action and the editor function
- * `previewStaffingRosterSyncNow`. NOTHING here writes to any sheet — the write
- * path (replacing the THERAPISTS_SEED seeding in _getData) ships separately
- * after the plan has been reviewed against live data.
+/* ===== Staffing roster sync =====
+ * The Therapists roster's source of truth IS the ezone-staffing app (workers
+ * with role מטפל/ת). This section holds the live fetch of the staffing feed,
+ * the pure sync planner, the read-only `previewStaffingRosterSync` action, and
+ * the WRITE path `_syncTherapistsFromStaffing` that _getData runs on every load
+ * (replacing the old hard-coded seeding — the Therapists list has no seed).
+ * The sync upserts by name and flips only `active`; it NEVER deletes a row,
+ * NEVER renames one, and NEVER touches Assignments/Schedule/Approvals.
  *
  * Script Properties (same pattern as OUTPATIENT_SHEETS_URL/DEBT_STATUS_SECRET):
  *   STAFFING_SHEETS_URL         the ezone-staffing Apps Script /exec URL
@@ -2025,6 +1973,70 @@ function previewStaffingRosterSyncNow() {
   var report = _previewStaffingRosterSync();
   Logger.log(JSON.stringify(report, null, 2));
   return report;
+}
+
+// The WRITE path, run by _getData on every load. Ensures the Therapists sheet,
+// fetches the staffing feed, and applies planRosterSync with
+// allowDeactivate:true — upsert by name (only the `active` cell of an existing
+// row is written; new names are appended with active='true'). Row deletes and
+// renames NEVER happen here (see applyPlan). FAIL-SOFT: when the feed is
+// unconfigured/unavailable nothing is written and the last-synced sheet is
+// served as-is, with `source` saying why so the frontend can warn.
+// A successful sync is cached in CacheService for 120s (key
+// 'staffingRosterSync', same TTL as outpatient TherapistRates) so a burst of
+// getData calls doesn't refetch/rewrite; the cached value is the last summary,
+// echoed back so the console still sees it.
+function _syncTherapistsFromStaffing() {
+  var sh = _ensureSheet('Therapists', THERAPISTS_HEADERS);
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('staffingRosterSync');
+  if (hit) {
+    var cachedSummary = null;
+    try { cachedSummary = JSON.parse(hit); } catch (_) {}
+    return { sh: sh, source: 'staffing', summary: cachedSummary };
+  }
+  var roster = _staffingRoster();
+  if (roster.status !== 'ok') return { sh: sh, source: roster.status, summary: null };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var rows = _readAll(sh, THERAPISTS_HEADERS);
+    var plan = planRosterSync(rows, roster.therapists);
+    var writes = applyPlan(plan, { allowDeactivate: true });
+
+    // Index existing rows by trimmed name (first occurrence wins — the same
+    // rule planRosterSync used to build the plan), then write ONLY changed
+    // cells: the `active` cell for an existing row, an appended row otherwise.
+    var nameCol = THERAPISTS_HEADERS.indexOf('name');
+    var activeCol = THERAPISTS_HEADERS.indexOf('active');
+    var lastRow = sh.getLastRow();
+    var grid = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, THERAPISTS_HEADERS.length).getValues() : [];
+    var rowByName = {};
+    for (var i = 0; i < grid.length; i++) {
+      var key = String(grid[i][nameCol] == null ? '' : grid[i][nameCol]).trim();
+      if (key && rowByName[key] === undefined) rowByName[key] = i;
+    }
+    var appends = [];
+    writes.forEach(function (w) {
+      var at = rowByName[w.name];
+      if (at === undefined) appends.push([w.name, w.active]);
+      else sh.getRange(at + 2, activeCol + 1, 1, 1).setValues([[w.active]]);
+    });
+    if (appends.length) {
+      sh.getRange(lastRow + 1, 1, appends.length, THERAPISTS_HEADERS.length).setValues(appends);
+    }
+
+    var summary = {
+      added: plan.add.length,
+      deactivated: plan.deactivate.length,
+      reactivated: plan.reactivate.length
+    };
+    cache.put('staffingRosterSync', JSON.stringify(summary), 120);
+    return { sh: sh, source: 'staffing', summary: summary };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
 }
 
 /* ===== Per-patient management panel (ניהול מטופל) =====

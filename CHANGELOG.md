@@ -1,5 +1,14 @@
 # Changelog
 
+## Staffing roster sync — enable writes (PR B)
+
+See [`CHANGELOG-staffing-roster-sync.md`](CHANGELOG-staffing-roster-sync.md):
+the Therapists sheet is now synced from the ezone-staffing feed on every
+`getData` (upsert by exact name, active-flag flips + appends only — never a
+delete or rename). The seed and `cleanupTherapistRosterNow` are gone; on feed
+failure the last-synced list is served with a one-per-load amber toast. SW
+cache v17.
+
 ## Staffing roster sync — preview only (PR A)
 
 See [`CHANGELOG-staffing-roster-sync.md`](CHANGELOG-staffing-roster-sync.md):

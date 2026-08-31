@@ -98,3 +98,77 @@ changed → **no SW cache bump** (stays v16).
 4. Decide each `unknownInSheet` name: retire (PR B will deactivate it) or add
    the person to staffing with role מטפל/ת.
 5. Paste the final plan JSON into the PR B kick-off.
+
+---
+
+## PR B — enable the write path
+
+The Therapists sheet is now **synced from the staffing feed on every `getData`**.
+There is no seed anymore; names are edited in the staffing app, and `active` is
+overwritten by every sync.
+
+### `apps-script/Code.gs`
+
+- `_getData`: the old `_ensureSeededList('Therapists', THERAPISTS_SEED…)` is
+  replaced by **`_syncTherapistsFromStaffing()`**:
+  - `_ensureSheet('Therapists', THERAPISTS_HEADERS)` (no seed).
+  - Feed `unconfigured`/`unavailable` → **no writes**, the last-synced sheet is
+    served as-is, and the response carries
+    `rosterSource:'unconfigured'|'unavailable'` so the UI can warn.
+  - Feed ok → `planRosterSync` + `applyPlan(plan, {allowDeactivate:true})`,
+    writing **only changed cells** (the `active` cell of an existing row —
+    upsert by trimmed name, first occurrence wins — and appended rows for new
+    names) under `LockService`. **Never a row delete, never a rename, never a
+    touch on Assignments/Schedule/Approvals.**
+  - A successful sync is cached in `CacheService` for **120s** (key
+    `staffingRosterSync`, same TTL as outpatient `TherapistRates`) so a burst
+    of `getData` calls doesn't refetch/rewrite; the cached summary is echoed
+    back.
+  - Success responses carry `rosterSource:'staffing'` +
+    `rosterSyncSummary:{added, deactivated, reactivated}`.
+- **Removed**: `THERAPISTS_SEED` (no seed exists — guard-tested) and
+  `cleanupTherapistRosterNow` (its job is the sync now).
+- **Kept**: `migrateTherapistNames*` for future renames — `_rosterKeySet` now
+  reads the LIVE Therapists sheet instead of the seed.
+- `previewStaffingRosterSync` / `previewStaffingRosterSyncNow` stay read-only
+  and unchanged — still useful before renaming someone in staffing.
+
+### `public/therapist-migration.js`
+
+`FINAL_THERAPISTS` removed (it mirrored the removed seed); `SHORT_TO_FULL`,
+`migrateName`, `normalizeKey` stay. Membership checks (`planMigration`,
+`isInRosterExact`, `isInRosterNormalized`) now take the roster as a
+**parameter** — Code.gs passes the live sheet names, tests pass fixtures.
+
+### Frontend
+
+- `public/app.js`: reads `data.rosterSource`; anything but `'staffing'` (while
+  the field exists — an older backend stays silent) shows ONE non-blocking
+  **amber** toast per page load:
+  `רשימת המטפלים לא סונכרנה מאפליקציית כוח האדם — מוצגת הרשימה האחרונה`.
+  `rosterSyncSummary` is logged to the console. `toast()` gained a `'warn'`
+  kind (amber, `.toast.warn`).
+- `public/sw.js`: cache bumped **v16 → v17**.
+
+### Tests (suite 450 green)
+
+- vm-sandbox `_getData`: feed ok → **exactly** the planned cell writes (active
+  flips + appends with `active='true'`), zero writes on
+  Schedule/Approvals/Patients/Assignments/TreatmentTypes; feed
+  unavailable/unconfigured → zero writes, `rosterSource` set, sheet served
+  unchanged; a second execution inside the 120s cache window performs zero
+  fetches and zero writes; `Scheduling.activeNames` over the synced list equals
+  the feed's active names.
+- Source guards: `THERAPISTS_SEED` and `cleanupTherapistRosterNow` absent from
+  `Code.gs`; `FINAL_THERAPISTS` no longer exported; SW cache ≥ v17.
+
+### After PR B merges (operator checklist)
+
+1. clasp CI green; Railway deploy done; hard-refresh → DevTools ▸ Application
+   shows the new SW version.
+2. DevTools ▸ Network → `getData` response has `rosterSource:"staffing"`.
+3. The therapist dropdown shows exactly staffing's active therapists.
+4. Rename test: change one therapist's name in staffing → within 2 min the old
+   name is `active=false` and the new one appears. Confirm that's expected,
+   then rename back — or, for a real rename, run `migrateTherapistNames` with a
+   mapping AND rename the outpatient `TherapistRates` row.

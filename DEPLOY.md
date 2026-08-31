@@ -177,10 +177,12 @@ sync:
 | `STAFFING_SHEETS_URL` | the ezone-staffing Apps Script `/exec` URL |
 | `STAFFING_THERAPISTS_SECRET` | the shared `getTherapistsForTherapists` secret (= staffing's `THERAPISTS_READ_SECRET`) |
 
-The Therapists roster's **source of truth is moving to the ezone-staffing app**
-(workers with role מטפל/ת). Until both properties are set, the sync preview
-reports `unconfigured` and nothing changes — the fetch FAILS CLOSED, same as
-the debt-status pattern.
+The Therapists roster's **source of truth is the ezone-staffing app** (workers
+with role מטפל/ת) — `_getData` syncs the Therapists sheet from the feed on
+every load. Until both properties are set, the sync reports `unconfigured` and
+nothing is written — the last-synced list keeps being served (fail-soft for
+reads, no writes; the fetch itself FAILS CLOSED, same as the debt-status
+pattern).
 
 ---
 

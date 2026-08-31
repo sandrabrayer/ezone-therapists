@@ -2,7 +2,7 @@
 
 /**
  * Tests for the staffing→Therapists roster sync (PR A: engine + read-only
- * preview).
+ * preview; PR B: the _getData write path).
  *
  *  1. public/roster-sync.js — the PURE planner: add/deactivate/reactivate/
  *     unchanged classification, byte-exact matching (nearMatches are report-
@@ -13,6 +13,12 @@
  *  3. vm-sandbox of apps-script/Code.gs: _staffingRoster fails CLOSED on
  *     unset property / non-2xx / non-JSON / wrong shape, and
  *     previewStaffingRosterSync NEVER writes to any sheet.
+ *  4. PR B write path: _getData syncs the Therapists sheet from the feed —
+ *     exactly the planned cell writes (active flips + appends, never a delete
+ *     or rename, no other sheet touched), fail-soft serve-as-is on
+ *     unconfigured/unavailable, the 120s CacheService window, and the
+ *     Scheduling.activeNames integration. Plus source guards: no
+ *     THERAPISTS_SEED, no cleanupTherapistRosterNow, SW cache bumped.
  *
  * Run with:  npm test     (Node >= 18, built-in test runner)
  */
@@ -218,9 +224,22 @@ test('Code.gs dispatches the previewStaffingRosterSync action (POST)', () => {
   assert.ok(/if \(action === 'previewStaffingRosterSync'\) return _json\(_previewStaffingRosterSync\(\)\);/.test(CODE_GS_SRC));
 });
 
-test('Code.gs still seeds THERAPISTS_SEED in _getData (unchanged in PR A)', () => {
-  assert.ok(/_ensureSeededList\('Therapists', THERAPISTS_HEADERS,\s*\n?\s*THERAPISTS_SEED/.test(CODE_GS_SRC),
-    'PR A must not touch the seeding path — the write flip is PR B');
+test('PR B guards: NO therapist seed left — _getData syncs from staffing instead', () => {
+  assert.ok(!CODE_GS_SRC.includes('THERAPISTS_SEED'),
+    'THERAPISTS_SEED must be fully gone from Code.gs (the roster has no seed)');
+  assert.ok(!CODE_GS_SRC.includes('cleanupTherapistRosterNow'),
+    'cleanupTherapistRosterNow is superseded by the sync and must be gone');
+  assert.ok(/_syncTherapistsFromStaffing/.test(CODE_GS_SRC),
+    '_getData must run the staffing sync');
+  assert.ok(!/_ensureSeededList\('Therapists'/.test(CODE_GS_SRC),
+    'the Therapists sheet must not go through _ensureSeededList anymore');
+});
+
+test('service worker cache version bumped for the sync UI (>= v17)', () => {
+  const sw = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8');
+  const m = sw.match(/ezone-therapists-v(\d+)/);
+  assert.ok(m, 'sw.js must define a versioned cache name');
+  assert.ok(Number(m[1]) >= 17, 'cache version must be >= v17 so clients pick up the roster-sync frontend');
 });
 
 // =========================================================================
@@ -255,7 +274,16 @@ function makeSheet(headers, rows) {
           }
           return out;
         },
-        setValues: (vals) => { writes.push({ op: 'setValues', row, col, vals }); },
+        // Record AND apply, so a post-write _readAll sees the new state (the
+        // write-path tests read the synced roster back).
+        setValues: (vals) => {
+          writes.push({ op: 'setValues', row, col, vals });
+          for (let r = 0; r < vals.length; r++) {
+            while (grid.length < row + r) grid.push([]);
+            const line = grid[row - 1 + r];
+            for (let c = 0; c < vals[r].length; c++) line[col - 1 + c] = vals[r][c];
+          }
+        },
         setNumberFormat: () => {},
         clearContent: () => { writes.push({ op: 'clearContent', row, col }); }
       };
@@ -303,11 +331,20 @@ function gsContext(opts) {
     LockService: {
       getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} })
     },
-    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) }
+    // Map-backed (TTL ignored — tests model "within the 120s window" by sharing
+    // one store, "expired" by using a fresh one). opts.cacheStore lets two vm
+    // contexts share a store, modelling two separate Apps Script executions.
+    CacheService: {
+      getScriptCache: () => ({
+        get: (k) => (k in cacheStore ? cacheStore[k] : null),
+        put: (k, v) => { cacheStore[k] = v; }
+      })
+    }
   };
+  const cacheStore = opts.cacheStore || {};
   vm.createContext(ctx);
   vm.runInContext(CODE_GS_SRC, ctx);
-  return { ctx, sheets, fetchCalls };
+  return { ctx, sheets, fetchCalls, cacheStore };
 }
 
 const okResponse = (body) => () => ({
@@ -445,4 +482,142 @@ test('vm sandbox parity: Code.gs planRosterSync agrees with the Node module', ()
   assert.deepEqual(j(ctx.planRosterSync(sheetRows, feedRows)), RS.planRosterSync(sheetRows, feedRows));
   const plan = RS.planRosterSync(sheetRows, feedRows);
   assert.deepEqual(j(ctx.applyPlan(plan, { allowDeactivate: false })), RS.applyPlan(plan, { allowDeactivate: false }));
+});
+
+// =========================================================================
+// 4. PR B — the write path (_syncTherapistsFromStaffing inside _getData)
+// =========================================================================
+
+const Scheduling = require('../public/scheduling');
+
+// One context just to read Code.gs's header/seed constants for sheet fixtures.
+const headerCtx = gsContext({}).ctx;
+
+// Every sheet _getData touches, prepopulated with its REAL headers (and the
+// TreatmentTypes seed rows) so the only writes left to observe are the sync's.
+function allSheets(therapistRows) {
+  return {
+    Schedule: { headers: j(headerCtx.SCHEDULE_HEADERS) },
+    Approvals: { headers: j(headerCtx.APPROVALS_HEADERS) },
+    Patients: { headers: j(headerCtx.PATIENTS_HEADERS) },
+    Assignments: { headers: j(headerCtx.ASSIGNMENTS_HEADERS) },
+    Therapists: { headers: ['name', 'active'], rows: therapistRows },
+    TreatmentTypes: { headers: j(headerCtx.TREATMENT_TYPES_HEADERS), rows: j(headerCtx.TREATMENT_TYPES_SEED) }
+  };
+}
+
+// Sheet rows 2/3/4; feed says: reactivate דנה, add נרי, drop רמי (absent).
+const SYNC_SHEET_ROWS = [
+  { name: 'הילה תבור', active: 'true' },
+  { name: 'רמי רום', active: 'true' },
+  { name: 'דנה דרוקר', active: 'false' }
+];
+const SYNC_FEED = [
+  { name: 'הילה תבור', active: true },
+  { name: 'דנה דרוקר', active: true },
+  { name: 'נרי אופק', active: true }
+];
+const SYNC_PROPS = { STAFFING_SHEETS_URL: 'https://x/exec', STAFFING_THERAPISTS_SECRET: 's' };
+
+test('_getData feed ok: writes exactly the planned cells (active flips + append), nothing else', () => {
+  const { ctx, sheets, fetchCalls } = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED })
+  });
+  const data = j(ctx._getData());
+  assert.equal(data.ok, true);
+  assert.equal(data.rosterSource, 'staffing');
+  assert.deepEqual(data.rosterSyncSummary, { added: 1, deactivated: 1, reactivated: 1 });
+  // The returned therapists ARE the post-sync sheet: existing rows keep their
+  // position (never deleted, never renamed), the new name is appended active.
+  assert.deepEqual(data.therapists, [
+    { name: 'הילה תבור', active: 'true' },
+    { name: 'רמי רום', active: 'false' },
+    { name: 'דנה דרוקר', active: 'true' },
+    { name: 'נרי אופק', active: 'true' }
+  ]);
+  // Exactly the planned writes: only the `active` CELL of an existing row
+  // (col 2), one appended row block — no clears, no deletes, no name rewrites.
+  assert.deepEqual(j(sheets.Therapists._writes), [
+    { op: 'setValues', row: 4, col: 2, vals: [['true']] },              // reactivate דנה
+    { op: 'setValues', row: 3, col: 2, vals: [['false']] },             // deactivate רמי
+    { op: 'setValues', row: 5, col: 1, vals: [['נרי אופק', 'true']] }   // append the new name
+  ]);
+  // The sync must never touch any other sheet.
+  ['Schedule', 'Approvals', 'Patients', 'Assignments', 'TreatmentTypes'].forEach((n) => {
+    assert.deepEqual(sheets[n]._writes, [], 'sheet "' + n + '" must not be written');
+  });
+  assert.equal(fetchCalls.length, 1);
+});
+
+test('_getData feed unavailable: ZERO writes, rosterSource=unavailable, sheet served as-is', () => {
+  const { ctx, sheets } = gsContext({
+    props: { STAFFING_SHEETS_URL: 'https://x/exec' },
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: () => ({ getResponseCode: () => 502, getContentText: () => '' })
+  });
+  const data = j(ctx._getData());
+  assert.equal(data.ok, true);
+  assert.equal(data.rosterSource, 'unavailable');
+  assert.equal(data.rosterSyncSummary, null);
+  assert.deepEqual(data.therapists, SYNC_SHEET_ROWS, 'the last-synced roster is served unchanged');
+  assert.deepEqual(sheets.Therapists._writes, []);
+});
+
+test('_getData unconfigured: ZERO fetches, ZERO writes, rosterSource=unconfigured', () => {
+  const { ctx, sheets, fetchCalls } = gsContext({
+    props: {},
+    sheets: allSheets(SYNC_SHEET_ROWS)
+  });
+  const data = j(ctx._getData());
+  assert.equal(data.rosterSource, 'unconfigured');
+  assert.deepEqual(data.therapists, SYNC_SHEET_ROWS);
+  assert.equal(fetchCalls.length, 0);
+  assert.deepEqual(sheets.Therapists._writes, []);
+});
+
+test('a second execution inside the 120s cache window refetches and rewrites NOTHING', () => {
+  const store = {};
+  const first = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED }),
+    cacheStore: store
+  });
+  first.ctx._getData();
+  assert.equal(first.fetchCalls.length, 1);
+
+  // A NEW vm context = a new Apps Script execution; same CacheService store =
+  // still inside the TTL. Its sheet already holds the synced state.
+  const syncedRows = [
+    { name: 'הילה תבור', active: 'true' },
+    { name: 'רמי רום', active: 'false' },
+    { name: 'דנה דרוקר', active: 'true' },
+    { name: 'נרי אופק', active: 'true' }
+  ];
+  const second = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(syncedRows),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED }),
+    cacheStore: store
+  });
+  const data = j(second.ctx._getData());
+  assert.equal(second.fetchCalls.length, 0, 'must not refetch inside the cache TTL');
+  assert.deepEqual(second.sheets.Therapists._writes, []);
+  assert.equal(data.rosterSource, 'staffing');
+  assert.deepEqual(data.rosterSyncSummary, { added: 1, deactivated: 1, reactivated: 1 },
+    'the cached summary is echoed back for the console');
+});
+
+test('integration: Scheduling.activeNames over the synced list equals the feed\'s active names', () => {
+  const { ctx } = gsContext({
+    props: SYNC_PROPS,
+    sheets: allSheets(SYNC_SHEET_ROWS),
+    fetch: okResponse({ ok: true, therapists: SYNC_FEED })
+  });
+  const data = j(ctx._getData());
+  const dropdown = Scheduling.activeNames(data.therapists);
+  const feedActives = SYNC_FEED.filter((f) => f.active).map((f) => f.name);
+  assert.deepEqual([...dropdown].sort(), [...feedActives].sort());
 });
