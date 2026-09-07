@@ -1,5 +1,40 @@
 # Changelog
 
+## Hardened `@claude` workflow — owner-only trigger, minimal permissions
+
+New `.github/workflows/claude.yml`, copied **byte-for-byte** from
+`ezone-helpdesk` (blob `ec00836`) with no adaptation, so all six E-ZONE
+copies stay diffable against one original. It runs
+`anthropics/claude-code-action@v1` when `@claude` is mentioned on an issue or
+pull request.
+
+- **Owner-only trigger** — the job's `if:` gates on
+  `github.actor == 'sandrabrayer'`, `&&`-ed *in front of* the four `@claude`
+  mention checks (`issue_comment`, `pull_request_review_comment`,
+  `pull_request_review`, `issues`), so no other account can start a run.
+  E-ZONE staff reach the helpdesk through its own intake, never through
+  GitHub. A non-owner mention produces **no run at all** — the intended
+  outcome, not a bug to be "fixed" by loosening the `if:`.
+- **Minimal permissions**, declared once at workflow level and nothing
+  beyond these five: `contents: write`, `pull-requests: write`,
+  `issues: write`, `id-token: write`, `actions: read`.
+- **Cost cap** — `claude_args: '--max-turns 15'`.
+- **Credential** — only `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`; nothing
+  hard-coded, no other secret named in the file.
+
+**Setup required after merge:** that secret is not yet set on this repo
+(Actions secrets hold only `CLASPRC_JSON` and `DEPLOYMENT_ID`), so until it
+is added the workflow is inert — add it under Settings → Secrets and
+variables → Actions, value from `claude setup-token`. The GitHub App is
+already installed account-wide.
+
+The deploy branch `claude/inspiring-tesla-jipobw` is also the GitHub default
+branch, so agent PRs target what Railway serves. (A `main` branch exists here
+at `dc8c3aa` but is not the default and was left untouched.) Workflow file
+only — no application code, no `Code.gs` (no clasp redeploy), no frontend
+asset (no SW cache bump), no new dependencies, no new env vars. Contract and
+rationale: `docs/github-actions.md` in `ezone-helpdesk`.
+
 ## Renewal alerts (חידוש חבילה) — 7 days before package end
 
 See [`CHANGELOG-renewal-alerts.md`](CHANGELOG-renewal-alerts.md): the dashboard
